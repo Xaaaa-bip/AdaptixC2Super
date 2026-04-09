@@ -187,7 +187,7 @@ void DialogSettings::createUI()
         "Agent ID", "Agent Type", "External", "Listener", "Internal",
         "Domain", "Computer", "User", "OS", "Process",
         "PID", "TID", "Tags", "Created", "Last", "Sleep",
-        QStringLiteral(u8"归属地")
+        QStringLiteral("归属地")
     };
 
     for (int i = 0; i < sessionsCheckCount; ++i)
