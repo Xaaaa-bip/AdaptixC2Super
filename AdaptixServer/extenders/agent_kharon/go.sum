@@ -1,0 +1,4 @@
+github.com/Adaptix-Framework/axc2 v1.2.0 h1:WYEg502NTTtX1tQJUz2AaC2dmm/bS/1L1iOHOQ5kEYA=
+github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
+github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+golang.org/x/text v0.34.0 h1:oL/Qq0Kdaqxa1KbNeMKwQq0reLCCaFtqu2eNuSeNHbk=

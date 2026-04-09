@@ -1,0 +1,16 @@
+# Stage 1: C++ to C-style Refactoring
+- [x] Convert `Connector` and its subclasses (`ConnectorHTTP`, `ConnectorSMB`, `ConnectorTCP`, `ConnectorDNS`) to C-style structs and functions.
+- [x] Convert `Agent` to C-style struct and functions.
+- [x] Convert `Boffer` to C-style struct and functions.
+- [x] Convert `JobsController` to C-style struct and functions.
+- [x] Convert `Downloader` to C-style struct and functions.
+- [x] Convert `MemorySaver` to C-style struct and functions.
+- [x] Convert `Proxyfire` to C-style struct and functions.
+- [x] Convert `AgentInfo` to C-style struct and functions.
+- [x] Convert `AgentConfig` to C-style struct and functions.
+- [x] Convert `Pivotter` to C-style struct and functions.
+- [x] Convert `Commander` to C-style struct and functions.
+- [x] Convert `Packer` to C-style struct and functions.
+- [x] Convert `DnsCodec` to C-style struct and functions.
+- [x] Update all instantiations and method calls across the codebase to use the new C-style interfaces.
+- [x] Successfully compile for both x64 and x86 architectures.

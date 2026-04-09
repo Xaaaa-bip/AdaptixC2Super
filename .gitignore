@@ -1,0 +1,22 @@
+# Build / intermediate
+*.o
+*.obj
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.iobj
+*.ipdb
+**/Bin/
+**/[Oo]bj/
+**/build-*/
+
+# IDE / OS
+.idea/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
+
+# Local secrets (if any)
+.env
