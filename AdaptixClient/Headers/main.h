@@ -1,7 +1,6 @@
 #ifndef ADAPTIXCLIENT_MAIN_H
 #define ADAPTIXCLIENT_MAIN_H
 
-#include <QtGlobal>
 #include <QApplication>
 #include <QMap>
 #include <QVector>
@@ -391,16 +390,5 @@ typedef struct ExtensionFile
 
     QMap<QString, QVector<QJsonObject> > ExCommands;
 } ExtensionFile;
-
-/** QSortFilterProxyModel: Qt 6.13 deprecates invalidateFilter(); keep Qt < 6.13 working. */
-#if QT_VERSION >= QT_VERSION_CHECK(6, 13, 0)
-#  define ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(P) \
-    do { \
-        (P)->beginFilterChange(); \
-        (P)->endFilterChange(); \
-    } while (0)
-#else
-#  define ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(P) do { (P)->invalidateFilter(); } while (0)
-#endif
 
 #endif //ADAPTIXCLIENT_MAIN_H

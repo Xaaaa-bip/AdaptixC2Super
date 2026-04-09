@@ -114,25 +114,25 @@ public:
     void setSearchVisible(bool visible) {
         if (searchVisible == visible) return;
         searchVisible = visible;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void setOnlyActive(bool active) {
         if (onlyActive == active) return;
         onlyActive = active;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void setTextFilter(const QString& text) {
         if (textFilter == text) return;
         textFilter = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void setAgentTypes(const QSet<QString>& types) {
         if (agentTypes == types) return;
         agentTypes = types;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void updateVisible() {
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:

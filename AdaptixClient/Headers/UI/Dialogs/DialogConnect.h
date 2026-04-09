@@ -16,7 +16,6 @@ Q_OBJECT
     QGridLayout*  gridLayout          = nullptr;
     QGroupBox*    groupUserInfo       = nullptr;
     QGroupBox*    groupServerDetails  = nullptr;
-    QGroupBox*    groupTls            = nullptr;
     QGroupBox*    groupProject        = nullptr;
     QLabel*       label_User          = nullptr;
     QLabel*       label_Password      = nullptr;
@@ -33,12 +32,6 @@ Q_OBJECT
     QCheckBox*    multiuserCheck      = nullptr;
     QLineEdit*    lineEdit_ProjectDir = nullptr;
     QLineEdit*    lineEdit_Url        = nullptr;
-    QLineEdit*    lineEdit_TlsCa      = nullptr;
-    QPushButton*  buttonTlsCa         = nullptr;
-    QLineEdit*    lineEdit_TlsClientCert = nullptr;
-    QPushButton*  buttonTlsClientCert  = nullptr;
-    QLineEdit*    lineEdit_TlsClientKey = nullptr;
-    QPushButton*  buttonTlsClientKey   = nullptr;
     QPushButton*  buttonConnect       = nullptr;
     QPushButton*  buttonNewProfile    = nullptr;
     QPushButton*  buttonLoad          = nullptr;
@@ -78,9 +71,6 @@ private Q_SLOTS:
     void showSubsPopup();
     void onSubsSelectionChanged();
     void updateSubsDisplay();
-    void onPickTlsCa();
-    void onPickTlsClientCert();
-    void onPickTlsClientKey();
 };
 
 #endif

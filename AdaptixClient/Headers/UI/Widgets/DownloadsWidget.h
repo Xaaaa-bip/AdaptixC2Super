@@ -99,19 +99,19 @@ public:
     void setSearchVisible(bool visible) {
         if (searchVisible == visible) return;
         searchVisible = visible;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
     void setTextFilter(const QString &text) {
         if (filter == text) return;
         filter = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
     void setStateFilter(int state) {
         if (stateFilter == state) return;
         stateFilter = state;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:

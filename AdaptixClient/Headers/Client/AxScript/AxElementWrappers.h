@@ -929,7 +929,7 @@ public:
 
     void setFilterText(const QString& text) {
         m_filterText = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:
@@ -1084,7 +1084,7 @@ public:
 
     void setFilterText(const QString& text) {
         m_filterText = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:
@@ -1220,7 +1220,7 @@ public:
 
     void setFilterText(const QString& text) {
         m_filterText = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:
@@ -1363,7 +1363,7 @@ public:
 
     void setFilterText(const QString& text) {
         m_filterText = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:
@@ -1509,7 +1509,7 @@ public:
 
     void setFilterText(const QString& text) {
         m_filterText = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:

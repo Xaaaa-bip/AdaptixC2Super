@@ -99,25 +99,25 @@ public:
     void setSearchVisible(bool visible) {
         if (searchVisible == visible) return;
         searchVisible = visible;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
     void setTextFilter(const QString &text){
         if (filter == text) return;
         filter = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
     void setTypeFilter(const QString &type) {
         if (typeFilter == type) return;
         typeFilter = type;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
     void setStorageFilter(const QString &storage) {
         if (storageFilter == storage) return;
         storageFilter = storage;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:

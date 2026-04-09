@@ -118,19 +118,19 @@ public:
 
     void setAgentFilter(const QString &agent) {
         agentFilter = agent;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void setTypeFilter(const QString &type) {
         typeFilter = type;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void setStatusFilter(const QString &status) {
         statusFilter = status;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
     void setTextFilter(const QString &text){
         textFilter = text;
-        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
+        invalidateFilter();
     }
 
 protected:
