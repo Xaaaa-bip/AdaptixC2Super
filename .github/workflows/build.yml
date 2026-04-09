@@ -138,6 +138,7 @@ jobs:
             libgl1-mesa-dev \
             libxcb-cursor0
 
+      # Qt 6.7+：qtdeclarative / qtsvg 已在默认 desktop 安装包中，勿再写入 modules（aqt 会报 not found）
       - name: Install Qt6 (Windows / MSVC)
         if: runner.os == 'Windows'
         uses: jurplel/install-qt-action@v4
@@ -146,7 +147,7 @@ jobs:
           host: windows
           target: desktop
           arch: win64_msvc2019_64
-          modules: qtwebsockets qtdeclarative qtsvg
+          modules: qtwebsockets
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
