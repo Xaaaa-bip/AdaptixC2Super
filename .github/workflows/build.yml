@@ -16,10 +16,31 @@ concurrency:
 
 jobs:
   adaptix-server:
-    name: AdaptixServer (Go)
-    runs-on: ubuntu-24.04
+    name: AdaptixServer (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-24.04
+            artifact: AdaptixServer-linux-amd64
+            output: AdaptixServer
+            shell: bash
+          - name: windows-amd64
+            os: windows-latest
+            artifact: AdaptixServer-windows-amd64
+            output: AdaptixServer.exe
+            shell: bash
+          - name: macos
+            os: macos-14
+            artifact: AdaptixServer-macos
+            output: AdaptixServer
+            shell: bash
+
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
+        shell: ${{ matrix.shell }}
         working-directory: AdaptixServer
 
     steps:
@@ -32,30 +53,74 @@ jobs:
             AdaptixServer/go.sum
             AdaptixServer/go.work.sum
 
-      - name: Install CGO dependencies
+      - name: CGO deps (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libsqlite3-dev
 
-      - name: Go build
+      - name: CGO deps (Windows — MinGW + SQLite)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-sqlite
+
+      - name: CGO deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkg-config sqlite
+
+      - name: Go build (Linux / macOS)
+        if: runner.os != 'Windows'
         env:
           CGO_ENABLED: "1"
-        run: go build -trimpath -ldflags="-s -w" -o AdaptixServer .
+        run: go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
+
+      - name: Go build (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: "1"
+        shell: pwsh
+        run: |
+          $env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;" + $env:Path
+          go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
 
       - name: Upload server binary
         uses: actions/upload-artifact@v4
         with:
-          name: AdaptixServer-linux-amd64
-          path: AdaptixServer/AdaptixServer
+          name: ${{ matrix.artifact }}
+          path: AdaptixServer/${{ matrix.output }}
 
   adaptix-client:
-    name: AdaptixClient (Qt6 / CMake)
-    runs-on: ubuntu-24.04
+    name: AdaptixClient (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-24.04
+            artifact: AdaptixClient-linux-amd64
+            exe: AdaptixClient
+          - name: windows-amd64
+            os: windows-latest
+            artifact: AdaptixClient-windows-amd64
+            exe: AdaptixClient.exe
+          - name: macos
+            os: macos-14
+            artifact: AdaptixClient-macos
+            exe: AdaptixClient
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt6 and build tools
+      - name: Install Qt6 + deps (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -73,17 +138,66 @@ jobs:
             libgl1-mesa-dev \
             libxcb-cursor0
 
-      - name: Configure & build
+      - name: Install Qt6 (Windows / MSVC)
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          modules: qtwebsockets qtdeclarative qtsvg
+
+      - name: Install build tools (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja openssl --yes
+
+      - name: Install Qt6 + deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install qt@6 openssl@3 cmake ninja
+
+      - name: Configure & build (Linux)
+        if: runner.os == 'Linux'
         working-directory: AdaptixClient
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Configure & build (Windows)
+        if: runner.os == 'Windows'
+        working-directory: AdaptixClient
+        shell: pwsh
+        run: |
+          $qtRoot = $env:QT_ROOT_DIR
+          if (-not $qtRoot -and $env:Qt6_DIR) {
+            $qtRoot = (Resolve-Path (Join-Path $env:Qt6_DIR "..\..")).Path
+          }
+          if (-not $qtRoot) { throw "Qt path missing" }
+          $ssl = @("C:\Program Files\OpenSSL-Win64", "C:\Program Files\OpenSSL") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $ssl) { throw "OpenSSL not found after choco install" }
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DADAPTIX_USE_SYSTEM_QT6=ON `
+            -DCMAKE_PREFIX_PATH="$qtRoot" `
+            -DOPENSSL_ROOT_DIR="$ssl"
+          cmake --build build --parallel
+
+      - name: Configure & build (macOS)
+        if: runner.os == 'macOS'
+        working-directory: AdaptixClient
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+          cmake --build build --parallel
+
       - name: Upload client binary
         uses: actions/upload-artifact@v4
         with:
-          name: AdaptixClient-linux-amd64
-          path: AdaptixClient/build/AdaptixClient
+          name: ${{ matrix.artifact }}
+          path: AdaptixClient/build/${{ matrix.exe }}
 
   adaptix-extenders:
     name: Extenders (plugins + cross-compile beacons)
