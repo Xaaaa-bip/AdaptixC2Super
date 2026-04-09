@@ -104,6 +104,7 @@ SET( HEADERS
         Headers/Client/Storage.h
         Headers/Client/AuthProfile.h
         Headers/Utils/FileSystem.h
+        Headers/Utils/IpdbReader.h
         Headers/Client/Requestor.h
         Headers/Client/HttpRequestManager.h
         Headers/UI/MainUI.h
@@ -193,6 +194,7 @@ add_executable(AdaptixClient
         Source/Client/Storage.cpp
         Source/Client/AuthProfile.cpp
         Source/Utils/FileSystem.cpp
+        Source/Utils/IpdbReader.cpp
         Source/Client/Requestor.cpp
         Source/Client/HttpRequestManager.cpp
         Source/UI/MainUI.cpp

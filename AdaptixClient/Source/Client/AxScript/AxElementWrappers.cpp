@@ -303,6 +303,8 @@ QCheckBox * AxCheckBoxWrapper::widget() const { return check; }
 
 bool AxCheckBoxWrapper::isChecked() const { return check->isChecked(); }
 
+bool AxCheckBoxWrapper::checked() const { return isChecked(); }
+
 void AxCheckBoxWrapper::setChecked(const bool checked) const { check->setChecked(checked); }
 
 void AxSelectorFile::setPlaceholder(const QString& text) const { lineEdit->setPlaceholderText(text); }
