@@ -122,6 +122,11 @@ target_compile_definitions(
         PRIVATE BUILDING_DOCKS_LIBRARY
 )
 
+# windows.h defines min/max macros; breaks std::min / std::max in .cpp (e.g. DragController.cpp)
+if(MSVC)
+    target_compile_definitions(kddockwidgets PRIVATE NOMINMAX)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 find_package(Qt6 COMPONENTS GuiPrivate WidgetsPrivate QUIET)
 

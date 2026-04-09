@@ -1492,10 +1492,9 @@ void Vt102Emulation::sendString(const char *s, int length) {
 }
 
 void Vt102Emulation::reportCursorPosition() {
-    const size_t sz = 20;
-    char tmp[sz];
-    const size_t r = snprintf(tmp, sz, "\033[%d;%dR", _currentScreen->getCursorY() + 1, _currentScreen->getCursorX() + 1);
-
+    // "\033[%d;%dR" + NUL: GCC -Wformat-truncation allows up to ~27 payload bytes for two int widths
+    char tmp[32];
+    snprintf(tmp, sizeof(tmp), "\033[%d;%dR", _currentScreen->getCursorY() + 1, _currentScreen->getCursorX() + 1);
     sendString(tmp);
 }
 

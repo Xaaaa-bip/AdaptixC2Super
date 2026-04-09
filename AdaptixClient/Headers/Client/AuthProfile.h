@@ -19,6 +19,9 @@ class AuthProfile
     QStringList subscriptions;
     QStringList registeredCategories;
     bool consoleMultiuser = true;
+    QString tlsCaCertPath;
+    QString tlsClientCertPath;
+    QString tlsClientKeyPath;
 
 public:
     bool valid;
@@ -48,6 +51,13 @@ public:
     void    SetRegisteredCategories(const QStringList &cats);
     bool    GetConsoleMultiuser() const;
     void    SetConsoleMultiuser(bool multiuser);
+
+    QString GetTlsCaCertPath() const;
+    QString GetTlsClientCertPath() const;
+    QString GetTlsClientKeyPath() const;
+    void    SetTlsCaCertPath(const QString &path);
+    void    SetTlsClientCertPath(const QString &path);
+    void    SetTlsClientKeyPath(const QString &path);
 };
 
 #endif
