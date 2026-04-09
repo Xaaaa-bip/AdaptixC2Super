@@ -138,20 +138,20 @@ jobs:
             libgl1-mesa-dev \
             libxcb-cursor0
 
-      # Qt 6.7+：qtdeclarative / qtsvg 已在默认 desktop 安装包中，勿再写入 modules（aqt 会报 not found）
-      - name: Install Qt6 (Windows / MSVC)
+      # Windows：与官方文档一致 — MSYS2 MINGW64 + pacman Qt6/OpenSSL（见 Installation Client）
+      # https://adaptix-framework.gitbook.io/adaptix-framework/adaptix-c2/getting-starting/installation-client
+      - name: MSYS2 + MinGW Qt6 (Windows)
         if: runner.os == 'Windows'
-        uses: jurplel/install-qt-action@v4
+        uses: msys2/setup-msys2@v2
         with:
-          version: "6.7.3"
-          host: windows
-          target: desktop
-          arch: win64_msvc2019_64
-          modules: qtwebsockets
-
-      - name: Install build tools (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ninja openssl --yes
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-qt6
+            mingw-w64-x86_64-openssl
 
       - name: Install Qt6 + deps (macOS)
         if: runner.os == 'macOS'
@@ -164,25 +164,12 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-
-      - name: Configure & build (Windows)
+      - name: Configure & build (Windows / MSYS2 MinGW)
         if: runner.os == 'Windows'
         working-directory: AdaptixClient
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $qtRoot = $env:QT_ROOT_DIR
-          if (-not $qtRoot -and $env:Qt6_DIR) {
-            $qtRoot = (Resolve-Path (Join-Path $env:Qt6_DIR "..\..")).Path
-          }
-          if (-not $qtRoot) { throw "Qt path missing" }
-          $ssl = @("C:\Program Files\OpenSSL-Win64", "C:\Program Files\OpenSSL") | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $ssl) { throw "OpenSSL not found after choco install" }
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
-            -DADAPTIX_USE_SYSTEM_QT6=ON `
-            -DCMAKE_PREFIX_PATH="$qtRoot" `
-            -DOPENSSL_ROOT_DIR="$ssl"
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
       - name: Configure & build (macOS)

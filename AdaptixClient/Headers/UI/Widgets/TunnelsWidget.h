@@ -98,7 +98,7 @@ public:
     void setTextFilter(const QString &text) {
         if (textFilter == text) return;
         textFilter = text;
-        invalidateFilter();
+        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
     }
 
 protected:

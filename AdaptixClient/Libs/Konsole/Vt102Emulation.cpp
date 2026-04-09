@@ -1492,9 +1492,10 @@ void Vt102Emulation::sendString(const char *s, int length) {
 }
 
 void Vt102Emulation::reportCursorPosition() {
-    const size_t sz = 20;
+    // ESC [ row ; col R — need room for two decimal ints (GCC -Wformat-truncation flags sz < ~27)
+    const size_t sz = 32;
     char tmp[sz];
-    const size_t r = snprintf(tmp, sz, "\033[%d;%dR", _currentScreen->getCursorY() + 1, _currentScreen->getCursorX() + 1);
+    snprintf(tmp, sz, "\033[%d;%dR", _currentScreen->getCursorY() + 1, _currentScreen->getCursorX() + 1);
 
     sendString(tmp);
 }

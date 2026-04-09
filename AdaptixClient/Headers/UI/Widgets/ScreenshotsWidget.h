@@ -91,13 +91,13 @@ public:
     void setSearchVisible(bool visible) {
         if (searchVisible == visible) return;
         searchVisible = visible;
-        invalidateFilter();
+        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
     }
 
     void setTextFilter(const QString &text) {
         if (filter == text) return;
         filter = text;
-        invalidateFilter();
+        ADAPTIX_INVALIDATE_SORT_FILTER_PROXY(this);
     }
 
 protected:

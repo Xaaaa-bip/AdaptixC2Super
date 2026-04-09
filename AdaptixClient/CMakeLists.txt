@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Local MSYS2 MinGW: default. CI / Visual Studio Qt: cmake -DADAPTIX_USE_SYSTEM_QT6=ON -DCMAKE_PREFIX_PATH=<Qt root>
 option(ADAPTIX_USE_SYSTEM_QT6 "Find Qt6 via CMAKE_PREFIX_PATH (e.g. GitHub Actions MSVC Qt)" OFF)
 if(WIN32 AND NOT ADAPTIX_USE_SYSTEM_QT6)
-    set(Qt6_DIR "C:/msys64/mingw64/lib/cmake")
+    # Qt6Config.cmake lives under .../lib/cmake/Qt6 (official MSYS2 + build.bat use C:\msys64\mingw64)
+    set(Qt6_DIR "C:/msys64/mingw64/lib/cmake/Qt6")
 endif()
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
 
