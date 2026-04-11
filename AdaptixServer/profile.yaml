@@ -22,13 +22,13 @@ Teamserver:
   # tls_autogen_force: false
   # Or: ADAPTIX_TLS_AUTOGEN=1 ADAPTIX_TLS_AUTOGEN_CN=api.yourcompany.com ./AdaptixServer -profile profile.yaml
   extenders:
-    - "extenders/beacon_listener_http/dist/config.yaml"
-    - "extenders/beacon_listener_smb/dist/config.yaml"
-    - "extenders/beacon_listener_tcp/dist/config.yaml"
-    - "extenders/beacon_listener_dns/dist/config.yaml"
-    - "extenders/beacon_agent/dist/config.yaml"
-    - "extenders/gopher_listener_tcp/dist/config.yaml"
-    - "extenders/gopher_agent/dist/config.yaml"
+    - "extenders/beacon_listener_http/config.yaml"
+    - "extenders/beacon_listener_smb/config.yaml"
+    - "extenders/beacon_listener_tcp/config.yaml"
+    - "extenders/beacon_listener_dns/config.yaml"
+    - "extenders/beacon_agent/config.yaml"
+    - "extenders/gopher_listener_tcp/config.yaml"
+    - "extenders/gopher_agent/config.yaml"
   axscripts:
 #    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.
