@@ -14,34 +14,39 @@ concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  QT_VERSION: "6.8.3"
+
 jobs:
-  adaptix-server:
-    name: AdaptixServer (${{ matrix.name }})
+  build-bundles:
+    name: Bundle (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: linux-amd64
             os: ubuntu-24.04
-            artifact: AdaptixServer-linux-amd64
-            output: AdaptixServer
-            shell: bash
+            artifact: Adaptix-linux-amd64
+            goos: linux
+            goarch: amd64
+            server_output: AdaptixServer
+            client_output: AdaptixClient
           - name: windows-amd64
             os: windows-latest
-            artifact: AdaptixServer-windows-amd64
-            output: AdaptixServer.exe
-            shell: bash
-          - name: macos
+            artifact: Adaptix-windows-amd64
+            goos: windows
+            goarch: amd64
+            server_output: AdaptixServer.exe
+            client_output: AdaptixClient.exe
+          - name: macos-arm64
             os: macos-14
-            artifact: AdaptixServer-macos
-            output: AdaptixServer
-            shell: bash
+            artifact: Adaptix-macos-arm64
+            goos: darwin
+            goarch: arm64
+            server_output: AdaptixServer
+            client_output: AdaptixClient
 
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
-        working-directory: AdaptixServer
 
     steps:
       - uses: actions/checkout@v4
@@ -53,13 +58,13 @@ jobs:
             AdaptixServer/go.sum
             AdaptixServer/go.work.sum
 
-      - name: CGO deps (Linux)
+      - name: Install server deps (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libsqlite3-dev
 
-      - name: CGO deps (Windows — MinGW + SQLite)
+      - name: Install server deps (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
@@ -70,62 +75,33 @@ jobs:
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-sqlite
 
-      - name: CGO deps (macOS)
+      - name: Install server deps (macOS)
         if: runner.os == 'macOS'
         run: brew install pkg-config sqlite
 
-      - name: Go build (Linux / macOS)
+      - name: Build server (Linux / macOS)
         if: runner.os != 'Windows'
+        working-directory: AdaptixServer
         env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
-        run: go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
+        run: |
+          go build -ldflags="-s -w" -o "${{ matrix.server_output }}" .
 
-      - name: Go build (Windows)
+      - name: Build server (Windows)
         if: runner.os == 'Windows'
-        env:
-          CGO_ENABLED: "1"
+        working-directory: AdaptixServer
         shell: pwsh
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
         run: |
           $env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;" + $env:Path
-          go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
+          go build -ldflags="-s -w" -o "${{ matrix.server_output }}" .
 
-      - name: Upload server binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: AdaptixServer/${{ matrix.output }}
-
-  # 客户端 Qt：与官方文档一致须 Qt > 6.8.0（见 Installation Client）
-  # https://adaptix-framework.gitbook.io/adaptix-framework/adaptix-c2/getting-starting/installation-client
-  adaptix-client:
-    name: AdaptixClient (${{ matrix.name }})
-    env:
-      # 统一用 6.8.x LTS 补丁版，满足「> 6.8.0」；升级时改此处即可
-      QT_VERSION: "6.8.3"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-amd64
-            os: ubuntu-24.04
-            artifact: AdaptixClient-linux-amd64
-            exe: AdaptixClient
-          - name: windows-amd64
-            os: windows-latest
-            artifact: AdaptixClient-windows-amd64
-            exe: AdaptixClient.exe
-          - name: macos
-            os: macos-14
-            artifact: AdaptixClient-macos
-            exe: AdaptixClient
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # Linux：文档 Debian 依赖里的非 Qt 部分用 apt；Qt 用 aqt（Ubuntu 自带 qt6 常 < 6.8）
-      - name: Install build deps (Linux, 无系统 Qt)
+      - name: Install client deps (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -157,8 +133,7 @@ jobs:
           arch: linux_gcc_64
           modules: qtwebsockets
 
-      # Qt 6.8+ Windows 使用 win64_msvc2022_64；qtdeclarative/qtsvg 在默认包里，仅加 qtwebsockets
-      - name: Install Qt ${{ env.QT_VERSION }} (Windows / MSVC 2022)
+      - name: Install Qt ${{ env.QT_VERSION }} (Windows)
         if: runner.os == 'Windows'
         uses: jurplel/install-qt-action@v4
         with:
@@ -172,7 +147,7 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ninja -y
 
-      - name: Install OpenSSL (Windows, Shining Light LTS)
+      - name: Install OpenSSL (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -182,8 +157,7 @@ jobs:
           curl.exe -fsSL -o $installer $url
           Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/NORESTART' -Wait
 
-      # macOS：文档用 brew 装 openssl/cmake；Qt 固定 6.8.3 与官方「> 6.8.0」一致
-      - name: Install build deps (macOS)
+      - name: Install client deps (macOS)
         if: runner.os == 'macOS'
         run: brew install cmake ninja openssl@3
 
@@ -197,7 +171,7 @@ jobs:
           arch: clang_64
           modules: qtwebsockets
 
-      - name: Configure & build (Linux)
+      - name: Configure & build client (Linux)
         if: runner.os == 'Linux'
         working-directory: AdaptixClient
         run: |
@@ -205,7 +179,10 @@ jobs:
           if [ -z "$QT_ROOT" ] && [ -n "${Qt6_DIR:-}" ]; then
             QT_ROOT="$(realpath "$Qt6_DIR/../../..")"
           fi
-          if [ -z "$QT_ROOT" ]; then echo "Qt path missing"; exit 1; fi
+          if [ -z "$QT_ROOT" ]; then
+            echo "Qt path missing"
+            exit 1
+          fi
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT"
           cmake --build build --parallel
@@ -213,7 +190,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
 
-      - name: Configure & build (Windows)
+      - name: Configure & build client (Windows)
         if: runner.os == 'Windows'
         working-directory: AdaptixClient
         shell: pwsh
@@ -231,7 +208,7 @@ jobs:
             -DOPENSSL_ROOT_DIR="$ssl"
           cmake --build build --parallel
 
-      - name: Configure & build (macOS)
+      - name: Configure & build client (macOS)
         if: runner.os == 'macOS'
         working-directory: AdaptixClient
         run: |
@@ -239,86 +216,125 @@ jobs:
           if [ -z "$QT_ROOT" ] && [ -n "${Qt6_DIR:-}" ]; then
             QT_ROOT="$(realpath "$Qt6_DIR/../../..")"
           fi
-          if [ -z "$QT_ROOT" ]; then echo "Qt path missing"; exit 1; fi
+          if [ -z "$QT_ROOT" ]; then
+            echo "Qt path missing"
+            exit 1
+          fi
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT" \
             -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
           cmake --build build --parallel
 
-      - name: Upload client binary
+      - name: Build native extenders (Linux / macOS)
+        if: runner.os != 'Windows'
+        working-directory: AdaptixServer
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          set -eux
+
+          build_listener() {
+            local dir="$1"
+            local out="$2"
+            shift 2
+            rm -rf "$dir/dist"
+            mkdir -p "$dir/dist"
+            cp "$dir/config.yaml" "$dir/ax_config.axs" "$dir/dist/"
+            (
+              cd "$dir"
+              go build -buildmode=plugin -ldflags="-s -w" -o "./dist/$out" "$@"
+            )
+          }
+
+          build_agent() {
+            local dir="$1"
+            local out="$2"
+            rm -rf "$dir/dist"
+            mkdir -p "$dir/dist"
+            cp "$dir/config.yaml" "$dir/ax_config.axs" "$dir/dist/"
+            (
+              cd "$dir"
+              go build -buildmode=plugin -ldflags="-s -w" -o "./dist/$out" .
+            )
+          }
+
+          build_listener extenders/beacon_listener_http listener_beacon_http.so pl_main.go pl_transport.go
+          build_listener extenders/beacon_listener_smb listener_beacon_smb.so pl_main.go pl_transport.go
+          build_listener extenders/beacon_listener_tcp listener_beacon_tcp.so pl_main.go pl_transport.go
+          build_listener extenders/beacon_listener_dns beacon_listener_dns.so pl_main.go pl_transport.go
+          build_listener extenders/gopher_listener_tcp listener_gopher_tcp.so pl_main.go pl_transport.go map.go
+          build_agent extenders/beacon_agent agent_beacon.so
+          build_agent extenders/gopher_agent agent_gopher.so
+
+      - name: Assemble bundle (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -eux
+          bundle="release/${{ matrix.artifact }}"
+          rm -rf "$bundle"
+          mkdir -p "$bundle/AdaptixServer" "$bundle/AdaptixClient"
+
+          cp "AdaptixServer/${{ matrix.server_output }}" "$bundle/AdaptixServer/"
+          cp "AdaptixServer/profile.yaml" "$bundle/AdaptixServer/"
+          cp "AdaptixServer/404page.html" "$bundle/AdaptixServer/"
+          cp "AdaptixServer/ssl_gen.sh" "$bundle/AdaptixServer/"
+          cp "AdaptixClient/build/${{ matrix.client_output }}" "$bundle/AdaptixClient/"
+
+          mkdir -p "$bundle/AdaptixServer/extenders"
+          for d in \
+            beacon_listener_http \
+            beacon_listener_smb \
+            beacon_listener_tcp \
+            beacon_listener_dns \
+            beacon_agent \
+            gopher_listener_tcp \
+            gopher_agent
+          do
+            mkdir -p "$bundle/AdaptixServer/extenders/$d"
+            cp -R "AdaptixServer/extenders/$d/dist" "$bundle/AdaptixServer/extenders/$d/"
+          done
+
+          cp README.md "$bundle/"
+
+      - name: Assemble bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundle = "release/${{ matrix.artifact }}"
+          Remove-Item $bundle -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "$bundle/AdaptixServer" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$bundle/AdaptixClient" | Out-Null
+
+          Copy-Item "AdaptixServer/${{ matrix.server_output }}" "$bundle/AdaptixServer/"
+          Copy-Item "AdaptixServer/404page.html" "$bundle/AdaptixServer/"
+          Copy-Item "AdaptixClient/build/${{ matrix.client_output }}" "$bundle/AdaptixClient/"
+          Copy-Item "README.md" "$bundle/"
+
+          $content = Get-Content "AdaptixServer/profile.yaml"
+          $result = New-Object System.Collections.Generic.List[string]
+          $skip = $false
+          foreach ($line in $content) {
+            if ($line -match '^  extenders:$') {
+              $result.Add('  extenders: []')
+              $skip = $true
+              continue
+            }
+            if ($skip) {
+              if ($line -match '^  axscripts:$') {
+                $skip = $false
+                $result.Add($line)
+              }
+              continue
+            }
+            $result.Add($line)
+          }
+          Set-Content "$bundle/AdaptixServer/profile.yaml" $result
+
+      - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: AdaptixClient/build/${{ matrix.exe }}
-
-  adaptix-extenders:
-    name: Extenders (plugins + cross-compile beacons)
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: AdaptixServer
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: AdaptixServer/go.mod
-          cache-dependency-path: |
-            AdaptixServer/go.sum
-            AdaptixServer/go.work.sum
-
-      - name: Install Go CGO + Clang/MinGW/NASM (beacon toolchains)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            pkg-config \
-            libsqlite3-dev \
-            clang \
-            nasm \
-            mingw-w64
-
-      - name: Build listener plugins (Go)
-        env:
-          CGO_ENABLED: "1"
-        run: |
-          set -eux
-          for d in \
-            extenders/beacon_listener_http \
-            extenders/beacon_listener_smb \
-            extenders/beacon_listener_tcp \
-            extenders/beacon_listener_dns \
-            extenders/gopher_listener_tcp \
-            extenders/listener_kharon_http
-          do
-            echo "===== make $d ====="
-            make -C "$d" all
-          done
-
-      - name: Build agents (Go plugin + beacon / gopher)
-        env:
-          CGO_ENABLED: "1"
-        run: |
-          set -eux
-          for d in extenders/beacon_agent extenders/agent_kharon extenders/gopher_agent
-          do
-            echo "===== make $d ====="
-            make -C "$d" all
-          done
-
-      - name: Upload extender outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: extenders-dist
-          if-no-files-found: warn
-          path: |
-            AdaptixServer/extenders/beacon_listener_http/dist
-            AdaptixServer/extenders/beacon_listener_smb/dist
-            AdaptixServer/extenders/beacon_listener_tcp/dist
-            AdaptixServer/extenders/beacon_listener_dns/dist
-            AdaptixServer/extenders/gopher_listener_tcp/dist
-            AdaptixServer/extenders/listener_kharon_http/dist
-            AdaptixServer/extenders/beacon_agent/dist
-            AdaptixServer/extenders/agent_kharon/dist
-            AdaptixServer/extenders/gopher_agent/dist
+          if-no-files-found: error
+          path: release/${{ matrix.artifact }}

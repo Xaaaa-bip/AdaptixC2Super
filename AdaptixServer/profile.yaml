@@ -4,7 +4,7 @@
 Teamserver:
   # Bind address. Use 127.0.0.1 and terminate TLS on a reverse proxy for a smaller exposure footprint.
   interface: "0.0.0.0"
-  port: 8080
+  port: 8843
   # Client "endpoint" is the URL path prefix; login URL = https://host:port<endpoint>/login (must match server).
   endpoint: "/api/login"
   password: "pass"
@@ -22,15 +22,13 @@ Teamserver:
   # tls_autogen_force: false
   # Or: ADAPTIX_TLS_AUTOGEN=1 ADAPTIX_TLS_AUTOGEN_CN=api.yourcompany.com ./AdaptixServer -profile profile.yaml
   extenders:
-    - "extenders/beacon_listener_http/config.yaml"
-    - "extenders/beacon_listener_smb/config.yaml"
-    - "extenders/beacon_listener_tcp/config.yaml"
-    - "extenders/beacon_listener_dns/config.yaml"
-    - "extenders/beacon_agent/config.yaml"
-    - "extenders/listener_kharon_http/config.yaml"
-    - "extenders/agent_kharon/config.yaml"
-    - "extenders/gopher_listener_tcp/config.yaml"
-    - "extenders/gopher_agent/config.yaml"
+    - "extenders/beacon_listener_http/dist/config.yaml"
+    - "extenders/beacon_listener_smb/dist/config.yaml"
+    - "extenders/beacon_listener_tcp/dist/config.yaml"
+    - "extenders/beacon_listener_dns/dist/config.yaml"
+    - "extenders/beacon_agent/dist/config.yaml"
+    - "extenders/gopher_listener_tcp/dist/config.yaml"
+    - "extenders/gopher_agent/dist/config.yaml"
   axscripts:
 #    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.
