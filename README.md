@@ -1,5 +1,12 @@
 # AdaptixC2 v1.2
 
+## 构建说明
+- git clone https://github.com/Xaaaa-bip/AdaptixC2
+- ./pre_install_linux_all.sh server
+- make server-ext
+- 
+
+
 ## 项目说明
 
 Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
