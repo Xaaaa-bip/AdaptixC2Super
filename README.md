@@ -1,11 +1,12 @@
 # AdaptixC2 v1.2
 
 ## 构建说明
+Server
 - git clone https://github.com/Xaaaa-bip/AdaptixC2
 - ./pre_install_linux_all.sh server
 - make server-ext
-- 
-
+Client
+- ./pre_install_linux_all.sh client
 
 ## 项目说明
 
