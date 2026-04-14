@@ -8,6 +8,12 @@ Server
 Client
 - ./pre_install_linux_all.sh client
 
+## 相关插件
+- https://github.com/danieloz147/SpyIt vnc
+- https://github.com/vikialora/PersisTask-BOF-AdaptixC2 计划任务
+- https://github.com/DarksBlackSk/Keylogger-BOF 键盘监听
+
+
 ## 项目说明
 
 Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
