@@ -307,7 +307,7 @@ function GenerateUI(listeners_type)
 
     let labelAgentFormat = form.create_label("Format:");
     let comboAgentFormat = form.create_combo()
-    comboAgentFormat.addItems(["Exe", "Service Exe", "DLL", "Shellcode", "Hex C"]);
+    comboAgentFormat.addItems(["Exe", "Service Exe", "DLL", "Shellcode", "Hex C", "Artifact Go Exe", "Artifact C++ Exe", "Artifact C++ DLL"]);
 
     let labelSleep = form.create_label("Sleep (Jitter %):");
     let textSleep = form.create_textline("4s");

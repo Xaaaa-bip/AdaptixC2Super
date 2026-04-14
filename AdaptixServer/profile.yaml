@@ -31,6 +31,8 @@ Teamserver:
     - "extenders/agent_kharon/config.yaml"
     - "extenders/gopher_listener_tcp/config.yaml"
     - "extenders/gopher_agent/config.yaml"
+    - "extenders/pillager_bridge/config.yaml"
+    - "extenders/notifier/config.yaml"
   axscripts:
 #    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.

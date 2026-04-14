@@ -117,7 +117,7 @@ DWORD WINAPI AsyncBofThreadProc(LPVOID lpParameter)
         return 1;
     }
     
-    ctx->mapFunctions = (LPVOID*)ApiWin->VirtualAlloc(NULL, MAP_FUNCTIONS_SIZE, MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN, PAGE_EXECUTE_READWRITE);
+    ctx->mapFunctions = (LPVOID*)ApiWin->VirtualAlloc(NULL, MAP_FUNCTIONS_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!ctx->mapFunctions) {
         CleanupSections(ctx->mapSections, MAX_SECTIONS);
         ctx->state = ASYNC_BOF_STATE_FINISHED;

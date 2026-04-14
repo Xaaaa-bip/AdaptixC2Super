@@ -4,7 +4,7 @@
 #include "ApiDefines.h"
 #include "Packer.h"
 
-#define MAX_SECTIONS	   25
+#define MAX_SECTIONS	   256
 #define MAP_FUNCTIONS_SIZE 4096
 
 #define IMAGE_REL_AMD64_ADDR64   0x0001

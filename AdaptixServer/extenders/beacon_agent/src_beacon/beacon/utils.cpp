@@ -4,12 +4,14 @@
 
 LPVOID MemAllocLocal(DWORD bufferSize) 
 {
+	AX_JUNK_4;
 	return ApiWin->LocalAlloc(LPTR, bufferSize);
 	//return ApiWin->HeapAlloc(GetProcessHeap(), 0, bufferSize);
 }
 
 LPVOID MemReallocLocal(LPVOID buffer, DWORD bufferSize) 
 {
+    AX_JUNK_5;
     LPVOID mem = ApiWin->LocalReAlloc( buffer, bufferSize, LMEM_MOVEABLE);
     //LPVOID mem = ApiWin->HeapReAlloc(GetProcessHeap(), 0, buffer, bufferSize);
     return mem;

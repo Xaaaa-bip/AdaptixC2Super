@@ -12,6 +12,8 @@ all: clean
 	@ $(MAKE) -C $(ROOT)src_beacon --no-print-directory
 	@ mkdir -p $(ROOT)dist/beacon
 	@ cp $(ROOT)src_beacon/beacon/Linker.ld $(ROOT)dist/beacon/Linker.ld
+	@ cp $(ROOT)src_beacon/beacon/Shellcode.ld $(ROOT)dist/beacon/Shellcode.ld
+	@ cp -r $(ROOT)artifacts $(ROOT)dist/
 	@ mv $(ROOT)src_beacon/objects_http $(ROOT)dist/objects_http
 	@ mv $(ROOT)src_beacon/objects_smb $(ROOT)dist/objects_smb
 	@ mv $(ROOT)src_beacon/objects_tcp $(ROOT)dist/objects_tcp

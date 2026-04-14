@@ -3,6 +3,7 @@
 #include "std.cpp"
 #include "Packer.h"
 #include "ApiLoader.h"
+#include "bof_loader.h"
 
 #define ASYNC_BOF_STATE_PENDING   0x0
 #define ASYNC_BOF_STATE_RUNNING   0x1
@@ -27,7 +28,7 @@ struct AsyncBofContext {
     CRITICAL_SECTION outputLock;
     Packer* outputBuffer;
     
-    PCHAR   mapSections[25];
+    PCHAR   mapSections[MAX_SECTIONS];
     LPVOID* mapFunctions;
 };
 

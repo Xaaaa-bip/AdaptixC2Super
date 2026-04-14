@@ -17,12 +17,11 @@ SOURCE_FILES := \
 all: clean
 	@ echo "    * Building listener_kharon_http plugin"
 	@ mkdir -p $(DIST_DIR)
+	@ cp -f config.yaml ax_config.axs $(DIST_DIR)/
 	@ GOEXPERIMENT=$(GOEXPERIMENT) $(GO) build $(GOFLAGS) -o $(OUTPUT_FILE) $(SOURCE_FILES)
 	@ echo "      done..."
 
 clean:
 	@ echo "    * Cleaning build artifacts..."
-	@if [ -f "$(PLUGIN_OUT)" ]; then \
-		rm -f "$(OUTPUT_FILE)"; \
-	fi
+	@ rm -rf $(DIST_DIR)
 	@ echo "      done..."

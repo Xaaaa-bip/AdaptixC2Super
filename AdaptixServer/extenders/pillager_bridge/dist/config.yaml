@@ -1,0 +1,8 @@
+extender_type: "service"
+extender_file: "pillager_bridge.so"
+ax_file: "ax_config.axs"
+
+service_name: "pillager_bridge"
+service_config: |
+  # 默认从服务端 dist/extenders/pillager_bridge/bofs/*.o 读取并下发（make extenders 时从 beacon_agent 拷贝）。
+  # 「高级」子菜单仍支持本机 execute bof 与 Base64。
