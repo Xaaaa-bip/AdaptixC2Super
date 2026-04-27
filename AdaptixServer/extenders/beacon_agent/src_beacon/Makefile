@@ -47,6 +47,9 @@ OPTIMIZATION_FLAGS := -fno-exceptions \
 SEED ?= unknown
 SEED_FLAG := -DAX_BUILD_SEED=$(SEED)
 
+# Extra per-build flags injected by pl_main.go (e.g. random -falign-functions=N)
+EXTRA_FLAGS ?=
+
 COMMON_FLAGS := -I $(BEACON_DIR) \
                 -include beacon/DynamicPolymorphism.h \
                 -Os \
@@ -67,7 +70,8 @@ COMMON_FLAGS := -I $(BEACON_DIR) \
                 -fPIC \
                 $(SECURITY_FLAGS) \
                 $(OPTIMIZATION_FLAGS) \
-                $(SEED_FLAG)
+                $(SEED_FLAG) \
+                $(EXTRA_FLAGS)
 
 NASM := nasm
 BEACON_ASM := beacon/asm

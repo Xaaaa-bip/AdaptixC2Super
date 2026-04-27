@@ -2,11 +2,12 @@
 #include <QUrlQuery>
 
 
-DownloaderWorker::DownloaderWorker(const QUrl &url, const QString &otp, const QString &savedPath)
+DownloaderWorker::DownloaderWorker(const QUrl &url, const QString &otp, const QString &savedPath, const QSslConfiguration &sslCfg)
 {
     this->savedPath = savedPath;
     this->otp       = otp;
     this->url       = QUrl(url);
+    this->sslConfiguration = sslCfg;
     this->cancelled = false;
     this->error     = false;
     this->lastBytes = 0;
@@ -30,6 +31,7 @@ void DownloaderWorker::start()
     requestUrl.setQuery(query);
 
     QNetworkRequest request(requestUrl);
+    request.setSslConfiguration(this->sslConfiguration);
 
     this->networkReply = this->networkManager->get(request);
 

@@ -6,6 +6,7 @@
 #include <QNetworkReply>
 #include <QFile>
 #include <QElapsedTimer>
+#include <QSslConfiguration>
 
 class DownloaderWorker : public QObject {
 Q_OBJECT
@@ -16,12 +17,13 @@ Q_OBJECT
     QString otp;
     QString savedPath;
     QFile   savedFile;
+    QSslConfiguration sslConfiguration;
     bool    cancelled;
     bool    error;
     qint64  lastBytes;
 
 public:
-    DownloaderWorker(const QUrl &url, const QString &otp, const QString &savedPath);
+    DownloaderWorker(const QUrl &url, const QString &otp, const QString &savedPath, const QSslConfiguration &sslCfg);
     ~DownloaderWorker() override;
 
     bool IsError();

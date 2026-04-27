@@ -9,7 +9,7 @@
 #include <QGuiApplication>
 #include <QScreen>
 
-DialogDownloader::DialogDownloader(const QString &url, const QString &otp, const QString &savedPath, QWidget *parent) : QDialog(parent)
+DialogDownloader::DialogDownloader(const QString &url, const QString &otp, const QString &savedPath, const QSslConfiguration &sslCfg, QWidget *parent) : QDialog(parent)
 {
     this->setWindowTitle("Synchronization...");
     this->resize(400, 150);
@@ -25,6 +25,8 @@ DialogDownloader::DialogDownloader(const QString &url, const QString &otp, const
     cancelButton = new QPushButton("Cancel", this);
 
     QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(5);
     layout->addWidget(statusLabel);
     layout->addWidget(progressBar);
     layout->addWidget(speedLabel);
@@ -38,7 +40,7 @@ DialogDownloader::DialogDownloader(const QString &url, const QString &otp, const
     lineeditPath->setReadOnly(false);
 
     workerThread = new QThread(this);
-    worker = new DownloaderWorker(url, otp, savedPath);
+    worker = new DownloaderWorker(url, otp, savedPath, sslCfg);
     worker->moveToThread(workerThread);
 
     connect(workerThread, &QThread::started,     worker, &DownloaderWorker::start);

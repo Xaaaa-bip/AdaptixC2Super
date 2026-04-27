@@ -1,5 +1,6 @@
 #include "ProcLoader.h"
 #include "ApiLoader.h"
+#include "ApiDefines.h"
 #include "utils.h"
 #include "ntdll.h"
 
@@ -15,7 +16,7 @@ ULONG Djb2A(PUCHAR str)
             c += 0x20;
         hash = ((hash << 5) + hash) + c;
     }
-    return hash;
+    return hash ^ AX_HASH_SALT;
 }
 
 ULONG Djb2W(PWCHAR str) 
@@ -30,7 +31,7 @@ ULONG Djb2W(PWCHAR str)
             c += 0x20;
         hash = ((hash << 5) + hash) + c;
     }
-    return hash;
+    return hash ^ AX_HASH_SALT;
 }
 
 /* REFACTOR_STRATEGY §3: no static IAT for module bases — PEB (GS:[0x60] / FS:[0x30]) → Ldr → InMemoryOrderModuleList + export hash. */

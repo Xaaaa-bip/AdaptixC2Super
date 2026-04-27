@@ -7,6 +7,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QThread>
+#include <QSslConfiguration>
 
 class DownloaderWorker;
 
@@ -23,7 +24,7 @@ Q_OBJECT
     DownloaderWorker* worker;
 
 public:
-    explicit DialogDownloader(const QString &url, const QString &otp, const QString &savedPath, QWidget *parent = nullptr);
+    explicit DialogDownloader(const QString &url, const QString &otp, const QString &savedPath, const QSslConfiguration &sslCfg, QWidget *parent = nullptr);
     ~DialogDownloader() override;
 };
 

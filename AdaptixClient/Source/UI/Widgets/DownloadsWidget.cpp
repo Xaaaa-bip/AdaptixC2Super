@@ -360,7 +360,7 @@ void DownloadsWidget::actionSync()
 
             QString sUrl = adaptixWidget->GetProfile()->GetURL() + "/otp/download/sync";
 
-            DialogDownloader dialog(sUrl, otp, savedPath);
+            DialogDownloader dialog(sUrl, otp, savedPath, adaptixWidget->GetProfile()->sslConfiguration());
             dialog.exec();
     });
 }
