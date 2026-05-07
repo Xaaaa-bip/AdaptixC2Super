@@ -73,8 +73,8 @@ DialogConnect::~DialogConnect() = default;
 
 void DialogConnect::createUI()
 {
-    resize(720, 540);
-    setFixedSize(720, 540);
+    resize(720, 470);
+    setFixedSize(720, 470);
     setWindowTitle("Connect");
     setProperty("Main", "base");
 
@@ -115,41 +115,6 @@ void DialogConnect::createUI()
     serverLayout->addWidget(label_Url,     0, 0);
     serverLayout->addWidget(lineEdit_Url,  0, 1);
     serverLayout->setColumnMinimumWidth(0, 100);
-
-    groupTls = new QGroupBox("TLS (server certificate trust)", this);
-    auto tlsLayout = new QGridLayout(groupTls);
-    tlsLayout->setContentsMargins(10, 10, 10, 10);
-    tlsLayout->setHorizontalSpacing(8);
-    tlsLayout->setVerticalSpacing(6);
-    auto *labelCa = new QLabel("CA / server PEM:", this);
-    lineEdit_TlsCa = new QLineEdit(this);
-    lineEdit_TlsCa->setPlaceholderText("PEM of CA or self-signed server cert; empty = no TLS verify (insecure)");
-    lineEdit_TlsCa->setToolTip("Copy from Teamserver (e.g. server.rsa.crt or your CA). Required to trust server-generated TLS only.");
-    buttonTlsCa = new QPushButton("…", this);
-    buttonTlsCa->setFixedWidth(32);
-    connect(buttonTlsCa, &QPushButton::clicked, this, &DialogConnect::onPickTlsCa);
-    auto *labelCli = new QLabel("Client cert (mTLS):", this);
-    lineEdit_TlsClientCert = new QLineEdit(this);
-    lineEdit_TlsClientCert->setPlaceholderText("Optional PEM if Teamserver uses client_auth");
-    buttonTlsClientCert = new QPushButton("…", this);
-    buttonTlsClientCert->setFixedWidth(32);
-    connect(buttonTlsClientCert, &QPushButton::clicked, this, &DialogConnect::onPickTlsClientCert);
-    auto *labelKey = new QLabel("Client key:", this);
-    lineEdit_TlsClientKey = new QLineEdit(this);
-    lineEdit_TlsClientKey->setPlaceholderText("Optional PEM private key");
-    buttonTlsClientKey = new QPushButton("…", this);
-    buttonTlsClientKey->setFixedWidth(32);
-    connect(buttonTlsClientKey, &QPushButton::clicked, this, &DialogConnect::onPickTlsClientKey);
-    tlsLayout->addWidget(labelCa, 0, 0);
-    tlsLayout->addWidget(lineEdit_TlsCa, 0, 1);
-    tlsLayout->addWidget(buttonTlsCa, 0, 2);
-    tlsLayout->addWidget(labelCli, 1, 0);
-    tlsLayout->addWidget(lineEdit_TlsClientCert, 1, 1);
-    tlsLayout->addWidget(buttonTlsClientCert, 1, 2);
-    tlsLayout->addWidget(labelKey, 2, 0);
-    tlsLayout->addWidget(lineEdit_TlsClientKey, 2, 1);
-    tlsLayout->addWidget(buttonTlsClientKey, 2, 2);
-    tlsLayout->setColumnMinimumWidth(0, 120);
 
     groupProject = new QGroupBox("Project", this);
     auto projectLayout = new QGridLayout(groupProject);
@@ -295,7 +260,6 @@ void DialogConnect::createUI()
     formLayout->setSpacing(10);
     formLayout->addWidget(groupUserInfo);
     formLayout->addWidget(groupServerDetails);
-    formLayout->addWidget(groupTls);
     formLayout->addWidget(groupProject);
     formLayout->addStretch(1);
     formLayout->addLayout(actionButtonsLayout);
@@ -387,9 +351,6 @@ AuthProfile* DialogConnect::StartDialog()
     parseUrl(host, port, endpoint);
 
     auto* newProfile = new AuthProfile(lineEdit_Project->text(), lineEdit_User->text(), lineEdit_Password->text(), host, port, endpoint, projectDir);
-    newProfile->SetTlsCaCertPath(lineEdit_TlsCa->text());
-    newProfile->SetTlsClientCertPath(lineEdit_TlsClientCert->text());
-    newProfile->SetTlsClientKeyPath(lineEdit_TlsClientKey->text());
 
     QStringList selectedSubs;
     for (int i = 0; i < dataListWidget->count(); ++i) {
@@ -489,9 +450,6 @@ void DialogConnect::onProfileSelected()
             lineEdit_Url->setText(buildUrl(p.GetHost(), p.GetPort(), p.GetEndpoint()));
             lineEdit_User->setText(p.GetUsername());
             lineEdit_Password->setText(p.GetPassword());
-            lineEdit_TlsCa->setText(p.GetTlsCaCertPath());
-            lineEdit_TlsClientCert->setText(p.GetTlsClientCertPath());
-            lineEdit_TlsClientKey->setText(p.GetTlsClientKeyPath());
 
             QStringList subs = p.GetSubscriptions();
             dataListWidget->blockSignals(true);
@@ -552,19 +510,6 @@ bool DialogConnect::checkValidInput() const
         return false;
     }
 
-    const bool hasCliCert = !lineEdit_TlsClientCert->text().trimmed().isEmpty();
-    const bool hasCliKey = !lineEdit_TlsClientKey->text().trimmed().isEmpty();
-    if (hasCliCert != hasCliKey) {
-        MessageError("Client certificate and client key must both be set, or both empty");
-        return false;
-    }
-
-    const QString caPath = lineEdit_TlsCa->text().trimmed();
-    if (!caPath.isEmpty() && !QFile::exists(caPath)) {
-        MessageError("TLS CA/server PEM file not found");
-        return false;
-    }
-
     if (GlobalClient->storage->ExistsProject(lineEdit_Project->text()) && isNewProject) {
         MessageError("Project already exists");
         return false;
@@ -588,9 +533,6 @@ void DialogConnect::clearFields()
     lineEdit_Project->clear();
     lineEdit_ProjectDir->clear();
     lineEdit_Url->clear();
-    lineEdit_TlsCa->clear();
-    lineEdit_TlsClientCert->clear();
-    lineEdit_TlsClientKey->clear();
     cardWidget->clearSelection();
 
     dataListWidget->blockSignals(true);
@@ -693,17 +635,7 @@ void DialogConnect::onButton_Load()
             lineEdit_Password->setText(json["password"].toString());
             lineEdit_Url->setText(buildUrl(json["host"].toString(), json["port"].toString(), json["endpoint"].toString()));
 
-            lineEdit_TlsCa->setText(json.contains("tlsCaCert") ? json["tlsCaCert"].toString() : QString());
-            lineEdit_TlsClientCert->setText(json.contains("tlsClientCert") ? json["tlsClientCert"].toString() : QString());
-            lineEdit_TlsClientKey->setText(json.contains("tlsClientKey") ? json["tlsClientKey"].toString() : QString());
-
             AuthProfile loadedProfile(project, json["username"].toString(), json["password"].toString(), json["host"].toString(), json["port"].toString(), json["endpoint"].toString(), projectDirFinal);
-            if (json.contains("tlsCaCert"))
-                loadedProfile.SetTlsCaCertPath(json["tlsCaCert"].toString());
-            if (json.contains("tlsClientCert"))
-                loadedProfile.SetTlsClientCertPath(json["tlsClientCert"].toString());
-            if (json.contains("tlsClientKey"))
-                loadedProfile.SetTlsClientKeyPath(json["tlsClientKey"].toString());
 
             if (isNewProject)
                 GlobalClient->storage->AddProject(loadedProfile);
@@ -743,12 +675,6 @@ void DialogConnect::onButton_Save()
     json["username"] = lineEdit_User->text().trimmed();
     json["password"] = lineEdit_Password->text();
     json["projectDir"] = projectDir;
-    if (!lineEdit_TlsCa->text().trimmed().isEmpty())
-        json["tlsCaCert"] = lineEdit_TlsCa->text().trimmed();
-    if (!lineEdit_TlsClientCert->text().trimmed().isEmpty())
-        json["tlsClientCert"] = lineEdit_TlsClientCert->text().trimmed();
-    if (!lineEdit_TlsClientKey->text().trimmed().isEmpty())
-        json["tlsClientKey"] = lineEdit_TlsClientKey->text().trimmed();
 
     QString baseDir = QDir::homePath();
     QString projectDirText = lineEdit_ProjectDir->text().trimmed();
@@ -786,31 +712,4 @@ void DialogConnect::showSubsPopup()
 void DialogConnect::onSubsSelectionChanged()
 {
     updateSubsDisplay();
-}
-
-static QString pickPemFile(QWidget *parent, const QString &title)
-{
-    return QFileDialog::getOpenFileName(parent, title, QDir::homePath(),
-        "PEM / certificate (*.pem *.crt);;All files (*.*)");
-}
-
-void DialogConnect::onPickTlsCa()
-{
-    const QString f = pickPemFile(this, "CA or server certificate (PEM)");
-    if (!f.isEmpty())
-        lineEdit_TlsCa->setText(f);
-}
-
-void DialogConnect::onPickTlsClientCert()
-{
-    const QString f = pickPemFile(this, "Client certificate (PEM)");
-    if (!f.isEmpty())
-        lineEdit_TlsClientCert->setText(f);
-}
-
-void DialogConnect::onPickTlsClientKey()
-{
-    const QString f = pickPemFile(this, "Client private key (PEM)");
-    if (!f.isEmpty())
-        lineEdit_TlsClientKey->setText(f);
 }

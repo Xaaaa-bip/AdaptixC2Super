@@ -1,8 +1,6 @@
 #include <Client/AuthProfile.h>
 
-#include <QFile>
-#include <QSslCertificate>
-#include <QSslKey>
+#include <QSslSocket>
 #include <QWebSocket>
 
 AuthProfile::AuthProfile()
@@ -24,65 +22,11 @@ AuthProfile::AuthProfile(const QString &project, const QString &username, const 
 
 AuthProfile::~AuthProfile() {}
 
-QString AuthProfile::GetTlsCaCertPath() const { return tlsCaCertPath; }
-
-QString AuthProfile::GetTlsClientCertPath() const { return tlsClientCertPath; }
-
-QString AuthProfile::GetTlsClientKeyPath() const { return tlsClientKeyPath; }
-
-void AuthProfile::SetTlsCaCertPath(const QString &path) { tlsCaCertPath = path.trimmed(); }
-
-void AuthProfile::SetTlsClientCertPath(const QString &path) { tlsClientCertPath = path.trimmed(); }
-
-void AuthProfile::SetTlsClientKeyPath(const QString &path) { tlsClientKeyPath = path.trimmed(); }
-
 QSslConfiguration AuthProfile::sslConfiguration() const
 {
     QSslConfiguration cfg = QSslConfiguration::defaultConfiguration();
     cfg.setProtocol(QSsl::TlsV1_2OrLater);
-
-    const QString caPath = tlsCaCertPath.trimmed();
-    if (caPath.isEmpty()) {
-        cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
-        return cfg;
-    }
-
-    QFile f(caPath);
-    if (!f.open(QIODevice::ReadOnly)) {
-        cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
-        return cfg;
-    }
-    const QByteArray pem = f.readAll();
-    f.close();
-
-    QList<QSslCertificate> cas = QSslCertificate::fromData(pem, QSsl::Pem);
-    if (cas.isEmpty())
-        cas = QSslCertificate::fromData(pem, QSsl::Der);
-    if (cas.isEmpty()) {
-        cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
-        return cfg;
-    }
-
-    cfg.setCaCertificates(cas);
-    cfg.setPeerVerifyMode(QSslSocket::VerifyPeer);
-
-    const QString cliCert = tlsClientCertPath.trimmed();
-    const QString cliKey = tlsClientKeyPath.trimmed();
-    if (!cliCert.isEmpty() && !cliKey.isEmpty()) {
-        QFile cf(cliCert);
-        QFile kf(cliKey);
-        if (cf.open(QIODevice::ReadOnly) && kf.open(QIODevice::ReadOnly)) {
-            QList<QSslCertificate> lc = QSslCertificate::fromDevice(&cf, QSsl::Pem);
-            if (!lc.isEmpty())
-                cfg.setLocalCertificate(lc.first());
-            QSslKey key(&kf, QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey);
-            if (key.isNull())
-                key = QSslKey(&kf, QSsl::Ec, QSsl::Pem, QSsl::PrivateKey);
-            if (!key.isNull())
-                cfg.setPrivateKey(key);
-        }
-    }
-
+    cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
     return cfg;
 }
 
@@ -91,12 +35,10 @@ void AuthProfile::applyTlsToWebSocket(QWebSocket *ws, const QSslConfiguration &c
     if (!ws)
         return;
     ws->setSslConfiguration(cfg);
-    if (cfg.peerVerifyMode() == QSslSocket::VerifyNone) {
-        QObject::connect(ws, &QWebSocket::sslErrors, ws, [ws](const QList<QSslError> &errors) {
-            Q_UNUSED(errors)
-            ws->ignoreSslErrors();
-        });
-    }
+    QObject::connect(ws, &QWebSocket::sslErrors, ws, [ws](const QList<QSslError> &errors) {
+        Q_UNUSED(errors)
+        ws->ignoreSslErrors();
+    });
 }
 
 QString AuthProfile::GetProject() { return this->project; };

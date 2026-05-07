@@ -16,7 +16,6 @@
 #include <QStyle>
 #include <QStylePainter>
 #include <QTimer>
-#include <QtGlobal>
 
 #include <array>
 
@@ -70,9 +69,7 @@ public:
     const auto type = e->type();
     switch (type) {
       case QEvent::LayoutRequest:
-#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
       case QEvent::DevicePixelRatioChange:
-#endif
         callResize();
         break;
       default:

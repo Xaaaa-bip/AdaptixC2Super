@@ -115,12 +115,6 @@ QVector<AuthProfile> Storage::ListProjects()
                                 json["port"].toString(),
                                 json["endpoint"].toString(),
                                 json["projectDir"].toString());
-            if (json.contains("tlsCaCert"))
-                profile.SetTlsCaCertPath(json["tlsCaCert"].toString());
-            if (json.contains("tlsClientCert"))
-                profile.SetTlsClientCertPath(json["tlsClientCert"].toString());
-            if (json.contains("tlsClientKey"))
-                profile.SetTlsClientKeyPath(json["tlsClientKey"].toString());
 
             if (json.contains("subscriptions")) {
                 QStringList subs;
@@ -206,12 +200,6 @@ void Storage::AddProject(AuthProfile profile)
     json["projectDir"] = profile.GetProjectDir();
     json["subscriptions"] = QJsonArray::fromStringList(profile.GetSubscriptions());
     json["consoleMultiuser"] = profile.GetConsoleMultiuser();
-    if (!profile.GetTlsCaCertPath().isEmpty())
-        json["tlsCaCert"] = profile.GetTlsCaCertPath();
-    if (!profile.GetTlsClientCertPath().isEmpty())
-        json["tlsClientCert"] = profile.GetTlsClientCertPath();
-    if (!profile.GetTlsClientKeyPath().isEmpty())
-        json["tlsClientKey"] = profile.GetTlsClientKeyPath();
     QString data = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
     QSqlQuery query(QSqlDatabase::database(DB_CONNECTION_NAME));
@@ -233,12 +221,6 @@ void Storage::UpdateProject(AuthProfile profile)
     json["projectDir"] = profile.GetProjectDir();
     json["subscriptions"] = QJsonArray::fromStringList(profile.GetSubscriptions());
     json["consoleMultiuser"] = profile.GetConsoleMultiuser();
-    if (!profile.GetTlsCaCertPath().isEmpty())
-        json["tlsCaCert"] = profile.GetTlsCaCertPath();
-    if (!profile.GetTlsClientCertPath().isEmpty())
-        json["tlsClientCert"] = profile.GetTlsClientCertPath();
-    if (!profile.GetTlsClientKeyPath().isEmpty())
-        json["tlsClientKey"] = profile.GetTlsClientKeyPath();
     QString data = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
     QSqlQuery query(QSqlDatabase::database(DB_CONNECTION_NAME));

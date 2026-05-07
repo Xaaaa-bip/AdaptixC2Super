@@ -3,10 +3,8 @@
 
 void HttpRequestManager::setTlsFromProfile(const AuthProfile *profile)
 {
-    if (profile)
-        m_sslConfig = profile->sslConfiguration();
-    else
-        setupSslConfig();
+    Q_UNUSED(profile)
+    setupSslConfig();
 }
 
 HttpRequestManager& HttpRequestManager::instance()

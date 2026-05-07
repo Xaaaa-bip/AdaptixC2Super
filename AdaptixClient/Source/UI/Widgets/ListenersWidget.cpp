@@ -183,6 +183,13 @@ void ListenersWidget::onFilterUpdate() const
 
 void ListenersWidget::handleListenersMenu(const QPoint &pos) const
 {
+    // Right-click does not always select the row; Generate agent requires a selection.
+    const QModelIndex proxyIndex = tableView->indexAt(pos);
+    if (proxyIndex.isValid()) {
+        tableView->selectRow(proxyIndex.row());
+        tableView->setCurrentIndex(proxyIndex);
+    }
+
     QMenu listenerMenu = QMenu();
 
     listenerMenu.addAction("Create", this, &ListenersWidget::onCreateListener);
@@ -442,11 +449,14 @@ void ListenersWidget::onResumeListener() const
 
 void ListenersWidget::onGenerateAgent() const
 {
-    if (tableView->selectionModel()->selectedRows().empty())
+    const QModelIndexList selected = tableView->selectionModel()->selectedRows();
+    if (selected.isEmpty()) {
+        MessageError(QStringLiteral("请先在监听器列表中选中一行，或在该行上单击右键后再选择「Generate agent」。"));
         return;
+    }
 
-    QModelIndex currentIndex = tableView->currentIndex();
-    QModelIndex sourceIndex = proxyModel->mapToSource(currentIndex);
+    // Use selectedRows() — after a context menu, currentIndex() can be invalid with Qt::NoFocus on the table.
+    QModelIndex sourceIndex = proxyModel->mapToSource(selected.first());
     if (!sourceIndex.isValid())
         return;
 
@@ -454,6 +464,10 @@ void ListenersWidget::onGenerateAgent() const
     auto listenerRegName = listenersModel->data(listenersModel->index(sourceIndex.row(), LC_RegName), Qt::DisplayRole).toString();
 
     QList<QString> agentNames = adaptixWidget->GetAgentNames(listenerRegName);
+    if (agentNames.isEmpty()) {
+        MessageError(QStringLiteral("没有已注册的 Agent 类型与监听器类型「%1」匹配。请确认 Teamserver 已加载对应 Agent 扩展且客户端已完成同步。").arg(listenerRegName));
+        return;
+    }
 
     QStringList agents;
     QMap<QString, AxUI> ax_uis;
@@ -461,8 +475,8 @@ void ListenersWidget::onGenerateAgent() const
     for (auto agent : agentNames) {
         auto engine = adaptixWidget->ScriptManager->AgentScriptEngine(agent);
         if (engine == nullptr) {
-            adaptixWidget->ScriptManager->consolePrintError(QString("Listener %1 is not registered").arg(agent));
-            return;;
+            adaptixWidget->ScriptManager->consolePrintError(QString("Agent %1 script is not registered").arg(agent));
+            return;
         }
 
         QJSValue func = engine->globalObject().property("GenerateUI");

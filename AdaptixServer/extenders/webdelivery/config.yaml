@@ -1,0 +1,14 @@
+extender_type: "service"
+extender_file: "webdelivery.so"
+
+service_name: "webdelivery"
+service_config: |
+  script_route: "/deliver"
+  payload_route: "/deliver/payload"
+  listener: "http"
+  agent_name: "beacon"
+  format: "Artifact Go Exe"
+  sleep: "5s"
+  jitter: 20
+  cache_ttl_min: 60
+  c2_host_url: ""

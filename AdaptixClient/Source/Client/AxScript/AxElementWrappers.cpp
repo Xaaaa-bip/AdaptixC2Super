@@ -293,6 +293,7 @@ AxCheckBoxWrapper::AxCheckBoxWrapper(QCheckBox* box, QObject* parent) : QObject(
 #else
     connect(check, &QCheckBox::stateChanged, this, &AxCheckBoxWrapper::stateChanged);
 #endif
+    connect(check, &QCheckBox::toggled, this, &AxCheckBoxWrapper::toggled);
 }
 
 QVariant AxCheckBoxWrapper::jsonMarshal() const { return isChecked(); }
@@ -303,7 +304,7 @@ QCheckBox * AxCheckBoxWrapper::widget() const { return check; }
 
 bool AxCheckBoxWrapper::isChecked() const { return check->isChecked(); }
 
-bool AxCheckBoxWrapper::checked() const { return isChecked(); }
+bool AxCheckBoxWrapper::checked() const { return check->isChecked(); }
 
 void AxCheckBoxWrapper::setChecked(const bool checked) const { check->setChecked(checked); }
 
