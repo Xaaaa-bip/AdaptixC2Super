@@ -1,8 +1,0 @@
-extender_type: "service"
-extender_file: "web_delivery.so"
-ax_file: "ax_config.axs"
-
-service_name: "web_delivery"
-service_config: |
-  restore_database: true
-  enabled: true
