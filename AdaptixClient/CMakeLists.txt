@@ -1,15 +1,25 @@
 cmake_minimum_required(VERSION 3.28) # 3.15
 project(AdaptixClient LANGUAGES C CXX)
 
+option(ADAPTIX_STATIC_QT
+    "Link against a static Qt build (Windows: one exe, no Qt DLLs; you must install/build static Qt and set CMAKE_PREFIX_PATH)"
+    OFF)
+if(ADAPTIX_STATIC_QT)
+    add_compile_definitions(QT_STATIC)
+endif()
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Local MSYS2 MinGW: default. CI / Visual Studio Qt: cmake -DADAPTIX_USE_SYSTEM_QT6=ON -DCMAKE_PREFIX_PATH=<Qt root>
-option(ADAPTIX_USE_SYSTEM_QT6 "Find Qt6 via CMAKE_PREFIX_PATH (e.g. GitHub Actions MSVC Qt)" OFF)
-if(WIN32 AND NOT ADAPTIX_USE_SYSTEM_QT6)
-    set(Qt6_DIR "C:/msys64/mingw64/lib/cmake")
+if(WIN32)
+    if(NOT Qt6_DIR AND DEFINED ENV{Qt6_DIR} AND NOT "$ENV{Qt6_DIR}" STREQUAL "")
+        file(TO_CMAKE_PATH "$ENV{Qt6_DIR}" Qt6_DIR)
+    endif()
+    if(NOT Qt6_DIR)
+        set(Qt6_DIR "C:/msys64/mingw64/lib/cmake" CACHE PATH "Qt6 CMake dir (parent of Qt6/Qt6Config.cmake)")
+    endif()
 endif()
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
 
@@ -34,6 +44,7 @@ find_package(Qt6
         WebSockets
         Sql
         Qml
+        Svg
 )
 
 include_directories(
@@ -100,11 +111,11 @@ SET( HEADERS
         Headers/Utils/Logs.h
         Headers/UI/Dialogs/DialogConnect.h
         Headers/Utils/Convert.h
+        Headers/Utils/IpdbReader.h
         Headers/MainAdaptix.h
         Headers/Client/Storage.h
         Headers/Client/AuthProfile.h
         Headers/Utils/FileSystem.h
-        Headers/Utils/IpdbReader.h
         Headers/Client/Requestor.h
         Headers/Client/HttpRequestManager.h
         Headers/UI/MainUI.h
@@ -116,6 +127,7 @@ SET( HEADERS
         Headers/UI/Dialogs/DialogListener.h
         Headers/UI/Widgets/SessionsTableWidget.h
         Headers/UI/Dialogs/DialogAgent.h
+        Headers/UI/Dialogs/DialogWebDelivery.h
         Headers/UI/Widgets/ConsoleWidget.h
         Headers/Agent/Agent.h
         Headers/Workers/LastTickWorker.h
@@ -190,11 +202,11 @@ add_executable(AdaptixClient
         Source/UI/Dialogs/DialogConnect.cpp
         Source/UI/Dialogs/DialogSubscriptions.cpp
         Source/Utils/Convert.cpp
+        Source/Utils/IpdbReader.cpp
         Source/MainAdaptix.cpp
         Source/Client/Storage.cpp
         Source/Client/AuthProfile.cpp
         Source/Utils/FileSystem.cpp
-        Source/Utils/IpdbReader.cpp
         Source/Client/Requestor.cpp
         Source/Client/HttpRequestManager.cpp
         Source/UI/MainUI.cpp
@@ -207,6 +219,7 @@ add_executable(AdaptixClient
         Source/UI/Dialogs/DialogListener.cpp
         Source/UI/Widgets/SessionsTableWidget.cpp
         Source/UI/Dialogs/DialogAgent.cpp
+        Source/UI/Dialogs/DialogWebDelivery.cpp
         Source/UI/Dialogs/DialogAgentData.cpp
         Source/UI/Widgets/ConsoleWidget.cpp
         Source/Agent/Agent.cpp
@@ -263,6 +276,15 @@ add_executable(AdaptixClient
         Source/Utils/TitleBarStyle.cpp
 )
 
+set(ADAPTIX_QQWRY_IPDB "${CMAKE_CURRENT_SOURCE_DIR}/qqwry.ipdb")
+if (EXISTS "${ADAPTIX_QQWRY_IPDB}")
+    add_custom_command(TARGET AdaptixClient POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ADAPTIX_QQWRY_IPDB}"
+            "$<TARGET_FILE_DIR:AdaptixClient>/qqwry.ipdb"
+        COMMENT "Copy qqwry.ipdb beside AdaptixClient executable")
+endif()
+
 target_compile_definitions(
         AdaptixClient
         PUBLIC KDDW_FRONTEND_QTWIDGETS KDDW_FRONTEND_QT BUILDING_DOCKS_LIBRARY
@@ -285,6 +307,31 @@ target_link_libraries( AdaptixClient
         qlementine
 )
 
+if(WIN32 AND ADAPTIX_STATIC_QT)
+    set(_adaptix_static_plugins "")
+    foreach(_p IN ITEMS
+            Qt6::QWindowsIntegrationPlugin
+            Qt6::QGifPlugin
+            Qt6::QICOPlugin
+            Qt6::QJpegPlugin
+            Qt6::QSvgPlugin
+            Qt6::QSQLiteDriverPlugin
+            Qt6::QModernWindowsStylePlugin
+            Qt6::QSchannelBackendPlugin
+            Qt6::QCertOnlyBackendPlugin
+    )
+        if(TARGET ${_p})
+            list(APPEND _adaptix_static_plugins ${_p})
+        endif()
+    endforeach()
+    if(_adaptix_static_plugins)
+        qt_import_plugins(AdaptixClient INCLUDE ${_adaptix_static_plugins})
+    endif()
+    if(COMMAND qt_import_qml_plugins)
+        qt_import_qml_plugins(AdaptixClient)
+    endif()
+endif()
+
 if(WIN32)
     target_link_libraries( AdaptixClient
             PRIVATE
@@ -298,8 +345,12 @@ if(WIN32)
             userenv
             dwmapi
     )
-    target_link_options( AdaptixClient PRIVATE -static-libgcc -static-libstdc++ )
-    target_link_libraries( AdaptixClient PRIVATE -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic )
+    if(ADAPTIX_STATIC_QT AND MINGW)
+        target_link_options(AdaptixClient PRIVATE -static)
+    else()
+        target_link_options( AdaptixClient PRIVATE -static-libgcc -static-libstdc++ )
+        target_link_libraries( AdaptixClient PRIVATE -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic )
+    endif()
 elseif(UNIX)
     target_link_libraries( AdaptixClient
             PRIVATE

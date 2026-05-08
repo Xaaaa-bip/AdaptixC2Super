@@ -2,7 +2,9 @@
 #include <UI/Widgets/ListenersWidget.h>
 #include <UI/Widgets/DockWidgetRegister.h>
 #include <UI/Dialogs/DialogListener.h>
+#include <UI/Dialogs/DialogListener.h>
 #include <UI/Dialogs/DialogAgent.h>
+#include <UI/Dialogs/DialogWebDelivery.h>
 #include <UI/Widgets/AdaptixWidget.h>
 #include <Client/Requestor.h>
 #include <Client/AxScript/AxElementWrappers.h>
@@ -200,6 +202,12 @@ void ListenersWidget::handleListenersMenu(const QPoint &pos) const
     listenerMenu.addAction("Resume", this, &ListenersWidget::onResumeListener);
     listenerMenu.addSeparator();
     listenerMenu.addAction("Generate agent", this, &ListenersWidget::onGenerateAgent);
+    listenerMenu.addSeparator();
+    listenerMenu.addAction("Web Delivery", this, [this]() {
+        auto* dlg = new DialogWebDelivery(*(adaptixWidget->GetProfile()), adaptixWidget->Listeners, const_cast<ListenersWidget*>(this));
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->show();
+    });
 
     QPoint globalPos = tableView->mapToGlobal(pos);
     listenerMenu.exec(globalPos);
