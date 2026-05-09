@@ -75,20 +75,26 @@ let lastFrameTime = 0;
 
 function $(id) { return document.getElementById(id); }
 
+let abortController = null;
+
 function connect() {
     const img = $('screen');
     img.classList.remove('waiting');
-    img.src = streamUrl + '&t=' + Date.now();
     $('placeholder').style.display = 'none';
     $('btn-connect').disabled = true;
     $('btn-disconnect').disabled = false;
     $('screen-select').disabled = false;
-    setStatus('live', 'Connected');
+    setStatus('live', 'Connecting...');
     frameCount = 0;
     fpsTimer = setInterval(updateFps, 1000);
+    startMjpegStream();
 }
 
 function disconnect() {
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
+    }
     const img = $('screen');
     img.classList.add('waiting');
     img.src = '';
@@ -99,6 +105,117 @@ function disconnect() {
     setStatus('dead', 'Disconnected');
     clearInterval(fpsTimer);
     $('fps').textContent = '-- fps';
+}
+
+function startMjpegStream() {
+    // Use fetch + ReadableStream to manually parse MJPEG multipart stream.
+    // This works reliably over HTTP/2 where <img src="mjpeg"> may not.
+    abortController = new AbortController();
+    const url = streamUrl + '&t=' + Date.now();
+
+    fetch(url, { signal: abortController.signal })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Stream response: ' + response.status);
+            }
+            setStatus('live', 'Connected');
+            const reader = response.body.getReader();
+            let buffer = new Uint8Array(0);
+
+            function pump() {
+                return reader.read().then(({ done, value }) => {
+                    if (done) {
+                        setStatus('dead', 'Stream ended');
+                        scheduleReconnect();
+                        return;
+                    }
+
+                    // Append new data to buffer
+                    const newBuf = new Uint8Array(buffer.length + value.length);
+                    newBuf.set(buffer);
+                    newBuf.set(value, buffer.length);
+                    buffer = newBuf;
+
+                    // Extract JPEG frames from multipart stream
+                    extractFrames();
+                    return pump();
+                }).catch(err => {
+                    if (err.name === 'AbortError') return;
+                    console.error('Stream read error:', err);
+                    setStatus('dead', 'Stream error');
+                    scheduleReconnect();
+                });
+            }
+
+            function extractFrames() {
+                // Look for JPEG start (FF D8) and end (FF D9) markers
+                while (true) {
+                    const start = findJpegStart(buffer);
+                    if (start === -1) {
+                        // No JPEG start found; keep only last 2 bytes (might be partial marker)
+                        if (buffer.length > 4096) {
+                            buffer = buffer.slice(buffer.length - 2);
+                        }
+                        break;
+                    }
+                    const end = findJpegEnd(buffer, start + 2);
+                    if (end === -1) break; // Incomplete frame, wait for more data
+
+                    // Extract the JPEG frame
+                    const frame = buffer.slice(start, end + 2);
+                    buffer = buffer.slice(end + 2);
+
+                    // Display the frame
+                    displayFrame(frame);
+                }
+            }
+
+            return pump();
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            console.error('Stream fetch error:', err);
+            setStatus('dead', 'Connection failed');
+            scheduleReconnect();
+        });
+}
+
+function findJpegStart(buf) {
+    for (let i = 0; i < buf.length - 1; i++) {
+        if (buf[i] === 0xFF && buf[i + 1] === 0xD8) return i;
+    }
+    return -1;
+}
+
+function findJpegEnd(buf, offset) {
+    for (let i = offset; i < buf.length - 1; i++) {
+        if (buf[i] === 0xFF && buf[i + 1] === 0xD9) return i;
+    }
+    return -1;
+}
+
+function displayFrame(jpegData) {
+    const blob = new Blob([jpegData], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    const img = $('screen');
+    const oldSrc = img.src;
+    img.src = url;
+    if (oldSrc && oldSrc.startsWith('blob:')) {
+        URL.revokeObjectURL(oldSrc);
+    }
+    frameCount++;
+    lastFrameTime = Date.now();
+}
+
+function scheduleReconnect() {
+    if (!$('btn-disconnect').disabled) {
+        setTimeout(() => {
+            if (!$('btn-disconnect').disabled) {
+                setStatus('live', 'Reconnecting...');
+                startMjpegStream();
+            }
+        }, 2000);
+    }
 }
 
 function switchScreen(index) {
@@ -188,32 +305,6 @@ function sendInput(type, data) {
         body: JSON.stringify({ type: type, data: data })
     }).catch(e => console.error('Input error:', e));
 }
-
-// Auto-reconnect MJPEG stream on error
-$('screen').addEventListener('error', function() {
-    if (!$('btn-disconnect').disabled) {
-        setStatus('dead', 'Stream error - reconnecting...');
-        setTimeout(() => {
-            this.src = streamUrl + '&t=' + Date.now();
-            setStatus('live', 'Connected');
-        }, 2000);
-    }
-});
-
-$('screen').addEventListener('load', function() {
-    frameCount++;
-    if (!$('btn-disconnect').disabled) {
-        setStatus('live', 'Connected');
-    }
-});
-
-// Refresh stream periodically to handle potential stalls
-setInterval(() => {
-    const img = $('screen');
-    if (img.src && !$('btn-disconnect').disabled) {
-        img.src = streamUrl + '&t=' + Date.now();
-    }
-}, 30000);
 </script>
 </body>
 </html>

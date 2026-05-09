@@ -19,6 +19,11 @@
 #define STATUS_UNSUCCESSFUL     ((NTSTATUS)0xC0000001L)
 #endif
 
+/* PrintWindow flag for rendering hardware-accelerated content on Win 8.1+ */
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
 /* ---- Forward declarations ---- */
 static DWORD WINAPI capture_thread(LPVOID param);
 static DWORD WINAPI client_thread(LPVOID param);
@@ -218,10 +223,22 @@ int vnc_start_capture(VncStream* v)
 static DWORD WINAPI capture_thread(LPVOID param)
 {
     VncStream* v = (VncStream*)param;
+    // WIC (IWICImagingFactory etc.) methods require COM to be initialized on
+    // the calling thread. Without this, encode_bgra_to_jpeg fails silently.
+    HRESULT hrInit = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hrInit) && hrInit != RPC_E_CHANGED_MODE) {
+        fprintf(stderr, "[VNC] capture_thread: CoInitializeEx failed hr=0x%08lx\n", hrInit);
+    }
+    DWORD iter = 0;
+    DWORD success = 0;
+    DWORD failure = 0;
+    DWORD lastLog = GetTickCount();
     while (v->running && !v->stop_requested) {
         unsigned char* jpeg_data = NULL;
         int jpeg_size = 0;
-        if (encode_jpeg(v, &jpeg_data, &jpeg_size) > 0 && jpeg_data) {
+        int rc = encode_jpeg(v, &jpeg_data, &jpeg_size);
+        iter++;
+        if (rc > 0 && jpeg_data) {
             AcquireSRWLockExclusive(&v->frame_lock);
             if (jpeg_size <= v->frame_capacity) {
                 memcpy(v->frame_buffer, jpeg_data, jpeg_size);
@@ -229,9 +246,19 @@ static DWORD WINAPI capture_thread(LPVOID param)
             }
             ReleaseSRWLockExclusive(&v->frame_lock);
             free(jpeg_data);
+            success++;
+        } else {
+            failure++;
+        }
+        DWORD now = GetTickCount();
+        if (now - lastLog >= 2000) {
+            fprintf(stderr, "[VNC] capture stats: iter=%lu success=%lu failure=%lu last_frame_size=%d capture=%s\n",
+                iter, success, failure, v->frame_size, v->use_gdi ? "gdi" : "dxgi");
+            lastLog = now;
         }
         Sleep(50);
     }
+    CoUninitialize();
     return 0;
 }
 
@@ -303,14 +330,25 @@ static int encode_jpeg(VncStream* v, unsigned char** out_data, int* out_size)
 
 static int encode_gdi_jpeg(VncStream* v, unsigned char** out_data, int* out_size)
 {
+    static int logOnce = 0;
     int width = v->capture_width;
     int height = v->capture_height;
-    if (width <= 0 || height <= 0) return 0;
+    if (width <= 0 || height <= 0) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_gdi_jpeg: invalid dims w=%d h=%d\n", width, height); logOnce = 1; }
+        return 0;
+    }
 
     HDC screen = GetDC(NULL);
-    if (!screen) return 0;
+    if (!screen) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_gdi_jpeg: GetDC(NULL) returned NULL, err=%lu\n", GetLastError()); logOnce = 1; }
+        return 0;
+    }
     HDC memdc = CreateCompatibleDC(screen);
-    if (!memdc) { ReleaseDC(NULL, screen); return 0; }
+    if (!memdc) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_gdi_jpeg: CreateCompatibleDC failed, err=%lu\n", GetLastError()); logOnce = 1; }
+        ReleaseDC(NULL, screen);
+        return 0;
+    }
 
     BITMAPINFO bmi;
     memset(&bmi, 0, sizeof(bmi));
@@ -324,6 +362,7 @@ static int encode_gdi_jpeg(VncStream* v, unsigned char** out_data, int* out_size
     unsigned char* bgra = NULL;
     HBITMAP hbmp = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, (void**)&bgra, NULL, 0);
     if (!hbmp || !bgra) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_gdi_jpeg: CreateDIBSection failed, err=%lu\n", GetLastError()); logOnce = 1; }
         if (hbmp) DeleteObject(hbmp);
         DeleteDC(memdc);
         ReleaseDC(NULL, screen);
@@ -331,7 +370,39 @@ static int encode_gdi_jpeg(VncStream* v, unsigned char** out_data, int* out_size
     }
 
     HGDIOBJ old = SelectObject(memdc, hbmp);
+
+    // Try BitBlt first (classic approach, works on real hardware)
     BOOL ok = BitBlt(memdc, 0, 0, width, height, screen, v->capture_left, v->capture_top, SRCCOPY | CAPTUREBLT);
+    DWORD bitbltErr = GetLastError();
+
+    // If BitBlt fails (common on headless cloud VMs without a real framebuffer),
+    // fall back to PrintWindow on the desktop window which uses WM_PRINT rendering.
+    if (!ok) {
+        HWND desktop = GetDesktopWindow();
+        if (desktop) {
+            // PrintWindow requires PW_RENDERFULLCONTENT on Win8.1+ for hardware-accelerated windows
+            BOOL pw = PrintWindow(desktop, memdc, PW_RENDERFULLCONTENT);
+            if (!pw) {
+                // Try without the flag (older Windows)
+                pw = PrintWindow(desktop, memdc, 0);
+            }
+            if (pw) {
+                ok = TRUE;
+                if (!logOnce) {
+                    fprintf(stderr, "[VNC] encode_gdi_jpeg: BitBlt failed (err=%lu), PrintWindow(desktop) succeeded\n", bitbltErr);
+                    logOnce = 1;
+                }
+            } else if (!logOnce) {
+                fprintf(stderr, "[VNC] encode_gdi_jpeg: BitBlt failed (err=%lu) AND PrintWindow failed (err=%lu)\n",
+                    bitbltErr, GetLastError());
+                logOnce = 1;
+            }
+        }
+    } else if (!logOnce) {
+        fprintf(stderr, "[VNC] encode_gdi_jpeg: BitBlt ok (first call)\n");
+        logOnce = 1;
+    }
+
     SelectObject(memdc, old);
 
     int result = 0;
@@ -348,78 +419,159 @@ static int encode_gdi_jpeg(VncStream* v, unsigned char** out_data, int* out_size
 
 static int encode_bgra_to_jpeg(VncStream* v, unsigned char* bgra, int width, int height, unsigned char** out_data, int* out_size)
 {
+    static int logOnce = 0;
     HRESULT hr;
     int result = 0;
     IWICBitmap* wic_bmp = NULL;
     hr = v->wic_factory->lpVtbl->CreateBitmapFromMemory(v->wic_factory, width, height,
         &GUID_WICPixelFormat32bppBGRA, width * 4, width * height * 4, bgra, &wic_bmp);
-
-    if (SUCCEEDED(hr) && wic_bmp) {
-        IWICFormatConverter* conv = NULL;
-        v->wic_factory->lpVtbl->CreateFormatConverter(v->wic_factory, &conv);
-        if (conv) {
-            conv->lpVtbl->Initialize(conv, (IWICBitmapSource*)wic_bmp,
-                &GUID_WICPixelFormat24bppBGR, WICBitmapDitherTypeNone, NULL, 0.0, WICBitmapPaletteTypeCustom);
-        }
-
-        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, MAX_JPEG_SIZE);
-        if (hMem) {
-            IStream* stream = NULL;
-            CreateStreamOnHGlobal(hMem, FALSE, &stream);
-
-            IWICBitmapEncoder* enc = NULL;
-            CoCreateInstance(&CLSID_WICJpegEncoder, NULL, CLSCTX_INPROC_SERVER,
-                             &IID_IWICBitmapEncoder, (void**)&enc);
-            if (enc) {
-                enc->lpVtbl->Initialize(enc, stream, WICBitmapEncoderNoCache);
-
-                IWICBitmapFrameEncode* fe = NULL;
-                IPropertyBag2* pb = NULL;
-                enc->lpVtbl->CreateNewFrame(enc, &fe, &pb);
-
-                if (fe) {
-                    PROPBAG2 opt = {0};
-                    VARIANT var;
-                    opt.pstrName = L"ImageQuality";
-                    VariantInit(&var);
-                    var.vt = VT_R4;
-                    var.fltVal = v->jpeg_quality / 100.0f;
-                    pb->lpVtbl->Write(pb, 1, &opt, &var);
-                    VariantClear(&var);
-
-                    fe->lpVtbl->Initialize(fe, pb);
-                    fe->lpVtbl->SetSize(fe, width, height);
-                    if (conv) fe->lpVtbl->WriteSource(fe, (IWICBitmapSource*)conv, NULL);
-                    fe->lpVtbl->Commit(fe);
-                    enc->lpVtbl->Commit(enc);
-
-                    ULARGE_INTEGER uli;
-                    LARGE_INTEGER li = {0};
-                    stream->lpVtbl->Seek(stream, li, STREAM_SEEK_END, &uli);
-                    int jpeg_size = (int)uli.QuadPart;
-
-                    if (jpeg_size > 0 && jpeg_size < MAX_JPEG_SIZE) {
-                        unsigned char* jd = (unsigned char*)malloc(jpeg_size);
-                        if (jd) {
-                            stream->lpVtbl->Seek(stream, li, STREAM_SEEK_SET, NULL);
-                            ULONG read;
-                            stream->lpVtbl->Read(stream, jd, jpeg_size, &read);
-                            *out_data = jd;
-                            *out_size = read;
-                            result = 1;
-                        }
-                    }
-                    fe->lpVtbl->Release(fe);
-                    if (pb) pb->lpVtbl->Release(pb);
-                }
-                enc->lpVtbl->Release(enc);
-            }
-            stream->lpVtbl->Release(stream);
-            GlobalFree(hMem);
-        }
-        if (conv) conv->lpVtbl->Release(conv);
-        wic_bmp->lpVtbl->Release(wic_bmp);
+    if (FAILED(hr) || !wic_bmp) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: CreateBitmapFromMemory failed hr=0x%08lx w=%d h=%d\n", hr, width, height); logOnce = 1; }
+        return 0;
     }
+
+    IWICFormatConverter* conv = NULL;
+    hr = v->wic_factory->lpVtbl->CreateFormatConverter(v->wic_factory, &conv);
+    if (FAILED(hr) || !conv) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: CreateFormatConverter failed hr=0x%08lx\n", hr); logOnce = 1; }
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+    hr = conv->lpVtbl->Initialize(conv, (IWICBitmapSource*)wic_bmp,
+        &GUID_WICPixelFormat24bppBGR, WICBitmapDitherTypeNone, NULL, 0.0, WICBitmapPaletteTypeCustom);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: FormatConverter Initialize failed hr=0x%08lx\n", hr); logOnce = 1; }
+        conv->lpVtbl->Release(conv);
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, MAX_JPEG_SIZE);
+    if (!hMem) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: GlobalAlloc failed err=%lu size=%d\n", GetLastError(), MAX_JPEG_SIZE); logOnce = 1; }
+        conv->lpVtbl->Release(conv);
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+
+    IStream* stream = NULL;
+    hr = CreateStreamOnHGlobal(hMem, FALSE, &stream);
+    if (FAILED(hr) || !stream) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: CreateStreamOnHGlobal failed hr=0x%08lx\n", hr); logOnce = 1; }
+        GlobalFree(hMem);
+        conv->lpVtbl->Release(conv);
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+
+    IWICBitmapEncoder* enc = NULL;
+    hr = CoCreateInstance(&CLSID_WICJpegEncoder, NULL, CLSCTX_INPROC_SERVER,
+                     &IID_IWICBitmapEncoder, (void**)&enc);
+    if (FAILED(hr) || !enc) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: CoCreateInstance(JpegEncoder) failed hr=0x%08lx\n", hr); logOnce = 1; }
+        stream->lpVtbl->Release(stream);
+        GlobalFree(hMem);
+        conv->lpVtbl->Release(conv);
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+
+    hr = enc->lpVtbl->Initialize(enc, stream, WICBitmapEncoderNoCache);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: Encoder Initialize failed hr=0x%08lx\n", hr); logOnce = 1; }
+        enc->lpVtbl->Release(enc);
+        stream->lpVtbl->Release(stream);
+        GlobalFree(hMem);
+        conv->lpVtbl->Release(conv);
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+
+    IWICBitmapFrameEncode* fe = NULL;
+    IPropertyBag2* pb = NULL;
+    hr = enc->lpVtbl->CreateNewFrame(enc, &fe, &pb);
+    if (FAILED(hr) || !fe) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: CreateNewFrame failed hr=0x%08lx\n", hr); logOnce = 1; }
+        if (pb) pb->lpVtbl->Release(pb);
+        enc->lpVtbl->Release(enc);
+        stream->lpVtbl->Release(stream);
+        GlobalFree(hMem);
+        conv->lpVtbl->Release(conv);
+        wic_bmp->lpVtbl->Release(wic_bmp);
+        return 0;
+    }
+
+    PROPBAG2 opt = {0};
+    VARIANT var;
+    opt.pstrName = L"ImageQuality";
+    VariantInit(&var);
+    var.vt = VT_R4;
+    var.fltVal = v->jpeg_quality / 100.0f;
+    pb->lpVtbl->Write(pb, 1, &opt, &var);
+    VariantClear(&var);
+
+    hr = fe->lpVtbl->Initialize(fe, pb);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: Frame Initialize failed hr=0x%08lx\n", hr); logOnce = 1; }
+        goto cleanup;
+    }
+    hr = fe->lpVtbl->SetSize(fe, width, height);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: SetSize failed hr=0x%08lx\n", hr); logOnce = 1; }
+        goto cleanup;
+    }
+    hr = fe->lpVtbl->WriteSource(fe, (IWICBitmapSource*)conv, NULL);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: WriteSource failed hr=0x%08lx\n", hr); logOnce = 1; }
+        goto cleanup;
+    }
+    hr = fe->lpVtbl->Commit(fe);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: Frame Commit failed hr=0x%08lx\n", hr); logOnce = 1; }
+        goto cleanup;
+    }
+    hr = enc->lpVtbl->Commit(enc);
+    if (FAILED(hr)) {
+        if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: Encoder Commit failed hr=0x%08lx\n", hr); logOnce = 1; }
+        goto cleanup;
+    }
+
+    {
+        // After Commit, the stream's write position is at the end of the JPEG
+        // data. STREAM_SEEK_END on an HGLOBAL-backed stream returns the full
+        // HGLOBAL buffer size (pre-allocated to MAX_JPEG_SIZE above), NOT the
+        // actual bytes written — so we must use SEEK_CUR to get the write
+        // position which equals the real JPEG size.
+        ULARGE_INTEGER pos;
+        LARGE_INTEGER zero = {0};
+        stream->lpVtbl->Seek(stream, zero, STREAM_SEEK_CUR, &pos);
+        int jpeg_size = (int)pos.QuadPart;
+
+        if (jpeg_size > 0 && jpeg_size <= MAX_JPEG_SIZE) {
+            unsigned char* jd = (unsigned char*)malloc(jpeg_size);
+            if (jd) {
+                stream->lpVtbl->Seek(stream, zero, STREAM_SEEK_SET, NULL);
+                ULONG read;
+                stream->lpVtbl->Read(stream, jd, jpeg_size, &read);
+                *out_data = jd;
+                *out_size = read;
+                result = 1;
+                if (!logOnce) { fprintf(stderr, "[VNC] encode_bgra_to_jpeg: first frame ok, size=%d\n", jpeg_size); logOnce = 1; }
+            }
+        } else if (!logOnce) {
+            fprintf(stderr, "[VNC] encode_bgra_to_jpeg: invalid jpeg size=%d\n", jpeg_size);
+            logOnce = 1;
+        }
+    }
+
+cleanup:
+    if (fe) fe->lpVtbl->Release(fe);
+    if (pb) pb->lpVtbl->Release(pb);
+    enc->lpVtbl->Release(enc);
+    stream->lpVtbl->Release(stream);
+    GlobalFree(hMem);
+    conv->lpVtbl->Release(conv);
+    wic_bmp->lpVtbl->Release(wic_bmp);
     return result;
 }
 

@@ -40,15 +40,17 @@ type Teamserver interface {
 }
 
 type VncConfig struct {
-	ViewerRoute      string `yaml:"viewer_route" json:"viewer_route"`
-	StreamRoute      string `yaml:"stream_route" json:"stream_route"`
-	InputRoute       string `yaml:"input_route" json:"input_route"`
-	ApiRoute         string `yaml:"api_route" json:"api_route"`
-	DefaultPort      int    `yaml:"default_port" json:"default_port"`
-	BindHost         string `yaml:"bind_host" json:"bind_host"`
-	AgentBinaryName  string `yaml:"agent_binary_name" json:"agent_binary_name"`
-	StreamQuality    int    `yaml:"stream_quality" json:"stream_quality"`
-	StreamIntervalMs int    `yaml:"stream_interval_ms" json:"stream_interval_ms"`
+	ViewerRoute            string `yaml:"viewer_route" json:"viewer_route"`
+	StreamRoute            string `yaml:"stream_route" json:"stream_route"`
+	InputRoute             string `yaml:"input_route" json:"input_route"`
+	ApiRoute               string `yaml:"api_route" json:"api_route"`
+	DefaultPort            int    `yaml:"default_port" json:"default_port"`
+	BindHost               string `yaml:"bind_host" json:"bind_host"`
+	AgentBinaryName        string `yaml:"agent_binary_name" json:"agent_binary_name"`
+	StreamQuality          int    `yaml:"stream_quality" json:"stream_quality"`
+	StreamIntervalMs       int    `yaml:"stream_interval_ms" json:"stream_interval_ms"`
+	StreamHeaderTimeoutSec int    `yaml:"stream_header_timeout_sec" json:"stream_header_timeout_sec"`
+	StreamDialTimeoutSec   int    `yaml:"stream_dial_timeout_sec"   json:"stream_dial_timeout_sec"`
 }
 
 func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginService {
@@ -56,15 +58,17 @@ func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginSe
 	ModuleDir = moduleDir
 
 	Config = VncConfig{
-		ViewerRoute:      "/vnc/viewer",
-		StreamRoute:      "/vnc/stream",
-		InputRoute:       "/vnc/input",
-		ApiRoute:         "/vnc/api",
-		DefaultPort:      40484,
-		BindHost:         "0.0.0.0",
-		AgentBinaryName:  "vnc_stream.exe",
-		StreamQuality:    75,
-		StreamIntervalMs: 50,
+		ViewerRoute:            "/vnc/viewer",
+		StreamRoute:            "/vnc/stream",
+		InputRoute:             "/vnc/input",
+		ApiRoute:               "/vnc/api",
+		DefaultPort:            40484,
+		BindHost:               "0.0.0.0",
+		AgentBinaryName:        "vnc_stream.exe",
+		StreamQuality:          75,
+		StreamIntervalMs:       50,
+		StreamHeaderTimeoutSec: 60,
+		StreamDialTimeoutSec:   10,
 	}
 	if serviceConfig != "" {
 		if err := yaml.Unmarshal([]byte(serviceConfig), &Config); err != nil {
@@ -81,7 +85,9 @@ func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginSe
 	Ts.TsEndpointRegister("POST", Config.ApiRoute+"/screen", handleScreenSwitch)
 	Ts.TsEndpointRegister("POST", Config.ApiRoute+"/quality", handleQuality)
 
-	fmt.Printf("[VNC] Service initialized. Viewer: %s, API: %s\n", Config.ViewerRoute, Config.ApiRoute)
+	fmt.Printf("[VNC] Service initialized. Viewer: %s, Stream: %s, Input: %s, API: %s, stream_dial_timeout_sec=%d, stream_header_timeout_sec=%d\n",
+		Config.ViewerRoute, Config.StreamRoute, Config.InputRoute, Config.ApiRoute,
+		Config.StreamDialTimeoutSec, Config.StreamHeaderTimeoutSec)
 
 	return &PluginService{}
 }

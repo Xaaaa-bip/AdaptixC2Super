@@ -8,16 +8,16 @@ import (
 )
 
 type VncSession struct {
-	Id          string    `json:"id"`
-	AgentId     string    `json:"agent_id"`
-	TargetHost  string    `json:"target_host"`
-	TargetPort  int       `json:"target_port"`
-	LocalPort   int       `json:"local_port"`
-	TunnelId    string    `json:"tunnel_id"`
-	Status      string    `json:"status"`
-	Quality     int       `json:"quality"`
-	CreatedAt   time.Time `json:"created_at"`
-	CreatedBy   string    `json:"created_by"`
+	Id         string    `json:"id"`
+	AgentId    string    `json:"agent_id"`
+	TargetHost string    `json:"target_host"`
+	TargetPort int       `json:"target_port"`
+	LocalPort  int       `json:"local_port"`
+	TunnelId   string    `json:"tunnel_id"`
+	Status     string    `json:"status"`
+	Quality    int       `json:"quality"`
+	CreatedAt  time.Time `json:"created_at"`
+	CreatedBy  string    `json:"created_by"`
 }
 
 func generateSessionId() string {
@@ -42,6 +42,9 @@ func createSession(agentId string, targetPort int, localPort int, operator strin
 		CreatedBy:  operator,
 	}
 
+	fmt.Printf("[VNC] Session %s: creating lport-fwd tunnel agent=%s local=%s:%d -> target=%s:%d\n",
+		session.Id, agentId, Config.BindHost, localPort, session.TargetHost, targetPort)
+
 	var err error
 	session.TunnelId, err = Ts.TsTunnelCreateLportfwd(
 		agentId,
@@ -52,13 +55,18 @@ func createSession(agentId string, targetPort int, localPort int, operator strin
 		targetPort,
 	)
 	if err != nil {
+		fmt.Printf("[VNC] Session %s: TsTunnelCreateLportfwd failed: %v\n", session.Id, err)
 		return nil, fmt.Errorf("failed to create tunnel: %v", err)
 	}
+	fmt.Printf("[VNC] Session %s: TsTunnelCreateLportfwd ok (tunnel_id=%s)\n", session.Id, session.TunnelId)
 
-	_, err = Ts.TsTunnelStart(session.TunnelId)
+	fmt.Printf("[VNC] Session %s: starting tunnel %s\n", session.Id, session.TunnelId)
+	taskId, err := Ts.TsTunnelStart(session.TunnelId)
 	if err != nil {
+		fmt.Printf("[VNC] Session %s: TsTunnelStart failed (tunnel_id=%s): %v\n", session.Id, session.TunnelId, err)
 		return nil, fmt.Errorf("failed to start tunnel: %v", err)
 	}
+	fmt.Printf("[VNC] Session %s: TsTunnelStart ok (tunnel_id=%s, task_id=%s)\n", session.Id, session.TunnelId, taskId)
 
 	session.Status = "active"
 	sessions[session.Id] = session
@@ -80,15 +88,20 @@ func stopSession(sessionId string) error {
 	}
 
 	if session.TunnelId != "" {
+		fmt.Printf("[VNC] Session %s: stopping tunnel %s\n", sessionId, session.TunnelId)
 		if err := Ts.TsTunnelStop(session.TunnelId); err != nil {
-			fmt.Printf("[VNC] Warning: error stopping tunnel %s: %v\n", session.TunnelId, err)
+			fmt.Printf("[VNC] Session %s: TsTunnelStop failed (tunnel_id=%s): %v\n", sessionId, session.TunnelId, err)
+		} else {
+			fmt.Printf("[VNC] Session %s: TsTunnelStop ok (tunnel_id=%s)\n", sessionId, session.TunnelId)
 		}
+	} else {
+		fmt.Printf("[VNC] Session %s: no tunnel to stop\n", sessionId)
 	}
 
 	session.Status = "stopped"
 	delete(sessions, sessionId)
 
-	fmt.Printf("[VNC] Session %s stopped\n", sessionId)
+	fmt.Printf("[VNC] Session %s stopped (tunnel_id=%s)\n", sessionId, session.TunnelId)
 	return nil
 }
 
