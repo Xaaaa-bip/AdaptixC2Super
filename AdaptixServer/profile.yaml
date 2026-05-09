@@ -38,6 +38,8 @@ Teamserver:
     - "extenders/hosting_service/config.yaml"
     - "extenders/phishing_service/config.yaml"
     - "extenders/webdelivery/config.yaml"
+    - "extenders/notifier/config.yaml"
+    - "extenders/vnc/config.yaml"
   axscripts:
 #    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.

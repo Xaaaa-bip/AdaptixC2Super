@@ -1,0 +1,15 @@
+extender_type: "service"
+extender_file: "vnc.so"
+ax_file: "ax_config.axs"
+
+service_name: "vnc"
+service_config: |
+  viewer_route: "/vnc/viewer"
+  stream_route: "/vnc/stream"
+  input_route: "/vnc/input"
+  api_route: "/vnc/api"
+  default_port: 40484
+  bind_host: "0.0.0.0"
+  agent_binary_name: "vnc_stream.exe"
+  stream_quality: 75
+  stream_interval_ms: 50

