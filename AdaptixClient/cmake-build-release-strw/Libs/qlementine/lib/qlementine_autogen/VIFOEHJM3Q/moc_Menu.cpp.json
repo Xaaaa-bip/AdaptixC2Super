@@ -1,0 +1,18 @@
+{
+    "classes": [
+        {
+            "className": "Menu",
+            "lineNumber": 12,
+            "object": true,
+            "qualifiedClassName": "oclero::qlementine::Menu",
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QMenu"
+                }
+            ]
+        }
+    ],
+    "inputFile": "Menu.hpp",
+    "outputRevision": 69
+}

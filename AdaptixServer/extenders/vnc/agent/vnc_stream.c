@@ -256,7 +256,7 @@ static DWORD WINAPI capture_thread(LPVOID param)
                 iter, success, failure, v->frame_size, v->use_gdi ? "gdi" : "dxgi");
             lastLog = now;
         }
-        Sleep(50);
+        Sleep(100);
     }
     CoUninitialize();
     return 0;

@@ -1,0 +1,87 @@
+{
+    "classes": [
+        {
+            "className": "ThemeManager",
+            "lineNumber": 15,
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 18,
+                    "name": "currentTheme",
+                    "notify": "currentThemeChanged",
+                    "override": false,
+                    "read": "currentTheme",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QString",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setCurrentTheme"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 19,
+                    "name": "themeCount",
+                    "notify": "themeCountChanged",
+                    "override": false,
+                    "read": "themeCount",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "int",
+                    "user": false,
+                    "virtual": false
+                }
+            ],
+            "qualifiedClassName": "oclero::qlementine::ThemeManager",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 36,
+                    "name": "currentThemeChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 39,
+                    "name": "themeCountChanged",
+                    "returnType": "void"
+                }
+            ],
+            "slots": [
+                {
+                    "access": "public",
+                    "index": 2,
+                    "lineNumber": 41,
+                    "name": "setNextTheme",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 3,
+                    "lineNumber": 42,
+                    "name": "setPreviousTheme",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QObject"
+                }
+            ]
+        }
+    ],
+    "inputFile": "ThemeManager.hpp",
+    "outputRevision": 69
+}

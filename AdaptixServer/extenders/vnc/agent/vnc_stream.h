@@ -22,7 +22,7 @@
 #ifdef DEFAULT_QUALITY
 #undef DEFAULT_QUALITY
 #endif
-#define VNC_DEFAULT_QUALITY  75
+#define VNC_DEFAULT_QUALITY  40
 #define MAX_JPEG_SIZE    (10 * 1024 * 1024)
 #define HTTP_BUF_SIZE    65536
 #define MAX_SCREENS      16

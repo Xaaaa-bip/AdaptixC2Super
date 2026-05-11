@@ -1,0 +1,33 @@
+{
+    "classes": [
+        {
+            "className": "ThemeEditor",
+            "lineNumber": 12,
+            "object": true,
+            "qualifiedClassName": "oclero::qlementine::ThemeEditor",
+            "signals": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "theme",
+                            "type": "oclero::qlementine::Theme"
+                        }
+                    ],
+                    "index": 0,
+                    "lineNumber": 24,
+                    "name": "themeChanged",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QWidget"
+                }
+            ]
+        }
+    ],
+    "inputFile": "ThemeEditor.hpp",
+    "outputRevision": 69
+}

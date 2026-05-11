@@ -36,6 +36,7 @@ if(WIN32 AND MINGW)
     set(OPENSSL_USE_STATIC_LIBS TRUE)
 endif()
 find_package( OpenSSL REQUIRED )
+find_package( ZLIB REQUIRED )
 
 if(WIN32 AND MINGW)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-subsystem,windows")
@@ -160,8 +161,10 @@ SET( HEADERS
         Headers/UI/Dialogs/DialogTunnel.h
         Headers/Client/TunnelEndpoint.h
         Headers/Workers/TunnelWorker.h
+        Headers/Workers/RfbClientWorker.h
         Headers/Workers/SocksHandshakeWorker.h
         Headers/UI/Widgets/TerminalContainerWidget.h
+        Headers/UI/Widgets/VncViewerWidget.h
         Headers/Workers/TerminalWorker.h
         Headers/Workers/BuildWorker.h
         Headers/UI/Dialogs/DialogDownloader.h
@@ -252,8 +255,10 @@ add_executable(AdaptixClient
         Source/UI/Dialogs/DialogTunnel.cpp
         Source/Client/TunnelEndpoint.cpp
         Source/Workers/TunnelWorker.cpp
+        Source/Workers/RfbClientWorker.cpp
         Source/Workers/SocksHandshakeWorker.cpp
         Source/UI/Widgets/TerminalContainerWidget.cpp
+        Source/UI/Widgets/VncViewerWidget.cpp
         Source/Workers/TerminalWorker.cpp
         Source/Workers/BuildWorker.cpp
         Source/UI/Dialogs/DialogDownloader.cpp
@@ -308,6 +313,7 @@ target_link_libraries( AdaptixClient
         Qt6::Sql
         Qt6::Qml
         OpenSSL::Crypto
+        ZLIB::ZLIB
 
         kddockwidgets
         qlementine

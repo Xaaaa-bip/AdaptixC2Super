@@ -5,6 +5,7 @@
 #include <UI/Widgets/AbstractDock.h>
 #include <Utils/CustomElements.h>
 
+#include <QSet>
 #include <QSortFilterProxyModel>
 
 class AdaptixWidget;
@@ -272,8 +273,10 @@ Q_OBJECT
     QLineEdit*      inputFilter     = nullptr;
     QCheckBox*      autoSearchCheck = nullptr;
     ClickableLabel* hideButton      = nullptr;
+    mutable QSet<QString> autoOpenedVncTunnels;
 
     void createUI();
+    void openVncViewerForTunnel(const TunnelData& tunnel) const;
 
 public:
     explicit TunnelsWidget(AdaptixWidget* w);
@@ -290,6 +293,7 @@ public Q_SLOTS:
     void toggleSearchPanel() const;
     void onFilterUpdate() const;
     void handleTunnelsMenu(const QPoint &pos) const;
+    void actionOpenVncViewer() const;
     void actionSetInfo() const;
     void actionStopTunnel() const;
 };

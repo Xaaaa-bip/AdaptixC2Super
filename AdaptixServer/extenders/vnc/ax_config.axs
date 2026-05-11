@@ -32,6 +32,66 @@ let vnc_start_action = menu.create_action("Start VNC Session", function(agents) 
     });
 });
 
+let vnc_native_action = menu.create_action("Start Native VNC Tunnel", function(agents) {
+    agents.forEach(function(agent) {
+        let label_target_port = form.create_label("VNC Port (on agent):");
+        let spin_target_port = form.create_spin();
+        spin_target_port.setRange(1024, 65535);
+        spin_target_port.setValue(5900);
+
+        let label_local_port = form.create_label("Local Port (on C2):");
+        let spin_local_port = form.create_spin();
+        spin_local_port.setRange(1024, 65535);
+        spin_local_port.setValue(15900);
+
+        let layout = form.create_gridlayout();
+        layout.addWidget(label_target_port, 0, 0, 1, 1);
+        layout.addWidget(spin_target_port, 0, 1, 1, 1);
+        layout.addWidget(label_local_port, 1, 0, 1, 1);
+        layout.addWidget(spin_local_port, 1, 1, 1, 1);
+
+        let dialog = form.create_dialog("Start Native VNC Tunnel");
+        dialog.setSize(420, 120);
+        dialog.setLayout(layout);
+
+        if (dialog.exec() == true) {
+            let target_port = spin_target_port.value();
+            let local_port = spin_local_port.value();
+            ax.execute_command(agent, "vnc native " + target_port + " " + local_port);
+        }
+    });
+});
+
+let vnc_deploy_action = menu.create_action("Start Native VNC Server", function(agents) {
+    agents.forEach(function(agent) {
+        let label_target_port = form.create_label("VNC Port (on agent):");
+        let spin_target_port = form.create_spin();
+        spin_target_port.setRange(1024, 65535);
+        spin_target_port.setValue(5900);
+
+        let label_local_port = form.create_label("Local Port (on C2):");
+        let spin_local_port = form.create_spin();
+        spin_local_port.setRange(1024, 65535);
+        spin_local_port.setValue(15900);
+
+        let layout = form.create_gridlayout();
+        layout.addWidget(label_target_port, 0, 0, 1, 1);
+        layout.addWidget(spin_target_port, 0, 1, 1, 1);
+        layout.addWidget(label_local_port, 1, 0, 1, 1);
+        layout.addWidget(spin_local_port, 1, 1, 1, 1);
+
+        let dialog = form.create_dialog("Start Native VNC Server");
+        dialog.setSize(440, 120);
+        dialog.setLayout(layout);
+
+        if (dialog.exec() == true) {
+            let target_port = spin_target_port.value();
+            let local_port = spin_local_port.value();
+            ax.execute_command(agent, "vnc deploy " + target_port + " " + local_port);
+        }
+    });
+});
+
 let vnc_view_action = menu.create_action("View Desktop", function(agents) {
     agents.forEach(function(agent) {
         ax.execute_command(agent, "vnc view");
@@ -64,6 +124,8 @@ let vnc_list_action = menu.create_action("List VNC Sessions", function(agents) {
 });
 
 vnc_menu.addItem(vnc_start_action);
+vnc_menu.addItem(vnc_deploy_action);
+vnc_menu.addItem(vnc_native_action);
 vnc_menu.addItem(vnc_view_action);
 vnc_menu.addItem(vnc_stop_action);
 vnc_menu.addSeparator();
@@ -82,6 +144,16 @@ function RegisterCommands(listenerType) {
     cmd_vnc_start.addArgInt("target_port", true, "Listen port on agent");
     cmd_vnc_start.addArgInt("local_port", true, "Listen port on teamserver");
 
+    let cmd_vnc_native = ax.create_command("native", "Start a tunnel to a standard VNC server already listening on the target",
+        "vnc native 5900 15900", "VNC: Native VNC tunnel");
+    cmd_vnc_native.addArgInt("target_port", true, "VNC listen port on agent");
+    cmd_vnc_native.addArgInt("local_port", true, "Listen port on teamserver");
+
+    let cmd_vnc_deploy = ax.create_command("deploy", "Upload and start the packaged native VNC server, then open a tunneled viewer",
+        "vnc deploy 5900 15900", "VNC: Deploy native VNC server");
+    cmd_vnc_deploy.addArgInt("target_port", true, "VNC listen port on agent");
+    cmd_vnc_deploy.addArgInt("local_port", true, "Listen port on teamserver");
+
     let cmd_vnc_view = ax.create_command("view", "Open the VNC viewer for the active session",
         "vnc view", "VNC: Open viewer");
 
@@ -92,7 +164,7 @@ function RegisterCommands(listenerType) {
     let cmd_vnc_list = ax.create_command("list", "List all active VNC sessions",
         "vnc list", "VNC: List sessions");
 
-    cmd_vnc.addSubCommands([cmd_vnc_start, cmd_vnc_view, cmd_vnc_stop, cmd_vnc_list]);
+    cmd_vnc.addSubCommands([cmd_vnc_start, cmd_vnc_deploy, cmd_vnc_native, cmd_vnc_view, cmd_vnc_stop, cmd_vnc_list]);
 
     let commands = ax.create_commands_group("vnc", [cmd_vnc]);
     return {

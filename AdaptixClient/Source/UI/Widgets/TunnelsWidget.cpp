@@ -1,11 +1,13 @@
 #include <UI/Widgets/TunnelsWidget.h>
 #include <UI/Widgets/AdaptixWidget.h>
+#include <UI/Widgets/VncViewerWidget.h>
 #include <UI/Widgets/DockWidgetRegister.h>
 #include <Client/Requestor.h>
 #include <Client/AuthProfile.h>
 #include <Client/TunnelEndpoint.h>
 #include <Agent/Agent.h>
 #include <UI/Graph/GraphItem.h>
+#include <QTimer>
 
 REGISTER_DOCK_WIDGET(TunnelsWidget, "Tunnels", true)
 
@@ -110,6 +112,7 @@ void TunnelsWidget::Clear() const
         adaptixWidget->Tunnels.clear();
     }
     tunnelsModel->clear();
+    autoOpenedVncTunnels.clear();
     inputFilter->clear();
 }
 
@@ -140,6 +143,14 @@ void TunnelsWidget::AddTunnelItem(const TunnelData &newTunnel) const
                 agent->graphItem->AddTunnel(markType);
             }
         }
+    }
+
+    if (newTunnel.Info.contains("Native VNC Desktop", Qt::CaseInsensitive) &&
+        !autoOpenedVncTunnels.contains(newTunnel.TunnelId)) {
+        autoOpenedVncTunnels.insert(newTunnel.TunnelId);
+        QTimer::singleShot(750, this, [this, newTunnel]() {
+            openVncViewerForTunnel(newTunnel);
+        });
     }
 }
 
@@ -184,6 +195,7 @@ void TunnelsWidget::RemoveTunnelItem(const QString &tunnelId) const
     }
 
     tunnelsModel->remove(tunnelId);
+    autoOpenedVncTunnels.remove(tunnelId);
 
     if (adaptixWidget->ClientTunnels.contains(tunnelId)) {
         auto tunnel = adaptixWidget->ClientTunnels[tunnelId];
@@ -217,11 +229,57 @@ void TunnelsWidget::handleTunnelsMenu(const QPoint &pos) const
 {
     QMenu tunnelsMenu = QMenu();
 
+    tunnelsMenu.addAction("Open VNC viewer", this, &TunnelsWidget::actionOpenVncViewer);
+    tunnelsMenu.addSeparator();
     tunnelsMenu.addAction("Set info", this, &TunnelsWidget::actionSetInfo);
     tunnelsMenu.addAction("Stop",     this, &TunnelsWidget::actionStopTunnel);
 
     QPoint globalPos = tableView->mapToGlobal(pos);
     tunnelsMenu.exec(globalPos);
+}
+
+void TunnelsWidget::actionOpenVncViewer() const
+{
+    if (tableView->selectionModel()->selectedRows().empty())
+        return;
+
+    QModelIndex currentIndex = tableView->currentIndex();
+    QModelIndex sourceIndex = proxyModel->mapToSource(currentIndex);
+    if (!sourceIndex.isValid())
+        return;
+
+    TunnelData tunnel;
+    {
+        QReadLocker locker(&adaptixWidget->TunnelsLock);
+        QString tunnelId = tunnelsModel->data(tunnelsModel->index(sourceIndex.row(), TUC_TunnelId), Qt::DisplayRole).toString();
+        for (const auto& item : adaptixWidget->Tunnels) {
+            if (item.TunnelId == tunnelId) {
+                tunnel = item;
+                break;
+            }
+        }
+    }
+
+    if (tunnel.TunnelId.isEmpty())
+        return;
+
+    openVncViewerForTunnel(tunnel);
+}
+
+void TunnelsWidget::openVncViewerForTunnel(const TunnelData& tunnel) const
+{
+    bool ok = false;
+    int port = tunnel.Port.toInt(&ok);
+    if (!ok || port < 1 || port > 65535) {
+        MessageError("VNC tunnel has an invalid listen port");
+        return;
+    }
+
+    QString host = tunnel.Client.isEmpty() ? adaptixWidget->GetProfile()->GetHost() : "127.0.0.1";
+    QString title = QString("VNC [%1:%2]").arg(host).arg(port);
+    auto* viewer = new VncViewerWidget(adaptixWidget, host, quint16(port), title, true);
+    viewer->setAttribute(Qt::WA_DeleteOnClose);
+    adaptixWidget->PlaceDock(adaptixWidget->get_dockBottom(), viewer->dock());
 }
 
 void TunnelsWidget::actionSetInfo() const

@@ -1,0 +1,32 @@
+{
+	"BUILD_DIR" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/qlementine_autogen",
+	"CMAKE_BINARY_DIR" : "X:/AdaptixClient/cmake-build-release-strw",
+	"CMAKE_CURRENT_BINARY_DIR" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib",
+	"CMAKE_CURRENT_SOURCE_DIR" : "X:/AdaptixClient/Libs/qlementine/lib",
+	"CMAKE_SOURCE_DIR" : "X:/AdaptixClient",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/qlementine_autogen/include",
+	"INPUTS" : 
+	[
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_critical_fg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_question_bg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_information_bg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_question_fg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_warning_fg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_critical_bg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_warning_bg.svg",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/icons/messagebox_information_fg.svg"
+	],
+	"LOCK_FILE" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/CMakeFiles/qlementine_autogen.dir/AutoRcc_qlementine_3YJK5W5UP7_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "--no-zstd", "-name", "qlementine" ],
+	"OUTPUT_CHECKSUM" : "3YJK5W5UP7",
+	"OUTPUT_NAME" : "qrc_qlementine.cpp",
+	"RCC_EXECUTABLE" : "D:/Qt/6.11.0/mingw_64/bin/rcc.exe",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/CMakeFiles/qlementine_autogen.dir/AutoRcc_qlementine_3YJK5W5UP7_Used.txt",
+	"SOURCE" : "X:/AdaptixClient/Libs/qlementine/lib/resources/qlementine.qrc",
+	"USE_BETTER_GRAPH" : true,
+	"VERBOSITY" : 0
+}

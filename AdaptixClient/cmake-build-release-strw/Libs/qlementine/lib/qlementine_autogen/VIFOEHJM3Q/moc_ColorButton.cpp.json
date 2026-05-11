@@ -1,0 +1,72 @@
+{
+    "classes": [
+        {
+            "className": "ColorButton",
+            "lineNumber": 12,
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 15,
+                    "name": "color",
+                    "notify": "colorChanged",
+                    "override": false,
+                    "read": "color",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QColor",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setColor"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 16,
+                    "name": "colorMode",
+                    "notify": "colorModeChanged",
+                    "override": false,
+                    "read": "colorMode",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "ColorMode",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setColorMode"
+                }
+            ],
+            "qualifiedClassName": "oclero::qlementine::ColorButton",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 32,
+                    "name": "colorChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 33,
+                    "name": "colorModeChanged",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QAbstractButton"
+                }
+            ]
+        }
+    ],
+    "inputFile": "ColorButton.hpp",
+    "outputRevision": 69
+}

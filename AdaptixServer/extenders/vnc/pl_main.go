@@ -65,8 +65,8 @@ func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginSe
 		DefaultPort:            40484,
 		BindHost:               "0.0.0.0",
 		AgentBinaryName:        "vnc_stream.exe",
-		StreamQuality:          75,
-		StreamIntervalMs:       50,
+		StreamQuality:          40,
+		StreamIntervalMs:       100,
 		StreamHeaderTimeoutSec: 60,
 		StreamDialTimeoutSec:   10,
 	}
