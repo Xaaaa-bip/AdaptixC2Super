@@ -54,20 +54,16 @@ COMMON_FLAGS := -I $(BEACON_DIR) \
                 -include beacon/DynamicPolymorphism.h \
                 -Os \
                 -fno-lto \
-                -fno-ident \
-                -fpack-struct=8 \
                 -falign-functions=1 \
                 -ffunction-sections \
                 -fdata-sections \
                 -falign-jumps=1 \
                 -falign-labels=1 \
-                -mrdrnd \
                 -fms-extensions \
                 -Wno-error=gnu-anonymous-struct \
                 -Wno-error=nested-anon-types \
                 -Wno-error=anonymous-struct \
                 -w \
-                -fPIC \
                 $(SECURITY_FLAGS) \
                 $(OPTIMIZATION_FLAGS) \
                 $(SEED_FLAG) \

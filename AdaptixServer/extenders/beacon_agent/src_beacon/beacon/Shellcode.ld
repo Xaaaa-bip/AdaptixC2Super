@@ -1,20 +1,28 @@
 SECTIONS
 {
   .text : {
-    *(.text$A);        /* Entry point / ASM stub */
-    *(.text$B);        /* Core code */
-    *(.text$C);        /* Supporting functions */
-    *(.text*);         /* Rest of code */
-    *(.rdata*);        /* Read-only data */
-    *(.data*);         /* Data */
-    *(.bss*);          /* Zero-initialized data */
+    *(.text$A);
+    *(.text$B);
+    *(.text$C);
+    *(.text*);
   }
-  /DISCARD/ : {
-    *(.comment)
-    *(.note*)
-    *(.eh_frame)
-    *(.rel.text)
-    *(.rel.data)
-    *(.rel.rodata)
+  .rdata : {
+    *(.rdata*);
+    *(.rdata$*);
+  }
+  .data : {
+    *(.data*);
+  }
+  .bss : {
+    *(.bss*);
+    *(COMMON);
+  }
+  .idata : {
+    *(.idata*);
+    *(.idata$*);
+  }
+  .rsrc : {
+    *(.rsrc*);
+    *(.rsrc$*);
   }
 }

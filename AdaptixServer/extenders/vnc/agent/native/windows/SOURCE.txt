@@ -1,0 +1,16 @@
+UltraVNC WinVNC payload
+
+Source:
+https://www.uvnc.eu/download/1640/UltraVNC_1640_x64_Setup.exe
+
+Downloaded file:
+UltraVNC_1640_x64_Setup.exe
+
+Extracted files:
+- winvnc.exe
+- vnchooks.dll
+- ultravnc.ini template
+
+Notes:
+- adaptix_start.bat rewrites ultravnc.ini with the requested port.
+- The generated config uses local-only socket access and AuthRequired=0 for the Adaptix tunnel workflow.

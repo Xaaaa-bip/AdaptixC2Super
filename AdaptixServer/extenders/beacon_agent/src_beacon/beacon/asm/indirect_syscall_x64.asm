@@ -1,4 +1,4 @@
-; x64 indirect syscalls: jmp to ntdll syscall;ret gadget (0F 05 C3).
+; x64 indirect control transfer to ntdll gadget
 ; Microsoft x64 ABI: RCX=ssn, RDX=gadget, R8=args struct pointer
 
 [BITS 64]

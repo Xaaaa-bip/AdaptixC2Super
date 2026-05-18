@@ -6,7 +6,7 @@ Teamserver:
   interface: "0.0.0.0"
   port: 8080
   # Client "endpoint" is the URL path prefix; login URL = https://host:port<endpoint>/login (must match server).
-  endpoint: "/api/login"
+  endpoint: "/api"
   password: "pass"
   # true = only Teamserver.password is checked (any username). false = use operators: username -> password.
   only_password: false
@@ -38,6 +38,8 @@ Teamserver:
     - "extenders/hosting_service/config.yaml"
     - "extenders/phishing_service/config.yaml"
     - "extenders/webdelivery/config.yaml"
+    - "extenders/notifier/config.yaml"
+    - "extenders/vnc/config.yaml"
   axscripts:
 #    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.

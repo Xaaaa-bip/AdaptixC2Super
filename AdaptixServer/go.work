@@ -11,4 +11,5 @@ use (
 	./extenders/gopher_agent
 	./extenders/gopher_listener_tcp
 	./extenders/listener_kharon_http
+	./extenders/vnc
 )
