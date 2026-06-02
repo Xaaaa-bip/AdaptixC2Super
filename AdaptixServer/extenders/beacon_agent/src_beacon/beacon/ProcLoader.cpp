@@ -38,7 +38,7 @@ ULONG Djb2W(PWCHAR str)
 HMODULE GetModuleAddress(ULONG modHash) 
 {
 
-#ifdef _M_IX86
+#if defined(_M_IX86) || defined(__i386__) || defined(i386)
     PEB* ProcEnvBlk = (PEB*)__readfsdword(0x30);
 #else
     volatile unsigned long long gsOff = 0x60;

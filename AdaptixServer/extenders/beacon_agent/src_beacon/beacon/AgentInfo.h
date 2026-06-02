@@ -13,9 +13,9 @@ typedef struct _AgentInfo {
 	BOOL  sys64;
 	BOOL  elevated;
 	BOOL  is_server;
-	WORD  major_version;
-	WORD  minor_version;
-	WORD  build_number;
+	BYTE  major_version;
+	BYTE  minor_version;
+	DWORD build_number;
 	ULONG internal_ip;
 	CHAR* process_name;
 	CHAR* domain_name;

@@ -35,8 +35,8 @@ AgentInfo::AgentInfo()
 	this->arch64        = (sizeof(void*) != 4);
 	this->sys64         = this->arch64 || isWow64;
 	this->build_number  = OSVersion.dwBuildNumber;
-	this->major_version = OSVersion.dwMajorVersion;
-	this->minor_version = OSVersion.dwMinorVersion;
+	this->major_version = (BYTE)OSVersion.dwMajorVersion;
+	this->minor_version = (BYTE)OSVersion.dwMinorVersion;
 	this->is_server     = OSVersion.wProductType != VER_NT_WORKSTATION;
 	this->internal_ip   = GetInternalIpLong();
 	this->username      = _GetUserName();

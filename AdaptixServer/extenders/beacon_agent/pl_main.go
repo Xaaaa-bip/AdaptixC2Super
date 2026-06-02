@@ -1200,11 +1200,12 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 			return nil, "", fmt.Errorf("failed to generate polymorphic beacon shellcode (Seed: %s): %w", coreSeed, err)
 		}
 
-		// Read the generated bin
-		binName := "beacon_http.x64.bin"
+		// Read the generated bin (protocol-specific name)
+		binArchSuffix := ".x64.bin"
 		if generateConfig.Arch == "x86" {
-			binName = "beacon_http.x86.bin"
+			binArchSuffix = ".x86.bin"
 		}
+		binName := "beacon_" + protocol + binArchSuffix
 		binPath, err := resolveShellcodeBin(currentDir, protocol, binName)
 		if err != nil {
 			_ = os.RemoveAll(tempDir)

