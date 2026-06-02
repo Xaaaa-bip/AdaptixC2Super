@@ -41,7 +41,12 @@ HMODULE GetModuleAddress(ULONG modHash)
 #ifdef _M_IX86
     PEB* ProcEnvBlk = (PEB*)__readfsdword(0x30);
 #else
-    PEB* ProcEnvBlk = (PEB*)__readgsqword(0x60);
+    volatile unsigned long long gsOff = 0x60;
+    unsigned long long addrMask = (unsigned long long)&gsOff;
+    gsOff ^= (addrMask & 0xFF);
+    gsOff ^= (addrMask & 0xFF);
+    PEB* ProcEnvBlk;
+    __asm__ __volatile__("movq %%gs:(%1), %0" : "=r"(ProcEnvBlk) : "r"(gsOff));
 #endif
 
     PEB_LDR_DATA* Ldr = ProcEnvBlk->Ldr;

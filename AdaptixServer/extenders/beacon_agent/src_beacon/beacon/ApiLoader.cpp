@@ -1,5 +1,6 @@
 #include "ApiLoader.h"
 #include "IndirectSyscall.h"
+#include "IatDisguise.h"
 #include "LdrResolve.h"
 #include "ProcLoader.h"
 #include "StrObfuscate.h"
@@ -253,5 +254,6 @@ BOOL ApiLoad()
 	}
 
 	IndirectSyscall_Init();
+	IatDisguise_Init();
 	return TRUE;
 }

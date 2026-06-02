@@ -1,5 +1,10 @@
 # AdaptixC2 v1.2
 
+## 更新说明
+- 更新beacon_agent 静态PE免杀能力
+
+
+
 ## 构建说明
 Server
 - git clone https://github.com/Xaaaa-bip/AdaptixC2

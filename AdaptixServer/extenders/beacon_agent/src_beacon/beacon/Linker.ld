@@ -1,7 +1,12 @@
-/* Prepend MSVC-style .text$A / $B / $C into output .text via INSERT (keeps full MinGW PE script).
- * Do NOT pull *(.rdata*) here: MinGW puts .rdata$.refptr.* next to code for REL32; moving all .rdata*
- * to the start of .text breaks IMAGE_REL_AMD64_REL32 ("relocation truncated to fit").
+/* MSVC-style PE sections for EXE/ServiceExe/DLL via INSERT AFTER/BEFORE.
+ * Preserves MinGW default PE script while restructuring .text/.rdata/.data
+ * to match typical MSVC output with proper section flags.
+ *
+ * .text  = RX only (no W)
+ * .rdata = R only (no X)
+ * .data  = RW only (no X)
  */
+
 SECTIONS
 {
   .text : {
