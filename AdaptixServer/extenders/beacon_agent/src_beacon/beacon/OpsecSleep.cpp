@@ -169,7 +169,7 @@ static BOOL TryTimerQueueRc4Sleep(ULONG milliseconds, HMODULE imageBase, ULONG s
 		RestoreSavedProtect(saved, nSaved, proc);
 		return FALSE;
 	}
-
+ 
 	SleepEncCtx ctx;
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.evt = evt;

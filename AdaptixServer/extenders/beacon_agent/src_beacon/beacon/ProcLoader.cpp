@@ -1,4 +1,5 @@
 #include "ProcLoader.h"
+#include <intrin.h>
 #include "ApiLoader.h"
 #include "ApiDefines.h"
 #include "utils.h"

@@ -293,7 +293,7 @@ extern "C" {
             );
     }
 #else // x86
-    NAKED_FUNC void ___chkstk_ms(void)
+    NAKED_FUNC void _chkstk_ms(void)
     {
         asm volatile(
             "push   ecx\n"
@@ -303,46 +303,52 @@ extern "C" {
             "jb     ax86_ms_tail\n"
             "ax86_ms_loop:\n"
             "sub    ecx, 0x1000\n"
-            "test   [ecx], ecx\n"
+            "test   [ecx], eax\n"
             "sub    eax, 0x1000\n"
             "cmp    eax, 0x1000\n"
-            "ja     ax86_ms_loop\n"
+            "jae    ax86_ms_loop\n"
             "ax86_ms_tail:\n"
             "sub    ecx, eax\n"
-            "test   [ecx], ecx\n"
+            "test   [ecx], eax\n"
             "pop    eax\n"
             "pop    ecx\n"
             "ret\n"
-            );
+        );
+    }
+
+    NAKED_FUNC void __chkstk_ms(void)
+    {
+        asm volatile("jmp __chkstk_ms\n");
+    }
+
+    NAKED_FUNC void _chkstk(void)
+    {
+        asm volatile(
+            "push   ecx\n"
+            "cmp    eax, 0x1000\n"
+            "lea    ecx, [esp + 8]\n"
+            "jb     ax86_ck_tail\n"
+            "ax86_ck_loop:\n"
+            "sub    ecx, 0x1000\n"
+            "test   [ecx], eax\n"
+            "sub    eax, 0x1000\n"
+            "cmp    eax, 0x1000\n"
+            "jae    ax86_ck_loop\n"
+            "ax86_ck_tail:\n"
+            "sub    ecx, eax\n"
+            "test   [ecx], eax\n"
+            "mov    eax, esp\n"
+            "mov    esp, ecx\n"
+            "mov    ecx, [eax]\n"
+            "mov    eax, [eax + 4]\n"
+            "push   eax\n"
+            "ret\n"
+        );
     }
 
     NAKED_FUNC void __chkstk(void)
     {
-        asm volatile(
-            "push   ecx\n"
-            "push   eax\n"
-            "cmp    eax, 0x1000\n"
-            "lea    ecx, [esp + 12]\n"
-            "jb     ax86_ck_tail\n"
-            "ax86_ck_loop:\n"
-            "sub    ecx, 0x1000\n"
-            "test   [ecx], ecx\n"
-            "sub    eax, 0x1000\n"
-            "cmp    eax, 0x1000\n"
-            "ja     ax86_ck_loop\n"
-            "ax86_ck_tail:\n"
-            "sub    ecx, eax\n"
-            "test   [ecx], ecx\n"
-            "pop    eax\n"
-            "pop    ecx\n"
-            "ret\n"
-            );
-    }
-
-    // Some linkers look for _alloca or _chkstk aliases
-    NAKED_FUNC void _chkstk(void)
-    {
-        asm volatile("jmp ___chkstk_ms\n");
+        asm volatile("jmp __chkstk\n");
     }
 
 #ifdef _alloca
@@ -350,7 +356,7 @@ extern "C" {
 #endif
     NAKED_FUNC void _alloca(void)
     {
-        asm volatile("jmp ___chkstk_ms\n");
+        asm volatile("jmp __chkstk\n");
     }
 #endif // _WIN64
 
@@ -366,7 +372,7 @@ extern "C" {
 
 #if defined(__GNUC__)
 
-void operator delete(void* p, unsigned long long) noexcept { free(p); }
+void operator delete(void* p, size_t) noexcept { free(p); }
 void operator delete(void* p) noexcept { free(p); }
 
 namespace std {

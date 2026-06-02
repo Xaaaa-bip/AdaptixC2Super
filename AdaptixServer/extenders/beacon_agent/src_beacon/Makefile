@@ -1,8 +1,8 @@
 SOURCES := $(filter-out beacon/config.cpp, $(wildcard beacon/*.cpp))
 
 # Clang cross to MinGW (Kharon-style fingerprint); do not use -masm=intel globally — breaks Win headers + Clang.
-CXX_X64 := clang++ -target x86_64-w64-mingw32
-CXX_X86 := clang++ -target i686-w64-mingw32
+CXX_X64 := clang++ -target x86_64-w64-mingw32 -D_M_X64 -D_WIN64
+CXX_X86 := clang++ -target i686-w64-mingw32 -D_M_IX86 -D_X86_
 
 # Do not wrap these in quotes — they become part of $@ and break NASM -o paths.
 BEACON_DIR := beacon
