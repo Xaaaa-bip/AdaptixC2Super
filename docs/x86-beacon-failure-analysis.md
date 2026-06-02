@@ -18,6 +18,90 @@
 | #4 | 🟡 MEDIUM | `loader_template.c` | PEB 访问硬编码 x64 汇编，`builder.py --32` 产物在 x86 上崩溃 |
 | #5 | 🟢 LOW | `Makefile` | `bin_x86` target 仅生成 HTTP 协议 shellcode |
 | #6 | 🟢 LOW | `OpsecThread.cpp` | x86 线程创建回退到 `CreateThread`，无可选栈伪造 |
+| #7 | 🔴 CRITICAL | `ntdll.h` | `NtCurrentPID()` 宏使用 `__readfsdword`/`__readgsqword` MSVC intrinsic |
+| #8 | 🔴 CRITICAL | `ProcLoader.cpp` | 即使架构检测正确，`__readfsdword(0x30)` 仍是 MSVC intrinsic，Clang/MinGW 可能生成错误代码 |
+
+---
+
+## 问题 #7 详情: ntdll.h NtCurrentPID() MSVC intrinsic
+
+**文件**: `AdaptixServer/extenders/beacon_agent/src_beacon/beacon/ntdll.h` (第 2842-2846 行)
+
+```cpp
+// 原始代码
+#if defined(_M_X86)
+#define NtCurrentPID() __readfsdword(0x20)
+#else
+#define NtCurrentPID() __readgsqword(0x20)
+#endif
+```
+
+**问题**:
+- `_M_X86` 是 MSVC 专用宏，Clang/MinGW 不定义 → 总是走 `else` 分支
+- `__readgsqword` 是 64-bit intrinsic，x86 编译时行为未定义
+- 宏展开为语句表达式时需要 GCC 扩展语法 `({})`
+
+---
+
+## 问题 #8 详情: ProcLoader.cpp __readfsdword intrinsic
+
+**文件**: `ProcLoader.cpp` / `ProcLoader.cc`
+
+```cpp
+// 第一轮修复后 (仍有问题)
+#if defined(_M_IX86) || defined(__i386__) || defined(i386)
+    PEB* ProcEnvBlk = (PEB*)__readfsdword(0x30);
+```
+
+**问题**:
+虽然架构检测已修复，但 `__readfsdword(0x30)` 仍是 MSVC intrinsic。在 Clang/MinGW 下：
+- 可能被编译为未定义函数调用 → 链接失败或不正确行为
+- 可能产生与预期不同的返回值类型 (unsigned long vs pointer)
+
+**根本修复**: 使用内联汇编 `movl %%fs:0x30, %0` 直接访问 FS 段寄存器。这与 `crt.cpp` 中使用的方式一致（crt.cpp 在 Intel 语法下使用 `mov %0, fs:[0x30]`）。
+
+---
+
+## 第二轮修复记录
+
+### 修复 #6: ProcLoader.cpp/.cc — 替换 __readfsdword 为内联汇编
+
+```diff
+- PEB* ProcEnvBlk = (PEB*)__readfsdword(0x30);
++ PEB* ProcEnvBlk;
++ __asm__ __volatile__("movl %%fs:0x30, %0" : "=r"(ProcEnvBlk));
+```
+
+同样替换 ProcLoader.cc 中的 `__readgsqword(0x60)` → `movq %%gs:0x60, %0`。
+
+### 修复 #7: ntdll.h NtCurrentPID() — 替换 MSVC intrinsic
+
+```diff
+- #if defined(_M_X86)
+- #define NtCurrentPID() __readfsdword(0x20)
+- #else
+- #define NtCurrentPID() __readgsqword(0x20)
+- #endif
++ #if defined(_M_X86) || defined(__i386__) || defined(i386)
++ #define NtCurrentPID() ({ DWORD _pid = 0; __asm__ __volatile__("movl %%fs:0x20, %0" : "=r"(_pid)); (ULONG_PTR)_pid; })
++ #elif defined(_M_X64) || defined(__x86_64__)
++ #define NtCurrentPID() ({ DWORD64 _pid = 0; __asm__ __volatile__("movq %%gs:0x20, %0" : "=r"(_pid)); (ULONG_PTR)_pid; })
++ #else
++ #define NtCurrentPID() ((ULONG_PTR)0)
++ #endif
+```
+
+### 诊断工具: test_x86_peb.cpp
+
+新增 `src_beacon/beacon/test_x86_peb.cpp` — 独立运行诊断程序。
+编译: `clang++ -target i686-w64-mingw32 test_x86_peb.cpp -o test_x86.exe`
+在 32-bit Windows 上运行以验证:
+1. PEB 遍历是否正确 (AT&T 内联汇编 fs:0x30)
+2. TEB → PEB 关联是否正确
+3. struct 大小和对齐是否正确
+4. 内存分配是否正常
+5. RC4 加密/解密是否一致
+6. WinHTTP 库是否可加载
 
 ---
 

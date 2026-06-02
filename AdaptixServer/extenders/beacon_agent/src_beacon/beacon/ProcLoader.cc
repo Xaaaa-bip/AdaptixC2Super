@@ -37,9 +37,11 @@ HMODULE GetModuleAddress(ULONG modHash)
 {
 
 #if defined(_M_IX86) || defined(__i386__) || defined(i386)
-    PEB* ProcEnvBlk = (PEB*)__readfsdword(0x30);
+    PEB* ProcEnvBlk;
+    __asm__ __volatile__("movl %%fs:0x30, %0" : "=r"(ProcEnvBlk));
 #else
-    PEB* ProcEnvBlk = (PEB*)__readgsqword(0x60);
+    PEB* ProcEnvBlk;
+    __asm__ __volatile__("movq %%gs:0x60, %0" : "=r"(ProcEnvBlk));
 #endif
 
     PEB_LDR_DATA* Ldr = ProcEnvBlk->Ldr;
