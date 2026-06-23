@@ -96,6 +96,7 @@ server: prepare
 	@ echo "[+] done"
 
 server-ext: clean server extenders
+	@ cp AdaptixServer/extenders/beacon_agent/dist/agent_beacon.so $(DIST_DIR)/extenders/beacon_agent/agent_beacon.so 2>/dev/null || true
 
 
 
