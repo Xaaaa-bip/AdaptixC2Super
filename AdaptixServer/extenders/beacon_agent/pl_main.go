@@ -110,6 +110,31 @@ func (p *PluginAgent) GetExtender() adaptix.ExtenderAgent {
 	return &ExtenderAgent{}
 }
 
+func inferBeaconProtocol(listenerMap map[string]any) string {
+	protocol, _ := listenerMap["protocol"].(string)
+	if protocol != "" {
+		return protocol
+	}
+	if _, hasHbHeader := listenerMap["hb_header"]; hasHbHeader {
+		if _, hasUri := listenerMap["uri"]; hasUri {
+			return "ws"
+		}
+	}
+	if _, hasUri := listenerMap["uri"]; hasUri {
+		return "http"
+	}
+	if _, hasPipe := listenerMap["pipename"]; hasPipe {
+		return "bind_smb"
+	}
+	if _, hasTcpBanner := listenerMap["tcp_banner"]; hasTcpBanner {
+		return "bind_tcp"
+	}
+	if _, hasDns := listenerMap["dns_domain"]; hasDns {
+		return "dns"
+	}
+	return ""
+}
+
 func makeProxyTask(packData []byte) adaptix.TaskData {
 	return adaptix.TaskData{Type: adaptix.TASK_TYPE_PROXY_DATA, Data: packData, Sync: false}
 }
@@ -337,6 +362,8 @@ func resolveShellcodeBin(moduleDir string, protocol string, binName string) (str
 		ObjectDir = ObjectDir_tcp
 	} else if protocol == "dns" {
 		ObjectDir = ObjectDir_dns
+	} else if protocol == "ws" {
+		ObjectDir = ObjectDir_ws
 	}
 
 	candidates := []string{
@@ -441,10 +468,11 @@ var (
 	ObjectDir_smb  = "objects_smb"
 	ObjectDir_tcp  = "objects_tcp"
 	ObjectDir_dns  = "objects_dns"
-	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "IatDisguise", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
+	ObjectDir_ws   = "objects_ws"
+	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "EntropyEvasion", "IatDisguise", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
 	// Match src_beacon/Makefile COMMON_FLAGS (no global -masm=intel; no -fpermissive — Clang rejects it).
-	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-unwind-tables -fno-strict-aliasing -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w"
-	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--exclude-libs,ALL -mwindows"
+	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-unwind-tables -fno-strict-aliasing -fno-threadsafe-statics -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w"
+	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--exclude-libs,ALL -static-libstdc++ -mwindows"
 )
 
 func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, error) {
@@ -527,10 +555,13 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		params = append(params, generateConfig.Jitter)
 		params = append(params, int(lWatermarkVal))
 
-		protocol, _ := listenerMap["protocol"].(string)
+		protocol := inferBeaconProtocol(listenerMap)
 		switch protocol {
 
 		case "http":
+			fallthrough
+
+		case "ws":
 
 			lines, _ := listenerMap["callback_addresses"].([]interface{})
 			UriRaw, _ := listenerMap["uri"].([]interface{})
@@ -585,12 +616,16 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				}
 			}
 
-			WebPageOutput, _ := listenerMap["page-payload"].(string)
-			ansOffset1 := strings.Index(WebPageOutput, "<<<PAYLOAD_DATA>>>")
-			if ansOffset1 < 0 {
-				return nil, errors.New("http profile: page-payload must contain <<<PAYLOAD_DATA>>>")
+			var ansOffset1, ansOffset2 int
+			if protocol == "http" {
+				WebPageOutput, _ := listenerMap["page-payload"].(string)
+				ansOffset1 = strings.Index(WebPageOutput, "<<<PAYLOAD_DATA>>>")
+				if ansOffset1 < 0 {
+					return nil, errors.New("http profile: page-payload must contain <<<PAYLOAD_DATA>>>")
+				}
+				ansOffset2 = len(WebPageOutput[ansOffset1+len("<<<PAYLOAD_DATA>>>"):])
 			}
-			ansOffset2 := len(WebPageOutput[ansOffset1+len("<<<PAYLOAD_DATA>>>"):])
+			// WS: ConnectorWS uses find_b64_in_data() — no ans offsets needed
 
 			rotationMode := 0 // 0=sequential, 1=random
 			if generateConfig.RotationMode == "random" {
@@ -760,7 +795,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		return nil, "", err
 	}
 
-	protocol, _ := listenerMap["protocol"].(string)
+	protocol := inferBeaconProtocol(listenerMap)
 	if protocol == "http" {
 		ObjectDir = ObjectDir_http
 		ConnectorFile = "ConnectorHTTP"
@@ -773,6 +808,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	} else if protocol == "dns" {
 		ObjectDir = ObjectDir_dns
 		ConnectorFile = "ConnectorDNS"
+	} else if protocol == "ws" {
+		ObjectDir = ObjectDir_ws
+		ConnectorFile = "ConnectorWS"
 	} else {
 		return nil, "", errors.New("protocol unknown")
 	}
@@ -823,6 +861,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		}
 		Files += ObjectDir + "/" + ofile + Ext + " "
 	}
+	if protocol == "ws" {
+		Files += ObjectDir + "/CryptAES" + Ext + " "
+	}
 	if protocol == "dns" {
 		Files = appendDNSObjectFiles(Files, ObjectDir, Ext)
 	}
@@ -841,8 +882,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		Files += ObjectDir + "/main" + Ext + " "
 		buildPath = tempDir + "/file.exe"
 		Filename += ".exe"
+		postLibs += " -lkernel32 -ladvapi32 -luser32 -lpsapi -lws2_32 -liphlpapi"
 		if iatHide {
-			postLibs += " -lkernel32"
+			postLibs += ""
 			Files += ObjectDir + "/entry_exe" + Ext + " "
 			lFlags += " -Wl,-T," + linkerLd
 			if generateConfig.Arch == "x86" {
@@ -855,8 +897,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		Files += ObjectDir + "/main_service" + Ext + " "
 		buildPath = tempDir + "/svc.exe"
 		Filename = "svc_" + Filename + ".exe"
+		postLibs += " -lkernel32 -ladvapi32 -luser32 -lpsapi -lws2_32 -liphlpapi"
 		if iatHide {
-			postLibs += " -lkernel32 -ladvapi32"
+			postLibs += ""
 			Files += ObjectDir + "/entry_svc" + Ext + " "
 			lFlags += " -Wl,-T," + linkerLd
 			if generateConfig.Arch == "x86" {
@@ -870,8 +913,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		lFlags += " -shared"
 		buildPath = tempDir + "/file.dll"
 		Filename += ".dll"
+		postLibs += " -lkernel32 -luser32 -lpsapi -lws2_32 -liphlpapi"
 		if iatHide {
-			postLibs += " -lkernel32"
+			postLibs += ""
 			if generateConfig.Arch == "x86" {
 				lFlags += " -Wl,-e,_DllMain@12"
 			} else {

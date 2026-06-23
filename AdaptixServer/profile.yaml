@@ -27,8 +27,10 @@ Teamserver:
     - "extenders/beacon_listener_tcp/config.yaml"
     - "extenders/beacon_listener_dns/config.yaml"
     - "extenders/beacon_listener_discord/config.yaml"
+    - "extenders/beacon_listener_ws/config.yaml"
     - "extenders/beacon_agent/config.yaml"
     - "extenders/listener_kharon_http/config.yaml"
+    - "extenders/vnc/config.yaml"
     - "extenders/agent_kharon/config.yaml"
     - "extenders/gopher_listener_tcp/config.yaml"
     - "extenders/gopher_agent/config.yaml"
@@ -39,7 +41,6 @@ Teamserver:
     - "extenders/phishing_service/config.yaml"
     - "extenders/webdelivery/config.yaml"
     - "extenders/notifier/config.yaml"
-    - "extenders/vnc/config.yaml"
   axscripts:
 #    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.

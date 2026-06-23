@@ -295,6 +295,17 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		}
 
 		protocol, _ := listenerMap["protocol"].(string)
+		// Infer protocol from other fields when "protocol" key is not in l_data
+		// BeaconWS sets protocol="http" (from listener WS plugin) — map it to "ws"
+		if protocol == "" || protocol == "http" {
+			if _, hasWsUri := listenerMap["uri"]; hasWsUri {
+				protocol = "ws"
+			} else if _, hasTcpBanner := listenerMap["tcp_banner"]; hasTcpBanner {
+				protocol = "tcp"
+			} else if _, hasBind := listenerMap["port_bind"]; hasBind {
+				protocol = "bind_tcp"
+			}
+		}
 		isGopher := (protocol == "tcp") // GopherTCP uses "tcp", LinuxTCP uses "bind_tcp"
 		switch protocol {
 
@@ -365,6 +376,69 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			}
 			profileData, _ = msgpack.Marshal(profile)
 
+		case "ws":
+			// callback_addresses can be string or []interface{} — handle both
+			var addresses []string
+			switch addrs := listenerMap["callback_addresses"].(type) {
+			case string:
+				addrs = strings.ReplaceAll(addrs, " ", "")
+				addrs = strings.ReplaceAll(addrs, "\n", ",")
+				addrs = strings.TrimSuffix(addrs, ",")
+				addresses = strings.Split(addrs, ",")
+			case []interface{}:
+				for _, a := range addrs {
+					if s, ok := a.(string); ok {
+						addresses = append(addresses, s)
+					}
+				}
+			}
+
+			var uriList []string
+			if uris, ok := listenerMap["uri"].([]interface{}); ok {
+				for _, u := range uris {
+					if s, ok := u.(string); ok {
+						uriList = append(uriList, s)
+					}
+				}
+			}
+
+			var uaList []string
+			if uas, ok := listenerMap["user_agent"].([]interface{}); ok {
+				for _, u := range uas {
+					if s, ok := u.(string); ok {
+						uaList = append(uaList, s)
+					}
+				}
+			}
+
+			profile := Profile{
+				Type:              uint(agentWatermark),
+				ListenerWatermark: uint(listenerWatermark),
+				Addresses:         addresses,
+				BannerSize:        0,
+				ConnTimeout:       reconnectTimeout,
+				ConnCount:         generateConfig.ReconnectCount,
+				UseSSL:            false, // WS SSL is handled at the HTTP layer, not at agent TCP level
+				Uris:              uriList,
+				UaList:            uaList,
+				UaCount:           len(uaList),
+				AnsSize:           0, // Will be computed from WebPageOutput template length
+				AnsPreSize:        0,
+			}
+
+			// Compute ans_pre_size from WebPageOutput template
+			if webPageOutput, ok := listenerMap["page-payload"].(string); ok && webPageOutput != "" {
+				payloadPlaceholder := "<<<PAYLOAD_DATA>>>"
+				b64Len := len(payloadPlaceholder)
+				// ans_pre_size is the offset of <<<PAYLOAD_DATA>>> in the template
+				idx := strings.Index(webPageOutput, payloadPlaceholder)
+				if idx >= 0 {
+					profile.AnsPreSize = idx
+					profile.AnsSize = len(webPageOutput) - idx - b64Len
+				}
+			}
+			profileData, _ = msgpack.Marshal(profile)
+
 		default:
 			return nil, errors.New("protocol unknown")
 		}
@@ -386,7 +460,7 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 
 var (
 	NativeSrcDir   = "src_agent/agent"
-	NativeObjFiles = []string{"crt", "msgpack", "crypt", "connector", "agent_info", "commander", "tasks_fs", "tasks_proc", "tasks_linux", "tasks_opsec", "jobs", "tasks_async", "tasks_net", "proxyfire", "elf_resolve", "opsec", "pivot", "tasks_pivot", "ax_vsnprintf", "bof_api", "elf_bof"}
+	NativeObjFiles = []string{"crt", "msgpack", "crypt", "connector", "agent_info", "commander", "tasks_fs", "tasks_proc", "tasks_linux", "tasks_opsec", "jobs", "tasks_async", "tasks_net", "proxyfire", "elf_resolve", "opsec", "pivot", "tasks_pivot", "ax_vsnprintf", "bof_api", "elf_bof", "ws_connector"}
 )
 
 // Compiler selection based on architecture
@@ -746,9 +820,6 @@ func (p *PluginAgent) CreateAgent(beat []byte) (adaptix.AgentData, adaptix.Exten
 	}
 
 	agentData.SessionKey = sessionInfo.EncryptKey
-	if len(sessionInfo.TransportSalt) == 16 {
-		agentData.SessionKey = append(append([]byte(nil), sessionInfo.EncryptKey...), sessionInfo.TransportSalt...)
-	}
 	agentData.Domain = ""
 	agentData.Computer = sessionInfo.Host
 	agentData.Username = sessionInfo.User
@@ -1141,6 +1212,11 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		}
 
 		// Linux: use /bin/sh (most portable)
+		r := make([]byte, 4)
+		_, _ = rand.Read(r)
+		taskId := binary.BigEndian.Uint32(r)
+		taskData.TaskId = fmt.Sprintf("%08x", taskId)
+
 		cmdArgs := []string{"-c", cmdParam}
 		packerData, _ := msgpack.Marshal(ParamsShell{Program: "/bin/sh", Args: cmdArgs})
 		cmd = Command{Code: COMMAND_SHELL, Data: packerData}

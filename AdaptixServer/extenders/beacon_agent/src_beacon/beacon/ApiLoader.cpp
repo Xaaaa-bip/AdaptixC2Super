@@ -64,15 +64,17 @@ BOOL ApiLoad()
 	HMODULE hKernel32Module = AxLdrModuleByHash(HASH_LIB_KERNEL32);
 
 	decltype(LocalAlloc)* allocProc = (decltype(LocalAlloc)*) GetSymbolAddress(hKernel32Module, HASH_FUNC_LOCALALLOC);
-	if (!allocProc)
+	if (!allocProc) {
 		return FALSE;
+	}
 
 	SysModules = (SYSMODULES*) allocProc(LPTR, sizeof(SYSMODULES));
 	ApiWin     = (WINAPIFUNC*) allocProc(LPTR, sizeof(WINAPIFUNC));
 	ApiNt      = (NTAPIFUNC*)  allocProc(LPTR, sizeof(NTAPIFUNC));
 
-	if (!SysModules || !ApiWin || !ApiNt)
+	if (!SysModules || !ApiWin || !ApiNt) {
 		return FALSE;
+	}
 
 	SysModules->Kernel32 = hKernel32Module;
 

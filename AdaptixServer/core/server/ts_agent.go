@@ -129,22 +129,29 @@ func (ts *Teamserver) TsAgentCreate(agentCrc string, agentId string, beat []byte
 }
 
 func (ts *Teamserver) TsAgentCommand(agentName string, agentId string, clientName string, hookId string, handlerId string, cmdline string, ui bool, args map[string]any) error {
+	fmt.Printf("[DEBUG] TsAgentCommand called: agentName=%s agentId=%s client=%s cmdline=%s args=%v\n", agentName, agentId, clientName, cmdline, args)
 	if !ts.agent_configs.Contains(agentName) {
+		fmt.Printf("[DEBUG] TsAgentCommand: agent %v not registered\n", agentName)
 		return fmt.Errorf("agent %v not registered", agentName)
 	}
 
 	agent, err := ts.getAgent(agentId)
 	if err != nil {
+		fmt.Printf("[DEBUG] TsAgentCommand: getAgent error: %v\n", err)
 		return err
 	}
+	fmt.Printf("[DEBUG] TsAgentCommand: agent.Active=%v\n", agent.Active)
 	if !agent.Active {
+		fmt.Printf("[DEBUG] TsAgentCommand: agent %v not active\n", agentId)
 		return fmt.Errorf("agent '%v' not active", agentId)
 	}
 
 	taskData, messageData, err := agent.Command(args)
 	if err != nil {
+		fmt.Printf("[DEBUG] TsAgentCommand: agent.Command error: %v\n", err)
 		return err
 	}
+	fmt.Printf("[DEBUG] TsAgentCommand: taskData.Type=%d TaskId=%s\n", taskData.Type, taskData.TaskId)
 	if taskData.Type == adaptix.TASK_TYPE_LOCAL {
 		if taskData.Message != "" || taskData.ClearText != "" {
 			ts.TsAgentConsoleLocalCommand(agentId, clientName, cmdline, taskData.Message, taskData.ClearText)
