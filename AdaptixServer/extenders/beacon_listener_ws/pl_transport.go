@@ -275,7 +275,6 @@ func (t *TransportWS) processRequest(ctx *gin.Context) {
 
 	agentType, agentId, beat, err := t.parseBeat(ctx)
 	if err != nil {
-		fmt.Printf("[listener %s] beacon check-in rejected: invalid beat (%v)\n", t.Name, err)
 		t.pageError(ctx)
 		return
 	}
@@ -283,7 +282,6 @@ func (t *TransportWS) processRequest(ctx *gin.Context) {
 	if !Ts.TsAgentIsExists(agentId) {
 		_, err = Ts.TsAgentCreate(agentType, agentId, beat, t.Name, ExternalIP, true)
 		if err != nil {
-			fmt.Printf("[listener %s] beacon check-in rejected: TsAgentCreate failed: %v\n", t.Name, err)
 			t.pageError(ctx)
 			return
 		}
@@ -293,8 +291,6 @@ func (t *TransportWS) processRequest(ctx *gin.Context) {
 
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		fmt.Printf("[listener %s] WebSocket upgrade failed: %v\n", t.Name, err)
-		fmt.Printf("[listener %s] Request Headers: %v\n", t.Name, ctx.Request.Header)
 		return
 	}
 	defer conn.Close()
@@ -310,44 +306,31 @@ func (t *TransportWS) processRequest(ctx *gin.Context) {
 		_ = initData // discard -- init was already handled in the beat
 	}
 
-	fmt.Printf("[listener %s] WS agent %s connected, entering cmd loop\n", t.Name, agentId)
-	fmt.Printf("[listener %s] WebPageOutput template length: %d\n", t.Name, len(t.Config.WebPageOutput))
 	preSize := len(strings.Split(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>")[0])
-	fmt.Printf("[listener %s] ans_pre_size=%d\n", t.Name, preSize)
 
 	// WebSocket Ping-Pong Loop
 	for {
 		msgType, bodyData, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Printf("[listener %s] WS read error (agent %s): %v\n", t.Name, agentId, err)
 			break
 		}
 
-		fmt.Printf("[listener %s] WS recv from agent %s: msgType=%d len=%d firstHex=%x\n",
-			t.Name, agentId, msgType, len(bodyData),
-			bodyData[:min(len(bodyData), 32)])
 
 		if len(bodyData) > 0 {
 			if err = Ts.TsAgentProcessData(agentId, bodyData); err != nil {
-				fmt.Printf("[listener %s] TsAgentProcessData error for agent %s: %v\n", t.Name, agentId, err)
 			} else {
-				fmt.Printf("[listener %s] TsAgentProcessData OK for agent %s (len=%d)\n", t.Name, agentId, len(bodyData))
 			}
 		} else {
-			fmt.Printf("[listener %s] WS recv empty frame from agent %s (heartbeat)\n", t.Name, agentId)
 		}
 
 		// Check for tasks
 		responseData, err := Ts.TsAgentGetHostedAll(agentId, 0x1900000)
 		if err == nil && len(responseData) > 0 {
-			fmt.Printf("[listener %s] TsAgentGetHostedAll for %s: %d bytes task data\n", t.Name, agentId, len(responseData))
 			encData := base64.StdEncoding.EncodeToString(responseData)
 			finalPayload := strings.Replace(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>", encData, 1)
-			fmt.Printf("[listener %s] Sending %d bytes to agent %s (firstPayload=%s)\n", t.Name, agentId, len(finalPayload), finalPayload[:min(len(finalPayload), 120)])
 			_ = conn.WriteMessage(websocket.TextMessage, []byte(finalPayload))
 		} else {
 			if err != nil {
-				fmt.Printf("[listener %s] TsAgentGetHostedAll error for %s: %v\n", t.Name, agentId, err)
 			}
 			// Send empty message to unblock client's Receive
 			finalPayload := strings.Replace(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>", "", 1)
