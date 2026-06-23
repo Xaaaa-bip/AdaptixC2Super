@@ -1146,7 +1146,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 
 	finalExePath := buildPath
-	if generateConfig.ExePseudoSign && (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe") {
+	if generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" {
 		signedPath := tempDir + "/file_signed.exe"
 		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying random self-signed Authenticode (openssl + osslsigncode)...")
 		if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {
