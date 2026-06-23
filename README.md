@@ -1,7 +1,20 @@
-# AdaptixC2 v1.2
+# AdaptixC2 v1.4
 
-## 更新说明
-- 更新beacon_agent 静态PE免杀能力
+## 分支说明
+| 分支 | 说明 |
+|------|------|
+| `main` | 最新代码（v1.4） |
+| `1.3` | v1.3 原始备份 |
+
+## v1.4 更新内容
+- **WS Beacon**：修复 WinHTTP 剥离 `Sec-WebSocket-Protocol` header 问题，改用 `X-Beat` 自定义头，三层 fallback
+- **默认签名**：Exe/Service Exe 格式默认开启 Authenticode 伪签名，消除 SmartScreen 弹窗
+- **Linux WS Agent**：支持 Linux WebSocket beacon
+- **构建修复**：修复 `Linker.ld` 缺失导致 `agent builder failed`
+- **错误日志**：构建失败时显示具体错误原因
+- **对抗模块**：补齐 AntiSandbox / EntropyEvasion / SandboxDetect / JccObfuscate / ApiSequenceObfuscate
+- **pe_header_mod**：PE 头混淆脚本
+- **调试清理**：移除冗余调试日志
 
 
 
@@ -74,17 +87,16 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 - Linux 和 macOS 整包会附带默认启用的原生 extenders `dist/` 目录
 - Windows 整包中的 `profile.yaml` 会自动禁用 extenders，避免因 Go plugin 平台差异导致启动时报错
 
-## 默认启用的稳定 Extenders
+## 默认启用的 Extenders
 
-当前默认 profile 启用以下 extender：
-
-- Beacon HTTP Listener
-- Beacon SMB Listener
-- Beacon TCP Listener
-- Beacon DNS Listener
+- Beacon HTTP / SMB / TCP / DNS / WS Listener
 - Beacon Agent
-- Gopher TCP Listener
-- Gopher Agent
+- Gopher TCP Listener / Gopher Agent
+- Linux TCP Listener / Linux Agent
+- macOS Agent
+- Discord Listener
+- Kharon HTTP Listener（默认未启用）
+- VNC 远程桌面
 
 说明：
 
