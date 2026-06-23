@@ -13,7 +13,7 @@ char* getServiceName()
 }
 #endif
 
-#if defined(BEACON_HTTP) 
+#if defined(BEACON_HTTP) || defined(BEACON_WS)
 char* getProfile()
 {
 	return (char*)"";

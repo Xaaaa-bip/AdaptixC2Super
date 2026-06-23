@@ -336,7 +336,7 @@ function RegisterCommands(listenerType)
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc, cmd_burst] );
         return { commands_windows: commands_dns }
     }
-    else if(listenerType == "BeaconHTTP") {
+    else if(listenerType == "BeaconHTTP" || listenerType == "BeaconWS") {
         let commands_http = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd, cmd_sleep,
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc] );
@@ -373,7 +373,7 @@ function GenerateUI(listeners_type)
     spinJitter.setRange(0, 100);
     spinJitter.setValue(0);
 
-    if( !listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconDNS") ) {
+    if( !listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconDNS") && !listeners_type.includes("BeaconWS") ) {
         labelSleep.setVisible(false);
         textSleep.setVisible(false);
         spinJitter.setVisible(false);
@@ -521,7 +521,7 @@ function GenerateUI(listeners_type)
     if(!listeners_type.includes("BeaconDNS")) {
         group_dns.setVisible(false);
     }
-    if(!listeners_type.includes("BeaconHTTP")) {
+    if(!listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconWS")) {
         group_proxy.setVisible(false);
         labelRotation.setVisible(false);
         comboRotation.setVisible(false);

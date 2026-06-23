@@ -83,7 +83,7 @@ typedef struct _AgentConfig {
 	ULONG exit_task_id;
 	ULONG download_chunk_size;
 
-#if defined(BEACON_HTTP)
+#if defined(BEACON_HTTP) || defined(BEACON_WS)
 	ProfileHTTP profile;
 
 #elif defined(BEACON_SMB)

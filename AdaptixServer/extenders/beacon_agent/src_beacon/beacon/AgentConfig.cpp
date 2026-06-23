@@ -27,7 +27,7 @@ AgentConfig* AgentConfig_Create()
 	self->sleep_delay  = Packer_Unpack32(packer);
 	self->jitter_delay = Packer_Unpack32(packer);
 
-#if defined(BEACON_HTTP)
+#if defined(BEACON_HTTP) || defined(BEACON_WS)
 	self->listener_type = Packer_Unpack32(packer);
 
 	self->profile.use_ssl        = Packer_Unpack8(packer);

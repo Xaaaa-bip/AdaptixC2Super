@@ -5,6 +5,7 @@ ax_file: "ax_config.axs"
 agent_name: "linux"
 agent_watermark: "a7f3b902"
 listeners:
+  - "BeaconWS"
   - "GopherTCP"
   - "LinuxTCP"
 multi_listeners: true

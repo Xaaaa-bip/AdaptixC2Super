@@ -4,7 +4,7 @@
 // AX_H() wraps every hash constant so the values embedded in the shellcode change each build.
 // ProcLoader.cpp Djb2A/Djb2W return (hash ^ AX_HASH_SALT) to match at runtime.
 #ifndef AX_HASH_SALT
-#define AX_HASH_SALT 0x00000000u  // fallback for manual builds: salt=0 â†?no change
+#define AX_HASH_SALT 0x00000000u  // fallback for manual builds: salt=0 ï¿½?no change
 #endif
 #define AX_H(h) ((h) ^ AX_HASH_SALT)
 
@@ -37,6 +37,7 @@
 #define HASH_FUNC_RTLUSERTHREADSTART                 AX_H(0x52a2729b)
 #define HASH_FUNC_NTALLOCATEVIRTUALMEMORY            AX_H(0x26bb660b)
 #define HASH_FUNC_NTCREATETHREADEX                   AX_H(0x461700cf)
+#define HASH_FUNC_NTSETINFORMATIONTHREAD             AX_H(0x1c9e4a77)
 
 //kernel32
 #define HASH_FUNC_CONNECTNAMEDPIPE                   AX_H(0xda6c7d81)
@@ -65,6 +66,7 @@
 #define HASH_FUNC_GETEXITCODEPROCESS                 AX_H(0xf714f658)
 #define HASH_FUNC_GETEXITCODETHREAD                  AX_H(0xca4ca7d1)
 #define HASH_FUNC_GETFILESIZE                        AX_H(0x5774353f)
+#define HASH_FUNC_GETDISKFREESPACEEXA                AX_H(0x3aaf62b2)
 #define HASH_FUNC_GETFILEATTRIBUTESA                 AX_H(0x4259a42c)
 #define HASH_FUNC_GETFULLPATHNAMEA                   AX_H(0x3da055a6)
 #define HASH_FUNC_GETLASTERROR                       AX_H(0xdbb35ee2)
@@ -233,3 +235,20 @@
 #define HASH_FUNC_LISTEN                             AX_H(0xb4374c73)
 #define HASH_FUNC_RECVFROM                           AX_H(0xcfb09288)
 #define HASH_FUNC_SENDTO                             AX_H(0xc44006d1)
+
+#define HASH_FUNC_CRYPTACQUIRECONTEXTA       AX_H(0x23d9db66)
+#define HASH_FUNC_CRYPTCREATEHASH            AX_H(0xc03b6a0e)
+#define HASH_FUNC_CRYPTHASHDATA              AX_H(0x23b9b874)
+#define HASH_FUNC_CRYPTDERIVEKEY             AX_H(0x30a9079e)
+#define HASH_FUNC_CRYPTENCRYPT               AX_H(0x08d22a9b)
+#define HASH_FUNC_CRYPTDECRYPT               AX_H(0xa6d98031)
+#define HASH_FUNC_CRYPTDESTROYHASH           AX_H(0x7ec34664)
+#define HASH_FUNC_CRYPTDESTROYKEY            AX_H(0x783483c9)
+#define HASH_FUNC_CRYPTRELEASECONTEXT        AX_H(0xa075b61c)
+
+#define HASH_FUNC_WINHTTPWEBSOCKETCOMPLETEUPGRADE AX_H(0xb16a8fda)
+#define HASH_FUNC_WINHTTPWEBSOCKETSEND            AX_H(0x9d8bd223)
+#define HASH_FUNC_WINHTTPWEBSOCKETRECEIVE         AX_H(0xdb26d39c)
+#define HASH_FUNC_WINHTTPWEBSOCKETCLOSE           AX_H(0x4de86baf)
+
+#define HASH_FUNC_CRYPTSETKEYPARAM           AX_H(0x3568c0c1)

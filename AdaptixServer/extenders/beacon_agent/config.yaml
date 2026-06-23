@@ -9,4 +9,5 @@ listeners:
   - "BeaconTCP"
   - "BeaconSMB"
   - "BeaconDNS"
+  - "BeaconWS"
 multi_listeners: false

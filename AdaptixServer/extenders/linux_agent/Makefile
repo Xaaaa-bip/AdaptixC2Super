@@ -8,6 +8,7 @@ all: clean
 	@ echo "    * Copying agent sources for per-payload compilation"
 	@ mkdir -p ./dist/src_agent/agent ./dist/src_agent/files
 	@ cp src_agent/agent/*.c src_agent/agent/*.h ./dist/src_agent/agent/
+	@ echo "      ws_connector* copied"
 	@ rm -f ./dist/src_agent/agent/config.h ./dist/src_agent/agent/ApiDefines.h ./dist/src_agent/agent/strings_obf.h
 	@ cp src_agent/files/config.tpl ./dist/src_agent/files/ 2>/dev/null || true
 	@ echo "      done..."
