@@ -304,16 +304,16 @@ func (t *TransportWS) processRequest(ctx *gin.Context) {
 			return
 		}
 		_ = initData // discard -- init was already handled in the beat
-_ = preSize
 	}
 
 	preSize := len(strings.Split(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>")[0])
+	_ = preSize
 
 	// WebSocket Ping-Pong Loop
 	for {
 		msgType, bodyData, err := conn.ReadMessage()
-_ = msgType
 		if err != nil {
+		_ = msgType
 			break
 		}
 
