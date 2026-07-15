@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -26,15 +27,31 @@ type TerminalChannelData struct {
 	OemCP      int    `json:"oem_cp"`
 }
 
+// normalizeTerminalKey maps any hex terminal_id string to the canonical key
+// used by agent job replies: fmt.Sprintf("%08x", shellId).
+// Without this, Web unpadded ids Put under "a1b2c3d" while Resume looks up
+// "0a1b2c3d" → WS stays open but relay never starts (stuck connecting).
+func normalizeTerminalKey(raw string) (int, string, error) {
+	termId, err := strconv.ParseInt(strings.TrimSpace(raw), 16, 64)
+	if err != nil {
+		return 0, "", errors.New("TerminalId not supported")
+	}
+	// Must fit signed 32-bit for agent shellId packing as int32
+	if termId < 0 || termId > 0x7fffffff {
+		return 0, "", errors.New("TerminalId not supported")
+	}
+	return int(termId), fmt.Sprintf("%08x", uint32(termId)), nil
+}
+
 func (ts *Teamserver) TsAgentTerminalCreateChannel(terminalData string, wsconn *websocket.Conn) error {
 	var td TerminalChannelData
 	if err := json.Unmarshal([]byte(terminalData), &td); err != nil {
 		return errors.New("invalid terminal data")
 	}
 
-	termId, err := strconv.ParseInt(td.TerminalId, 16, 64)
+	termId, termKey, err := normalizeTerminalKey(td.TerminalId)
 	if err != nil {
-		return errors.New("TerminalId not supported")
+		return err
 	}
 
 	agent, err := ts.getAgent(td.AgentId)
@@ -46,7 +63,7 @@ func (ts *Teamserver) TsAgentTerminalCreateChannel(terminalData string, wsconn *
 	}
 
 	terminal := &Terminal{
-		TerminalId: int(termId),
+		TerminalId: termId,
 		agent:      agent,
 		wsconn:     wsconn,
 		CodePage:   td.OemCP,
@@ -61,7 +78,8 @@ func (ts *Teamserver) TsAgentTerminalCreateChannel(terminalData string, wsconn *
 
 	tunnelManageTask(agent, taskData)
 
-	ts.terminals.Put(td.TerminalId, terminal)
+	// Always store under %08x so Resume(task.TaskId) hits the same key.
+	ts.terminals.Put(termKey, terminal)
 
 	return nil
 }
@@ -95,16 +113,26 @@ func (ts *Teamserver) TsTerminalConnResume(agentId string, terminalId string, io
 		return
 	}
 
-	value, ok := ts.terminals.Get(terminalId)
+	_, termKey, err := normalizeTerminalKey(terminalId)
+	if err != nil {
+		termKey = terminalId
+	}
+
+	value, ok := ts.terminals.Get(termKey)
 	if !ok {
-		return
+		// fallback: raw key (legacy Put without padding)
+		value, ok = ts.terminals.Get(terminalId)
+		if !ok {
+			return
+		}
+		termKey = terminalId
 	}
 	terminal, ok := value.(*Terminal)
 	if !ok {
 		return
 	}
 
-	relayWebsocketToTerminal(ts, agent, terminal, terminalId, ioDirect)
+	relayWebsocketToTerminal(ts, agent, terminal, termKey, ioDirect)
 }
 
 func (ts *Teamserver) TsTerminalConnData(terminalId string, data []byte) {

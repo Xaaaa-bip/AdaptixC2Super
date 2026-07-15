@@ -7,9 +7,10 @@ Teamserver:
   port: 8080
   # Client "endpoint" is the URL path prefix; login URL = https://host:port<endpoint>/login (must match server).
   endpoint: "/api"
-  password: "pass"
+  # only_password=true：任意用户名 + 统一密码即可登录（多操作员聊天/协作）
+  password: "cnmd@qax666"
   # true = only Teamserver.password is checked (any username). false = use operators: username -> password.
-  only_password: false
+  only_password: true
   operators:
     admin: "cnmd@qax666"
   cert: "server.rsa.crt"
@@ -27,10 +28,8 @@ Teamserver:
     - "extenders/beacon_listener_tcp/config.yaml"
     - "extenders/beacon_listener_dns/config.yaml"
     - "extenders/beacon_listener_discord/config.yaml"
-    - "extenders/beacon_listener_ws/config.yaml"
     - "extenders/beacon_agent/config.yaml"
     - "extenders/listener_kharon_http/config.yaml"
-    - "extenders/vnc/config.yaml"
     - "extenders/agent_kharon/config.yaml"
     - "extenders/gopher_listener_tcp/config.yaml"
     - "extenders/gopher_agent/config.yaml"
@@ -41,8 +40,9 @@ Teamserver:
     - "extenders/phishing_service/config.yaml"
     - "extenders/webdelivery/config.yaml"
     - "extenders/notifier/config.yaml"
+    - "extenders/vnc/config.yaml"
   axscripts:
-#    - "Extension-Kit/extension-kit.axs"
+    - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.
   access_token_live_hours: 12
   refresh_token_live_hours: 168

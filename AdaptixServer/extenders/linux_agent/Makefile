@@ -2,7 +2,9 @@ all: clean
 	@ echo "    * Building agent_linux plugin"
 	@ mkdir dist
 	@ cp config.yaml ax_config.axs ./dist/
-	@ GOEXPERIMENT=jsonv2,greenteagc go build -buildmode=plugin -ldflags="-s -w" -o ./dist/agent_linux.so pl_main.go pl_utils.go pl_hashes_linux.go pl_encoder_linux.go session_crypto.go
+	@ mkdir -p ./dist/templates
+	@ cp templates/stager_linux.c ./dist/templates/
+	@ GOEXPERIMENT=jsonv2,greenteagc go build -buildmode=plugin -ldflags="-s -w" -o ./dist/agent_linux.so pl_main.go pl_utils.go pl_hashes_linux.go pl_encoder_linux.go session_crypto.go pl_stager_linux.go
 	@ echo "      done..."
 
 	@ echo "    * Copying agent sources for per-payload compilation"

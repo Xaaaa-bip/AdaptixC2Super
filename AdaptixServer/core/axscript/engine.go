@@ -21,6 +21,7 @@ type ScriptEngine struct {
 	scriptDir     string
 	allowedRoots  []string
 	importedFiles []string
+
 }
 
 func NewScriptEngine(name string, manager *ScriptManager) *ScriptEngine {

@@ -222,7 +222,9 @@ function GenerateUI(listeners_type)
 
     let labelFormat = form.create_label("Format:");
     let comboFormat = form.create_combo()
-    comboFormat.addItems(["Binary ELF (Native)", "Shared Object (Native)", "Shellcode x86_64 (Native)", "Shellcode ARM64 (Native)"]);
+    comboFormat.addItems(["Binary ELF (Native)", "Shared Object (Native)", "Shellcode x86_64 (Native)", "Shellcode ARM64 (Native)", "Stager"]);
+    let labelStagerHint = form.create_label("Stager = small loader; payload on TS (/api/s/<token>), one-shot + 24h TTL.");
+
 
     let hline = form.create_hline()
 
@@ -251,6 +253,7 @@ function GenerateUI(listeners_type)
     layout.addWidget(comboArch, 0, 1, 1, 1);
     layout.addWidget(labelFormat, 1, 0, 1, 1);
     layout.addWidget(comboFormat, 1, 1, 1, 1);
+    layout.addWidget(labelStagerHint, 6, 0, 1, 2);
     layout.addWidget(hline, 2, 0, 1, 2);
     layout.addWidget(labelReconnTimeout, 3, 0, 1, 1);
     layout.addWidget(textReconnTimeout, 3, 1, 1, 1);

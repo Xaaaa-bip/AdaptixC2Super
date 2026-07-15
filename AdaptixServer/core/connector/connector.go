@@ -25,7 +25,9 @@ type Teamserver interface {
 
 	TsClientExists(username string) bool
 	TsClientDisconnect(username string)
-	TsClientConnect(username string, version string, socket *websocket.Conn, clientType uint8, consoleTeamMode bool, subscriptions []string)
+	// returns connection id for multi-session; empty if rejected
+	TsClientConnect(username string, version string, socket *websocket.Conn, clientType uint8, consoleTeamMode bool, subscriptions []string) string
+	TsClientDisconnectConn(connId string, username string)
 	TsClientSync(username string)
 	TsClientSubscribe(username string, categories []string, consoleTeamMode *bool)
 
@@ -112,6 +114,8 @@ type Teamserver interface {
 	TsTunnelClientStart(AgentId string, Listen bool, Type int, Info string, Lhost string, Lport int, Client string, Thost string, Tport int, AuthUser string, AuthPass string) (string, error)
 	TsTunnelClientNewChannel(TunnelData string, wsconn *websocket.Conn) error
 	TsTunnelClientStop(TunnelId string, Client string) error
+		TsTunnelClientEnable(TunnelId string, Client string) (string, error)
+		TsTunnelClientDelete(TunnelId string, Client string) error
 	TsTunnelStop(TunnelId string) error
 	TsTunnelClientSetInfo(TunnelId string, Info string) error
 	TsTunnelCreateSocks4(AgentId string, Info string, Lhost string, Lport int) (string, error)
@@ -419,6 +423,8 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 		api_group.POST("/tunnel/start/lportfwd", connector.TcTunnelStartLpf)
 		api_group.POST("/tunnel/start/rportfwd", connector.TcTunnelStartRpf)
 		api_group.POST("/tunnel/stop", connector.TcTunnelStop)
+		api_group.POST("/tunnel/enable", connector.TcTunnelEnable)
+		api_group.POST("/tunnel/delete", connector.TcTunnelDelete)
 		api_group.POST("/tunnel/set/info", connector.TcTunnelSetIno)
 
 		api_group.GET("/service/list", connector.TcServiceList)
@@ -426,8 +432,9 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 		//api_group.POST("/service/unload", connector.TcServiceUnload)
 		api_group.POST("/service/call", connector.TcServiceCall)
 
-		//api_group.POST("/axscript/list", connector.TcAxScriptList)
-		//api_group.POST("/axscript/commands", connector.TcAxScriptCommands)
+		// help / 补全 / BOF 扩展命令目录（只读；load/unload 仍走管理口或 Qt）
+		api_group.POST("/axscript/list", connector.TcAxScriptList)
+		api_group.POST("/axscript/commands", connector.TcAxScriptCommands)
 		//api_group.POST("/axscript/load", connector.TcAxScriptLoad)
 		//api_group.POST("/axscript/unload", connector.TcAxScriptUnload)
 	}

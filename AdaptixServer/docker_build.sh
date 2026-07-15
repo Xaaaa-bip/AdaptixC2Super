@@ -69,6 +69,7 @@ build_plugin "agent_kharon"          "extenders/agent_kharon"          "agent_kh
 build_plugin "notifier"              "extenders/notifier"              "notifier.so"              "."  "off"
 build_plugin "webdelivery"           "extenders/webdelivery"           "webdelivery.so"           "."  "off"
 build_plugin "vnc"                   "extenders/vnc"                   "vnc.so"                   "."  "off"
+build_plugin "arachne_service"       "extenders/arachne_service"       "arachne_service.so"       "."  "off"
 
 # Copy to dist/
 echo "[4/4] Copying to dist/ dirs..."

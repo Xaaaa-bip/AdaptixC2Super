@@ -77,14 +77,19 @@ func (tc *TsConnector) tcLogin(ctx *gin.Context) {
 }
 
 func (tc *TsConnector) tcWebsocketConnect(username string, version string, wsConn *websocket.Conn, clientType uint8, consoleTeamMode bool, subscriptions []string) {
-	tc.teamserver.TsClientConnect(username, version, wsConn, clientType, consoleTeamMode, subscriptions)
+	// multi-session: each WS has its own connId; same username no longer kicks the other
+	connId := tc.teamserver.TsClientConnect(username, version, wsConn, clientType, consoleTeamMode, subscriptions)
 	for {
 		_, _, err := wsConn.ReadMessage()
 		if err == nil {
 			continue
 		}
 
-		tc.teamserver.TsClientDisconnect(username)
+		if connId != "" {
+			tc.teamserver.TsClientDisconnectConn(connId, username)
+		} else {
+			tc.teamserver.TsClientDisconnect(username)
+		}
 		break
 	}
 }
@@ -150,11 +155,8 @@ func (tc *TsConnector) tcConnectOTP(ctx *gin.Context) {
 		return
 	}
 
-	exists := tc.teamserver.TsClientExists(wsData.Username)
-	if exists {
-		ctx.JSON(http.StatusNetworkAuthenticationRequired, gin.H{"message": "Client already connected", "ok": false})
-		return
-	}
+	// Allow multi-login / multi-session under same or different usernames.
+	// (Previously rejected with "Client already connected" → chat/sync isolated.)
 
 	clientType := wsData.ClientType
 	if clientType == 0 {

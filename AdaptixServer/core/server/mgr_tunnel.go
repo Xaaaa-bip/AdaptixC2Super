@@ -369,11 +369,20 @@ func (tm *TunnelManager) ResumeChannel(channelId int) {
 	}
 }
 
-func (tm *TunnelManager) ListTunnels() []adaptix.TunnelData {
-	var tunnels []adaptix.TunnelData
+// TunnelListItem is API-facing tunnel row (includes Active; not part of axc2 TunnelData).
+type TunnelListItem struct {
+	adaptix.TunnelData
+	Active bool `json:"p_active"`
+}
+
+func (tm *TunnelManager) ListTunnels() []TunnelListItem {
+	var tunnels []TunnelListItem
 	tm.tunnels.Range(func(key, value interface{}) bool {
 		tunnel := value.(*Tunnel)
-		tunnels = append(tunnels, tunnel.Data)
+		tunnels = append(tunnels, TunnelListItem{
+			TunnelData: tunnel.Data,
+			Active:     tunnel.Active,
+		})
 		return true
 	})
 	return tunnels

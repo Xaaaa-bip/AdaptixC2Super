@@ -250,11 +250,11 @@ func (cs *CommandStore) GetAgentCommandBatches(agentName string) []CommandBatch 
 }
 
 type CommandBatch struct {
-	Source   SourceType
-	Agent    string
-	Listener string
-	Os       int
-	Groups   []CommandGroup
+	Source   SourceType     `json:"source"`
+	Agent    string         `json:"agent"`
+	Listener string         `json:"listener"`
+	Os       int            `json:"os"`
+	Groups   []CommandGroup `json:"groups"`
 }
 
 ////////////////////

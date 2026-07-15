@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	mrand "math/rand/v2"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -87,6 +88,11 @@ type Teamserver interface {
 	TsConvertCpToUTF8(input string, codePage int) string
 	TsConvertUTF8toCp(input string, codePage int) string
 	TsWin32Error(errorCode uint) string
+
+	// Public HTTP endpoints for productized Stager payload hosting
+	TsEndpointRegisterPublicRaw(method string, path string, handler func(w http.ResponseWriter, r *http.Request)) error
+	TsEndpointUnregisterPublic(method string, path string) error
+	TsEndpointExistsPublic(method string, path string) bool
 }
 
 type PluginAgent struct{}
@@ -103,6 +109,11 @@ func InitPlugin(ts any, moduleDir string, watermark string) adaptix.PluginAgent 
 	ModuleDir = moduleDir
 	AgentWatermark = watermark
 	Ts = ts.(Teamserver)
+	if err := linuxStagerInitRoutes(); err != nil {
+		fmt.Printf("[linux_agent] stager route init failed: %v\n", err)
+	} else {
+		fmt.Printf("[linux_agent] stager payload route ready: GET /s/:token\n")
+	}
 	return &PluginAgent{}
 }
 
@@ -514,6 +525,31 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		return p.buildNativeShellcodeX64(profile, agentProfiles, generateConfig, currentDir, tempDir)
 	case "Shellcode ARM64 (Native)":
 		return p.buildNativeShellcodeARM64(profile, agentProfiles, generateConfig, currentDir, tempDir)
+	case "Stager":
+		// Build arch-appropriate shellcode, then wrap in productized Linux stager ELF.
+		var sc []byte
+		var err error
+		if arch == "ARM64" || arch == "aarch64" || arch == "arm64" {
+			sc, _, err = p.buildNativeShellcodeARM64(profile, agentProfiles, generateConfig, currentDir, tempDir)
+		} else {
+			sc, _, err = p.buildNativeShellcodeX64(profile, agentProfiles, generateConfig, currentDir, tempDir)
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		// listener map for host resolution
+		var listenerMap map[string]any
+		if len(profile.ListenerProfiles) > 0 {
+			_ = json.Unmarshal(profile.ListenerProfiles[0].Profile, &listenerMap)
+		}
+		stagerTemp, err := os.MkdirTemp("", "ax-linux-stager-*")
+		if err != nil {
+			_ = os.RemoveAll(tempDir)
+			return nil, "", err
+		}
+		defer os.RemoveAll(stagerTemp)
+		defer os.RemoveAll(tempDir)
+		return buildLinuxStager(profile.BuilderId, currentDir, stagerTemp, sc, listenerMap, arch)
 	default:
 		_ = os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("unknown format: %s", generateConfig.Format)

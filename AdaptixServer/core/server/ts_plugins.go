@@ -30,6 +30,7 @@ func (ts *Teamserver) TsListenerReg(listenerInfo extender.ListenerInfo) error {
 
 	ts.listener_configs.Put(listenerInfo.Name, listenerInfo)
 
+
 	return nil
 }
 

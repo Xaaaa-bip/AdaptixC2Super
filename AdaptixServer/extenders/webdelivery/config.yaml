@@ -7,8 +7,9 @@ service_config: |
   payload_route: "/deliver/payload"
   listener: "http"
   agent_name: "beacon"
-  format: "Artifact Go Exe"
+  format: "Exe"
+  arch: ""
   sleep: "5s"
   jitter: 20
-  cache_ttl_min: 60
-  c2_host_url: ""
+  cache_ttl_min: 30
+  c2_host_url: "https://110.41.87.17:8080/api"

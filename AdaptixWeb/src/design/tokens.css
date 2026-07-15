@@ -1,0 +1,133 @@
+/* AdaptixWeb — 太极水墨（黑白为主，默认阳面宣纸） */
+
+:root,
+html[data-theme="light"] {
+  /* 宣纸：冷白，非米黄 */
+  --paper: #f3f3f1;
+  --surface: #fafaf8;
+  --surface-2: #ecece8;
+  --panel-elevated: #ffffff;
+
+  /* 墨分五色 */
+  --ink: #141414;
+  --ink-2: #4a4a4a;
+  --ink-3: #8a8a8a;
+
+  --line: rgba(20, 20, 20, 0.1);
+  --line-2: rgba(20, 20, 20, 0.055);
+
+  /* 唯一强调：焦墨（黑白太极，不用石青/靛） */
+  --accent: #1a1a1a;
+  --accent-2: #2e2e2e;
+  --accent-soft: rgba(20, 20, 20, 0.07);
+  --accent-glow: rgba(20, 20, 20, 0.1);
+
+  /* 语义：在线用浓墨点；危险朱砂一点即可 */
+  --live: #1a1a1a;
+  --live-soft: rgba(20, 20, 20, 0.08);
+  --cinnabar: #b54a3c;
+  --cinnabar-soft: rgba(181, 74, 60, 0.12);
+  --warn: #8a6a2b;
+  --warn-soft: rgba(138, 106, 43, 0.12);
+
+  --sider-w: 56px;
+  --header-h: 50px;
+  --tabs-h: 36px;
+  --term-h: 280px;
+  --radius: 8px;
+  --radius-sm: 6px;
+
+  --mono: "Cascadia Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  --sans: "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --shadow: 0 0 0 1px rgba(20, 20, 20, 0.05), 0 6px 18px rgba(20, 20, 20, 0.04);
+  --shadow-float: 0 0 0 1px rgba(20, 20, 20, 0.07), 0 14px 36px rgba(20, 20, 20, 0.1);
+
+  --row-hover: rgba(20, 20, 20, 0.035);
+  --row-selected: rgba(20, 20, 20, 0.07);
+  --th-bg: #ecece8;
+
+  /* legacy aliases */
+  --bg: var(--paper);
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --text: var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-3);
+  --primary: var(--accent);
+  --primary-2: var(--accent-2);
+  --signal: var(--live);
+  --signal-soft: var(--live-soft);
+  --signal-dim: #1a1a1a;
+  --signal-glow: var(--live-soft);
+  --success: var(--live);
+  --ok: var(--live);
+  --warning: var(--warn);
+  --error: var(--cinnabar);
+  --danger: var(--cinnabar);
+  --sider: var(--surface-2);
+  --sider-2: var(--surface-2);
+  --header: var(--surface);
+  --void: var(--paper);
+}
+
+/* 阴面：淡墨，非 OLED 工业黑 */
+html[data-theme="dark"] {
+  --paper: #1c1c1c;
+  --surface: #242424;
+  --surface-2: #2c2c2c;
+  --panel-elevated: #303030;
+
+  --ink: #f2f2f0;
+  --ink-2: #b5b5b0;
+  --ink-3: #7a7a75;
+
+  --line: rgba(242, 242, 240, 0.1);
+  --line-2: rgba(242, 242, 240, 0.055);
+
+  --accent: #f0f0ec;
+  --accent-2: #ffffff;
+  --accent-soft: rgba(242, 242, 240, 0.1);
+  --accent-glow: rgba(242, 242, 240, 0.12);
+
+  --live: #f0f0ec;
+  --live-soft: rgba(242, 242, 240, 0.1);
+  --cinnabar: #d4786a;
+  --cinnabar-soft: rgba(212, 120, 106, 0.14);
+  --warn: #c4a35a;
+  --warn-soft: rgba(196, 163, 90, 0.14);
+
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 12px 28px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.45);
+
+  --row-hover: rgba(242, 242, 240, 0.05);
+  --row-selected: rgba(242, 242, 240, 0.1);
+  --th-bg: #2c2c2c;
+
+  --bg: var(--paper);
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --text: var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-3);
+  --primary: var(--accent);
+  --primary-2: var(--accent-2);
+  --signal: var(--live);
+  --signal-soft: var(--live-soft);
+  --signal-dim: #f0f0ec;
+  --signal-glow: var(--live-soft);
+  --success: var(--live);
+  --ok: var(--live);
+  --warning: var(--warn);
+  --error: var(--cinnabar);
+  --danger: var(--cinnabar);
+  --sider: var(--surface-2);
+  --sider-2: var(--surface-2);
+  --header: var(--surface);
+  --void: var(--paper);
+}
+
+html[data-density="compact"] {
+  --header-h: 46px;
+  --tabs-h: 32px;
+}

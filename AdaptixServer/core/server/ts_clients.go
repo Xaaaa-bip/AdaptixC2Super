@@ -21,11 +21,12 @@ var InitialSyncCategories = []string{
 	SyncCategoryPivots,
 }
 
-func (ts *Teamserver) TsClientConnect(username string, version string, socket *websocket.Conn, clientType uint8, consoleTeamMode bool, subscriptions []string) {
+// TsClientConnect returns connection id for multi-session disconnect/sync.
+func (ts *Teamserver) TsClientConnect(username string, version string, socket *websocket.Conn, clientType uint8, consoleTeamMode bool, subscriptions []string) string {
 	// --- PRE HOOK ---
 	preEvent := &eventing.EventDataClientConnect{Username: username}
 	if !ts.EventManager.Emit(eventing.EventClientConnect, eventing.HookPre, preEvent) {
-		return
+		return ""
 	}
 	// ----------------
 
@@ -59,30 +60,35 @@ func (ts *Teamserver) TsClientConnect(username string, version string, socket *w
 	postEvent := &eventing.EventDataClientConnect{Username: username}
 	ts.EventManager.EmitAsync(eventing.EventClientConnect, postEvent)
 	// -----------------
+	return client.ConnId()
 }
 
-func (ts *Teamserver) TsClientDisconnect(username string) {
+// TsClientDisconnectConn ends one WS session; tunnels/hooks only when last session of user leaves.
+func (ts *Teamserver) TsClientDisconnectConn(connId string, username string) {
 	// --- PRE HOOK ---
 	preEvent := &eventing.EventDataClientDisconnect{Username: username}
 	ts.EventManager.Emit(eventing.EventClientDisconnect, eventing.HookPre, preEvent)
 	// ----------------
 
-	ts.Broker.Unregister(username)
+	ts.Broker.Unregister(connId)
 
-	ts.TsNotifyClient(false, username)
+	// only cleanup user-scoped resources when no more sessions for this username
+	if !ts.Broker.ClientExists(username) {
+		ts.TsNotifyClient(false, username)
 
-	var tunnelIds []string
-	ts.TunnelManager.ForEachTunnel(func(key string, tunnel *Tunnel) bool {
-		if tunnel.Data.Client == username {
-			tunnelIds = append(tunnelIds, tunnel.Data.TunnelId)
+		var tunnelIds []string
+		ts.TunnelManager.ForEachTunnel(func(key string, tunnel *Tunnel) bool {
+			if tunnel.Data.Client == username {
+				tunnelIds = append(tunnelIds, tunnel.Data.TunnelId)
+			}
+			return true
+		})
+		for _, id := range tunnelIds {
+			_ = ts.TsTunnelStop(id)
 		}
-		return true
-	})
-	for _, id := range tunnelIds {
-		_ = ts.TsTunnelStop(id)
-	}
 
-	ts.TsProcessHookJobsForDisconnectedClient(username)
+		ts.TsProcessHookJobsForDisconnectedClient(username)
+	}
 
 	// --- POST HOOK ---
 	postEvent := &eventing.EventDataClientDisconnect{Username: username}
@@ -90,13 +96,23 @@ func (ts *Teamserver) TsClientDisconnect(username string) {
 	// -----------------
 }
 
+// TsClientDisconnect legacy: drop ALL sessions of username
+func (ts *Teamserver) TsClientDisconnect(username string) {
+	for _, c := range ts.Broker.GetClients(username) {
+		ts.TsClientDisconnectConn(c.ConnId(), username)
+	}
+}
+
 func (ts *Teamserver) TsClientSync(username string) {
-	client, ok := ts.Broker.GetClient(username)
-	if !ok {
+	clients := ts.Broker.GetClients(username)
+	if len(clients) == 0 {
 		return
 	}
 
-	if !client.IsSynced() {
+	for _, client := range clients {
+		if client.IsSynced() {
+			continue
+		}
 		categories := client.GetSubscriptions()
 		ts.TsSyncCategories(client, categories)
 
@@ -126,46 +142,48 @@ func (ts *Teamserver) TsClientSync(username string) {
 }
 
 func (ts *Teamserver) TsClientSubscribe(username string, categories []string, consoleTeamMode *bool) {
-	client, ok := ts.Broker.GetClient(username)
-	if !ok {
+	clients := ts.Broker.GetClients(username)
+	if len(clients) == 0 {
 		return
 	}
 
-	if consoleTeamMode != nil {
-		client.SetConsoleTeamMode(*consoleTeamMode)
-	}
-
-	seen := make(map[string]struct{}, len(categories))
-	var newCategories []string
-	for _, raw := range categories {
-		category := strings.TrimSpace(raw)
-		if category == "" {
-			continue
+	for _, client := range clients {
+		if consoleTeamMode != nil {
+			client.SetConsoleTeamMode(*consoleTeamMode)
 		}
-		if _, exists := seen[category]; exists {
-			continue
-		}
-		seen[category] = struct{}{}
 
-		if !client.IsSubscribed(category) {
-			client.Subscribe(category)
-			switch category {
-			case SyncCategoryTasksManager,
-				SyncCategoryTasksOnlyJobs,
-				SyncCategoryChatRealtime,
-				SyncCategoryDownloadsRealtime,
-				SyncCategoryScreenshotRealtime,
-				SyncCategoryCredentialsRealtime,
-				SyncCategoryTargetsRealtime:
-			default:
-				newCategories = append(newCategories, category)
+		seen := make(map[string]struct{}, len(categories))
+		var newCategories []string
+		for _, raw := range categories {
+			category := strings.TrimSpace(raw)
+			if category == "" {
+				continue
+			}
+			if _, exists := seen[category]; exists {
+				continue
+			}
+			seen[category] = struct{}{}
+
+			if !client.IsSubscribed(category) {
+				client.Subscribe(category)
+				switch category {
+				case SyncCategoryTasksManager,
+					SyncCategoryTasksOnlyJobs,
+					SyncCategoryChatRealtime,
+					SyncCategoryDownloadsRealtime,
+					SyncCategoryScreenshotRealtime,
+					SyncCategoryCredentialsRealtime,
+					SyncCategoryTargetsRealtime:
+				default:
+					newCategories = append(newCategories, category)
+				}
 			}
 		}
-	}
 
-	if len(newCategories) > 0 {
-		ts.TsSyncCategories(client, newCategories)
-	} else {
-		ts.sendSyncPackets(client, nil)
+		if len(newCategories) > 0 {
+			ts.TsSyncCategories(client, newCategories)
+		} else {
+			ts.sendSyncPackets(client, nil)
+		}
 	}
 }

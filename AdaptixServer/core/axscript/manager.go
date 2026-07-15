@@ -149,6 +149,7 @@ func (sm *ScriptManager) LoadAxScript(scriptPath string) error {
 	})
 	sm.mu.Unlock()
 
+
 	logs.Success("", "Loaded axscript '%s'", scriptPath)
 	return nil
 }
@@ -346,6 +347,7 @@ func (sm *ScriptManager) LoadUserScript(name string, script string) error {
 		ScriptType: "user",
 	})
 	sm.mu.Unlock()
+
 
 	return nil
 }

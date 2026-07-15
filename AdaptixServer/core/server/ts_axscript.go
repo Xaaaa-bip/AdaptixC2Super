@@ -1,11 +1,13 @@
 package server
 
 import (
+	"AdaptixServer/core/axscript"
 	"AdaptixServer/core/utils/logs"
 	"AdaptixServer/core/utils/std"
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 
 	adaptix "github.com/Adaptix-Framework/axc2"
 )
@@ -212,6 +214,13 @@ func (ts *Teamserver) TsAxScriptParseAndExecute(agentId string, username string,
 		return fmt.Errorf("agent not found: %w", err)
 	}
 
+	// Qt 客户端本地 Commander 处理 help；Web/raw 入口对齐为服务端本地回显
+	if tokens := axscript.Tokenize(cmdline); len(tokens) > 0 && strings.EqualFold(tokens[0], "help") {
+		helpText := ts.formatAgentCommandHelp(agentName, listenerRegName, agentOs, tokens[1:])
+		ts.TsAgentConsoleLocalCommand(agentId, username, cmdline, "", helpText)
+		return nil
+	}
+
 	resolved, resolveErr := ts.ScriptManager.CommandStore.ResolveFromCmdline(agentName, listenerRegName, agentOs, cmdline)
 	if resolveErr != nil {
 		return fmt.Errorf("unknown command: %w", resolveErr)
@@ -254,6 +263,176 @@ func (ts *Teamserver) TsAxScriptParseAndExecute(agentId string, username string,
 	}
 
 	return ts.TsAgentCommand(agentName, agentId, username, hookId, handlerId, cmdline, false, parsed.Args)
+}
+
+// formatAgentCommandHelp 对齐 Qt Commander::ProcessHelp 输出
+func (ts *Teamserver) formatAgentCommandHelp(agentName, listener string, os int, parts []string) string {
+	if ts.ScriptManager == nil {
+		return "script manager not initialized"
+	}
+
+	groups := ts.ScriptManager.CommandStore.GetCommandsForAgent(agentName, listener, os)
+	if len(groups) == 0 {
+		return "No commands registered for this agent"
+	}
+
+	var b strings.Builder
+	const totalWidth = 24
+
+	if len(parts) == 0 {
+		for _, g := range groups {
+			b.WriteString("\n")
+			src := g.Source
+			if src == "" {
+				src = g.ScriptName
+			}
+			if src != "" {
+				fmt.Fprintf(&b, "  Group - %s (%s)\n", g.GroupName, src)
+			} else {
+				fmt.Fprintf(&b, "  Group - %s\n", g.GroupName)
+			}
+			b.WriteString("  =====================================\n")
+			for _, cmd := range g.Commands {
+				if len(cmd.Subcommands) == 0 {
+					pad := totalWidth - len(cmd.Name)
+					if pad < 1 {
+						pad = 1
+					}
+					fmt.Fprintf(&b, "  %s%s      %s\n", cmd.Name, strings.Repeat(" ", pad), cmd.Description)
+					continue
+				}
+				for _, sub := range cmd.Subcommands {
+					name := cmd.Name + " " + sub.Name
+					pad := totalWidth - len(name)
+					if pad < 1 {
+						pad = 1
+					}
+					fmt.Fprintf(&b, "  %s%s      %s\n", name, strings.Repeat(" ", pad), sub.Description)
+				}
+			}
+		}
+		b.WriteString("\n  help [command [subcommand]]\n")
+		return b.String()
+	}
+
+	// help <cmd> [sub]
+	cmdName := parts[0]
+	var found *axscript.CommandDef
+	for i := range groups {
+		for j := range groups[i].Commands {
+			if groups[i].Commands[j].Name == cmdName {
+				found = &groups[i].Commands[j]
+				break
+			}
+		}
+		if found != nil {
+			break
+		}
+	}
+	if found == nil {
+		return "Unknown command: " + cmdName
+	}
+
+	if len(parts) == 1 {
+		b.WriteString("\n")
+		fmt.Fprintf(&b, "  Command               : %s\n", found.Name)
+		if found.Description != "" {
+			fmt.Fprintf(&b, "  Description           : %s\n", found.Description)
+		}
+		if found.Example != "" {
+			fmt.Fprintf(&b, "  Example               : %s\n", found.Example)
+		}
+		if len(found.Subcommands) > 0 {
+			b.WriteString("\n")
+			b.WriteString("  SubCommand                Description\n")
+			b.WriteString("  ----------                -----------\n")
+			for _, sub := range found.Subcommands {
+				pad := 20 - len(sub.Name)
+				if pad < 1 {
+					pad = 1
+				}
+				fmt.Fprintf(&b, "  %s%s      %s\n", sub.Name, strings.Repeat(" ", pad), sub.Description)
+			}
+		} else if len(found.Args) > 0 {
+			writeCommandArgsHelp(&b, found.Name, found.Args)
+		}
+		return b.String()
+	}
+
+	subName := parts[1]
+	var foundSub *axscript.CommandDef
+	for i := range found.Subcommands {
+		if found.Subcommands[i].Name == subName {
+			foundSub = &found.Subcommands[i]
+			break
+		}
+	}
+	if foundSub == nil {
+		return "Unknown subcommand: " + subName
+	}
+
+	full := found.Name + " " + foundSub.Name
+	fmt.Fprintf(&b, "  Command               : %s\n", full)
+	if foundSub.Description != "" {
+		fmt.Fprintf(&b, "  Description           : %s\n", foundSub.Description)
+	}
+	if foundSub.Example != "" {
+		fmt.Fprintf(&b, "  Example               : %s\n", foundSub.Example)
+	}
+	if len(foundSub.Args) > 0 {
+		writeCommandArgsHelp(&b, full, foundSub.Args)
+	}
+	return b.String()
+}
+
+func writeCommandArgsHelp(b *strings.Builder, fullName string, args []axscript.ArgumentDef) {
+	var usage strings.Builder
+	usage.WriteString(fullName)
+	maxArg := 0
+	type row struct {
+		full string
+		arg  axscript.ArgumentDef
+	}
+	rows := make([]row, 0, len(args))
+	for _, arg := range args {
+		fullarg := formatArgToken(arg)
+		if len(fullarg) > maxArg {
+			maxArg = len(fullarg)
+		}
+		usage.WriteString(" ")
+		usage.WriteString(fullarg)
+		rows = append(rows, row{full: fullarg, arg: arg})
+	}
+	b.WriteString("  Usage                 : ")
+	b.WriteString(usage.String())
+	b.WriteString("\n\n")
+	b.WriteString("  Arguments:\n")
+	for _, r := range rows {
+		pad := maxArg - len(r.full)
+		if pad < 0 {
+			pad = 0
+		}
+		def := ""
+		if r.arg.DefaultUsed {
+			def = fmt.Sprintf(" (default: '%v').", r.arg.DefaultValue)
+		}
+		fmt.Fprintf(b, "    %s%s  : %-9s%s %s\n", r.full, strings.Repeat(" ", pad), r.arg.Type+".", def, r.arg.Description)
+	}
+}
+
+func formatArgToken(arg axscript.ArgumentDef) string {
+	req := arg.Required && !arg.DefaultUsed
+	open, close := "[", "]"
+	if req {
+		open, close = "<", ">"
+	}
+	mid := arg.Mark
+	if arg.Mark != "" && arg.Name != "" {
+		mid = arg.Mark + " " + arg.Name
+	} else if arg.Name != "" {
+		mid = arg.Name
+	}
+	return open + mid + close
 }
 
 func (ts *Teamserver) TsAxScriptResolveHooks(agentName string, agentId string, listenerRegName string, os int, cmdline string, args map[string]interface{}) (string, string, bool, error) {

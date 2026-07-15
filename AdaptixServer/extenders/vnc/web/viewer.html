@@ -175,7 +175,9 @@ function startMjpegStream() {
         .catch(err => {
             if (err.name === 'AbortError') return;
             console.error('Stream fetch error:', err);
-            setStatus('dead', 'Connection failed');
+            setStatus('dead', '连接失败：agent 流未就绪或隧道无响应');
+            $('placeholder').style.display = 'block';
+            $('placeholder').textContent = '连接失败。请确认已下发 vnc start，并等待 agent 上传/启动 vnc_stream 后再重试。';
             scheduleReconnect();
         });
 }
@@ -217,6 +219,20 @@ function scheduleReconnect() {
         }, 2000);
     }
 }
+
+// Auto-connect when opened from AdaptixWeb (?auto=1 or session/local present)
+(function autoConnectOnLoad() {
+    const auto = urlParams.get('auto') === '1' || !!sessionId || !!localPort;
+    if (!auto) return;
+    if (!sessionId && !localPort) {
+        setStatus('dead', '缺少 session/local 参数');
+        return;
+    }
+    // slight delay so layout settles inside iframe
+    setTimeout(function () {
+        try { connect(); } catch (e) { console.error(e); }
+    }, 300);
+})();
 
 function switchScreen(index) {
     if (!sessionId) return;

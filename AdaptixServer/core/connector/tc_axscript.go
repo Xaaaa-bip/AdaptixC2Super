@@ -95,3 +95,4 @@ func (tc *TsConnector) TcAxScriptUnload(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
 }
+

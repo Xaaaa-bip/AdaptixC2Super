@@ -95,6 +95,7 @@ func taskTypeFromPacket(packet interface{}) int {
 }
 
 type ClientHandler struct {
+	id             string // unique connection id (multi-session per username)
 	username       string
 	socket         *websocket.Conn
 	socketMu       sync.Mutex
@@ -130,10 +131,13 @@ type ClientStats struct {
 
 type MessageBroker struct {
 	mu         sync.RWMutex
-	clients    map[string]*ClientHandler
+	// clients: connection-id → handler（同一 username 可多连接，聊天/同步互不踢）
+	clients map[string]*ClientHandler
+	// byUser: username → set of connection ids
+	byUser     map[string]map[string]struct{}
 	broadcast  chan *BrokerMessage
 	register   chan *ClientHandler
-	unregister chan string
+	unregister chan string // connection id
 	shutdown   chan struct{}
 	wg         sync.WaitGroup
 	running    atomic.Bool
@@ -142,6 +146,7 @@ type MessageBroker struct {
 func NewMessageBroker() *MessageBroker {
 	return &MessageBroker{
 		clients:    make(map[string]*ClientHandler),
+		byUser:     make(map[string]map[string]struct{}),
 		broadcast:  make(chan *BrokerMessage, BroadcastQueueSize),
 		register:   make(chan *ClientHandler, 64),
 		unregister: make(chan string, 64),
@@ -171,6 +176,7 @@ func (mb *MessageBroker) Stop() {
 		client.Close()
 	}
 	mb.clients = make(map[string]*ClientHandler)
+	mb.byUser = make(map[string]map[string]struct{})
 	mb.mu.Unlock()
 }
 
@@ -184,17 +190,28 @@ func (mb *MessageBroker) run() {
 
 		case client := <-mb.register:
 			mb.mu.Lock()
-			if existing, ok := mb.clients[client.username]; ok {
-				existing.Close()
+			// multi-session: do NOT kick same username; key by connection id
+			if client.id == "" {
+				client.id = client.username
 			}
-			mb.clients[client.username] = client
+			mb.clients[client.id] = client
+			if mb.byUser[client.username] == nil {
+				mb.byUser[client.username] = make(map[string]struct{})
+			}
+			mb.byUser[client.username][client.id] = struct{}{}
 			mb.mu.Unlock()
 
-		case username := <-mb.unregister:
+		case connId := <-mb.unregister:
 			mb.mu.Lock()
-			if client, ok := mb.clients[username]; ok {
+			if client, ok := mb.clients[connId]; ok {
 				client.Close()
-				delete(mb.clients, username)
+				delete(mb.clients, connId)
+				if set, ok2 := mb.byUser[client.username]; ok2 {
+					delete(set, connId)
+					if len(set) == 0 {
+						delete(mb.byUser, client.username)
+					}
+				}
 			}
 			mb.mu.Unlock()
 
@@ -209,36 +226,46 @@ func (mb *MessageBroker) dispatch(msg *BrokerMessage) {
 	defer mb.mu.RUnlock()
 
 	if msg.Target != "" {
-		if client, ok := mb.clients[msg.Target]; ok {
+		// Target is username: fan-out to ALL sessions of that user
+		if ids, ok := mb.byUser[msg.Target]; ok {
+			for id := range ids {
+				if client, ok2 := mb.clients[id]; ok2 {
+					client.Send(msg.Data, msg.Priority)
+				}
+			}
+		} else if client, ok := mb.clients[msg.Target]; ok {
+			// fallback: treat as connection id
 			client.Send(msg.Data, msg.Priority)
 		}
 		return
 	}
 
-	for operator, client := range mb.clients {
-		if msg.Exclude != operator {
-			if msg.Category == SyncCategoryAgents {
-				if !client.IsSubscribed(SyncCategoryAgents) && !client.IsSubscribed(SyncCategoryAgentsOnlyActive) && !client.IsSubscribed(SyncCategoryAgentsInactive) {
-					continue
-				}
-			} else if msg.Category == SyncCategoryConsoleHistory {
-				if !client.ConsoleTeamMode() {
-					if msg.TaskClient == "" || msg.TaskClient != operator {
-						continue
-					}
-				}
-			} else if (msg.Category == SyncCategoryTasksHistory || msg.Category == SyncCategoryTasksManager) && client.IsSubscribed(SyncCategoryTasksOnlyJobs) {
-				if msg.TaskType != adaptix.TASK_TYPE_JOB {
-					continue
-				}
-			} else if msg.Category != "" && !client.IsSubscribed(msg.Category) {
+	for _, client := range mb.clients {
+		operator := client.username
+		if msg.Exclude != "" && msg.Exclude == operator {
+			continue
+		}
+		if msg.Category == SyncCategoryAgents {
+			if !client.IsSubscribed(SyncCategoryAgents) && !client.IsSubscribed(SyncCategoryAgentsOnlyActive) && !client.IsSubscribed(SyncCategoryAgentsInactive) {
 				continue
 			}
-			if client.synced.Load() {
-				client.Send(msg.Data, msg.Priority)
-			} else {
-				client.BufferForSync(msg.Data, msg.MsgType, msg.StateKey)
+		} else if msg.Category == SyncCategoryConsoleHistory {
+			if !client.ConsoleTeamMode() {
+				if msg.TaskClient == "" || msg.TaskClient != operator {
+					continue
+				}
 			}
+		} else if (msg.Category == SyncCategoryTasksHistory || msg.Category == SyncCategoryTasksManager) && client.IsSubscribed(SyncCategoryTasksOnlyJobs) {
+			if msg.TaskType != adaptix.TASK_TYPE_JOB {
+				continue
+			}
+		} else if msg.Category != "" && !client.IsSubscribed(msg.Category) {
+			continue
+		}
+		if client.synced.Load() {
+			client.Send(msg.Data, msg.Priority)
+		} else {
+			client.BufferForSync(msg.Data, msg.MsgType, msg.StateKey)
 		}
 	}
 }
@@ -445,37 +472,76 @@ func (mb *MessageBroker) Register(client *ClientHandler) {
 	}
 }
 
-func (mb *MessageBroker) Unregister(username string) {
+// Unregister by connection id
+func (mb *MessageBroker) Unregister(connId string) {
 	select {
-	case mb.unregister <- username:
+	case mb.unregister <- connId:
 	case <-mb.shutdown:
 	}
 }
 
+// GetClient returns one live session for username (prefer most recently registered).
+// For multi-session, prefer GetClients / ForEachUserClient.
 func (mb *MessageBroker) GetClient(username string) (*ClientHandler, bool) {
 	mb.mu.RLock()
 	defer mb.mu.RUnlock()
-	client, ok := mb.clients[username]
-	return client, ok
+	ids, ok := mb.byUser[username]
+	if !ok || len(ids) == 0 {
+		// legacy: maybe keyed by username
+		client, ok2 := mb.clients[username]
+		return client, ok2
+	}
+	var last *ClientHandler
+	for id := range ids {
+		if c, ok2 := mb.clients[id]; ok2 {
+			last = c
+		}
+	}
+	if last == nil {
+		return nil, false
+	}
+	return last, true
+}
+
+func (mb *MessageBroker) GetClients(username string) []*ClientHandler {
+	mb.mu.RLock()
+	defer mb.mu.RUnlock()
+	ids, ok := mb.byUser[username]
+	if !ok {
+		if c, ok2 := mb.clients[username]; ok2 {
+			return []*ClientHandler{c}
+		}
+		return nil
+	}
+	out := make([]*ClientHandler, 0, len(ids))
+	for id := range ids {
+		if c, ok2 := mb.clients[id]; ok2 {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func (mb *MessageBroker) ClientExists(username string) bool {
 	mb.mu.RLock()
 	defer mb.mu.RUnlock()
+	if ids, ok := mb.byUser[username]; ok && len(ids) > 0 {
+		return true
+	}
 	_, ok := mb.clients[username]
 	return ok
 }
 
 func (mb *MessageBroker) ForEachClient(fn func(username string, client *ClientHandler) bool) {
 	mb.mu.RLock()
-	clients := make(map[string]*ClientHandler, len(mb.clients))
-	for k, v := range mb.clients {
-		clients[k] = v
+	clients := make([]*ClientHandler, 0, len(mb.clients))
+	for _, v := range mb.clients {
+		clients = append(clients, v)
 	}
 	mb.mu.RUnlock()
 
-	for username, client := range clients {
-		if !fn(username, client) {
+	for _, client := range clients {
+		if !fn(client.username, client) {
 			break
 		}
 	}
@@ -498,7 +564,10 @@ func serializePacket(packet interface{}) []byte {
 }
 
 func NewClientHandler(username string, socket *websocket.Conn, versionSupport bool, broker *MessageBroker, clientType uint8, consoleTeamMode bool) *ClientHandler {
+	// unique connection id so same username can hold multiple Web/Qt sessions
+	connId := username + "#" + time.Now().UTC().Format("150405.000000000")
 	ch := &ClientHandler{
+		id:              connId,
 		username:        username,
 		socket:          socket,
 		versionSupport:  versionSupport,
@@ -554,13 +623,13 @@ func (ch *ClientHandler) writeLoop() {
 
 		case data := <-ch.syncChan:
 			if err := ch.writeToSocket(data); err != nil {
-				ch.broker.Unregister(ch.username)
+				ch.broker.Unregister(ch.id)
 				return
 			}
 
 		case data := <-ch.sendChan:
 			if err := ch.writeToSocket(data); err != nil {
-				ch.broker.Unregister(ch.username)
+				ch.broker.Unregister(ch.id)
 				return
 			}
 		}
@@ -621,7 +690,7 @@ func (ch *ClientHandler) SendSync(data []byte) {
 	}
 
 	if err := ch.writeToSocket(data); err != nil {
-		ch.broker.Unregister(ch.username)
+		ch.broker.Unregister(ch.id)
 	}
 }
 
@@ -666,6 +735,10 @@ func (ch *ClientHandler) IsSynced() bool {
 
 func (ch *ClientHandler) Username() string {
 	return ch.username
+}
+
+func (ch *ClientHandler) ConnId() string {
+	return ch.id
 }
 
 func (ch *ClientHandler) VersionSupport() bool {

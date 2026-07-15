@@ -159,7 +159,7 @@ event.on_processbrowser_list(event_process_action, ["beacon"]);
 
 function RegisterCommands(listenerType)
 {
-    let cmd_cat = ax.create_command("cat", "Read first 2048 bytes of the specified file", "cat C:\\file.exe", "Task: read file");
+    let cmd_cat = ax.create_command("cat", "Read the full content of the specified file (max 16MB; use download for larger)", "cat C:\\file.txt", "Task: read file");
     cmd_cat.addArgString("path", true);
 
     let cmd_cd = ax.create_command("cd", "Change current working directory", "cd C:\\Windows", "Task: change working directory");
@@ -336,7 +336,7 @@ function RegisterCommands(listenerType)
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc, cmd_burst] );
         return { commands_windows: commands_dns }
     }
-    else if(listenerType == "BeaconHTTP" || listenerType == "BeaconWS") {
+    else if(listenerType == "BeaconHTTP") {
         let commands_http = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd, cmd_sleep,
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc] );
@@ -364,7 +364,7 @@ function GenerateUI(listeners_type)
 
     let labelAgentFormat = form.create_label("Format:");
     let comboAgentFormat = form.create_combo()
-    comboAgentFormat.addItems(["Exe", "Service Exe", "DLL", "Shellcode", "Hex C"]);
+    comboAgentFormat.addItems(["Exe", "Service Exe", "DLL", "Shellcode", "Hex C", "Artifact Go Exe", "Artifact C++ Exe", "Artifact C++ DLL"]);
 
     let labelSleep = form.create_label("Sleep (Jitter %):");
     let textSleep = form.create_textline("4s");
@@ -373,7 +373,7 @@ function GenerateUI(listeners_type)
     spinJitter.setRange(0, 100);
     spinJitter.setValue(0);
 
-    if( !listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconDNS") && !listeners_type.includes("BeaconWS") ) {
+    if( !listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconDNS") ) {
         labelSleep.setVisible(false);
         textSleep.setVisible(false);
         spinJitter.setVisible(false);
@@ -521,7 +521,7 @@ function GenerateUI(listeners_type)
     if(!listeners_type.includes("BeaconDNS")) {
         group_dns.setVisible(false);
     }
-    if(!listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconWS")) {
+    if(!listeners_type.includes("BeaconHTTP")) {
         group_proxy.setVisible(false);
         labelRotation.setVisible(false);
         comboRotation.setVisible(false);

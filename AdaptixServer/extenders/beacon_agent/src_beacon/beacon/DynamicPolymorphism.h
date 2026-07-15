@@ -16,13 +16,12 @@
  * a ".spoof_N" section between each real section.
  *
  * == Junk code generation ==
- * pl_main.go generates the actual AX_JUNK_1..N and AX_HASH_SALT values
- * each build. Default empty definitions here allow manual builds.
- *
- * Each AX_JUNK_N is a small inline asm / volatile snippet that does
- * no-op work — different branches, dead stores, empty loops — to
- * change the code layout and hashes every build, defeating signature
- * matching and static analysis.
+ * NOTE: this header is a STATIC file of fixed AxJunk1..N defaults, force-
+ * included by src_beacon/Makefile COMMON_FLAGS. pl_main.go does NOT generate
+ * these per build (an earlier comment claimed it did — that was never wired).
+ * Per-build junk/diversification is handled separately at link time via
+ * generateDiversificationC() in pl_main.go (a diversify.c compiled and linked
+ * per agent generation). The defaults here are constant across builds.
  *
  * Usage: sprinkle AxJunk1(), AxJunk2(), ... in between real operations.
  * For PE section spoofing: add AX_SPOOF_SECTION(x) to code between
