@@ -1,12 +1,54 @@
-# AdaptixC2 v1.4
+# AdaptixC2 v1.5
 
 ## 分支说明
 | 分支 | 说明 |
 |------|------|
-| `main` | 最新代码（v1.4） |
+| `main` | 最新代码（**v1.5**） |
 | `1.3` | v1.3 原始备份 |
 
-## v1.4 更新内容
+## v1.5 更新内容
+
+相对 v1.4，本版侧重 **Web 产品化**、**一键 VPS 构建** 与 **Extension-Kit 布局收敛**。
+
+### 集成 Web 控制台（teamserver）
+- 启动开关：`./adaptixserver -profile profile.yaml **-web**`（不加 `-web` 则只有 API，无页面）
+- 静态目录：`dist/web`（profile `Web.root`，默认 `web`）
+- 浏览器入口：`https://host:{Web.port}{Web.path}`（产品示例 path=`/cnmbzxc`；根路径 `/` 可不暴露控制台）
+- 同源 API：`Web.api_base` 可空，走 Teamserver endpoint；登录可读 `{path}/config.json`
+- 相关实现：`main.go` CLI、`core/connector/webui.go`、profile `Web` 段
+
+### Web 前端（AdaptixWeb）产品能力
+- **载荷 Generate**：平台卡片（Windows / Linux / macOS / Gopher）；Windows 合并为单卡，格式区选 Stager / Exe / Service Exe / DLL / Shellcode / Hex C 等；含 Kharon
+- **监听 Listeners**：BeaconHTTP/WS/TCP/SMB/DNS、**BeaconDiscord**、LinuxTCP、GopherTCP、**KharonHTTP** 等专用表单
+- **投递 WebDelivery**、登录与 `vite` base（`VITE_BASE` / `Web.path`）对齐产品路径
+- Qt `ax_config` 去掉 Artifact 三项，与 Web 载荷格式对齐
+
+### 构建系统（Makefile）
+- **`make server-ext`**（推荐 VPS）：`clean` → 编 server → 编 extenders → **拷贝 Web** → **拷贝 Extension-Kit**（不编 Qt 客户端）
+- **`make web`**：只 **copy** 静态产物到 `dist/web`，**不**在 Makefile 里执行 `npm install` / `npm run build`
+  - 源优先级：`WEB_SRC=...` → `AdaptixWeb/dist/` → 已是静态树的 `AdaptixWeb/`
+- **`make extension-kit`**：拷贝到 `dist/Extension-Kit/`
+  - 源优先级：`EXTKIT_SRC` → **`./Extension-Kit`** → `AdaptixServer/Extension-Kit`
+- **beacon_agent Makefile**：删除强制 `cp artifacts`（无该目录时会导致 `server-ext` 失败）
+
+### Extension-Kit 布局
+- **唯一维护路径**：仓库根目录 **`Extension-Kit/`**（含 `extension-kit.axs`）
+- **删除** 重复树 `client/Extension-Kit/`（避免双份不同步）
+- profile 默认：`axscripts: - "Extension-Kit/extension-kit.axs"`（相对 **dist 工作目录**）
+- 启动须 `cd dist`；kit 与 so 均在 dist 侧
+
+### 运维注意（v1.5 构建产物）
+- `make` **不生成** TLS 证书（`server.rsa.crt` / `key`）、**不创建** `data/` 库；需首次生成或从现网拷贝
+- `clean` 会清空整个 `dist/`，证书 / 数据 / 现网改过的 `profile.yaml` 需自行备份恢复
+- 必须在 **`dist` cwd** 启动 adaptixserver，否则路径与 getwd 易出错
+
+### 认证与协作（延续并文档化）
+- 支持 profile `only_password` 等协作登录方式（以当前 `profile.yaml` 为准）
+- 多端 WebSocket / 聊天等以服务端实现为准
+
+---
+
+## v1.4 更新内容（历史）
 - **WS Beacon**：修复 WinHTTP 剥离 `Sec-WebSocket-Protocol` header 问题，改用 `X-Beat` 自定义头，三层 fallback
 - **默认签名**：Exe/Service Exe 格式默认开启 Authenticode 伪签名，消除 SmartScreen 弹窗
 - **Linux WS Agent**：支持 Linux WebSocket beacon
@@ -15,14 +57,6 @@
 - **对抗模块**：补齐 AntiSandbox / EntropyEvasion / SandboxDetect / JccObfuscate / ApiSequenceObfuscate
 - **pe_header_mod**：PE 头混淆脚本
 - **调试清理**：移除冗余调试日志
-
-### 近期产品化（Web / 构建）
-- **集成 Web 控制台**：`./adaptixserver -profile profile.yaml -web`，静态页在 `dist/web`，入口路径见 profile `Web.path`（产品示例 `/cnmbzxc`）
-- **`make server-ext` 产物**：服务端 + extenders + **Web 静态拷贝** + **Extension-Kit 拷贝**（不编 Qt 客户端）
-- **Web**：不在 Makefile 里跑 `npm`；只把已有静态产物拷到 `dist/web`（见下方「构建说明」）
-- **Extension-Kit**：仓库根目录 `Extension-Kit/`（含 `extension-kit.axs`），`make extension-kit` / `server-ext` 自动拷到 `dist/Extension-Kit/`
-- **beacon_agent**：去掉强制 `cp artifacts`（目录常不存在会导致 make 失败）；Qt 载荷格式去掉 Artifact 三项，与 Web Generate 对齐
-- **载荷 / 监听 Web UI**：平台卡片、Stager/Exe 等格式、KharonHTTP / BeaconDiscord 等表单产品化
 
 ## 构建说明
 
