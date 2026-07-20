@@ -13,7 +13,6 @@ all: clean
 	@ mkdir -p $(ROOT)dist/beacon
 	@ cp $(ROOT)src_beacon/beacon/Linker.ld $(ROOT)dist/beacon/Linker.ld
 	@ cp $(ROOT)src_beacon/beacon/Shellcode.ld $(ROOT)dist/beacon/Shellcode.ld
-	@ cp -r $(ROOT)artifacts $(ROOT)dist/
 	@ # stager / PE helpers required at generate time next to agent_beacon.so
 	@ if [ -d "$(ROOT)templates" ]; then cp -a "$(ROOT)templates" "$(ROOT)dist/"; fi
 	@ if [ -f "$(ROOT)pe_header_mod.py" ]; then cp -f "$(ROOT)pe_header_mod.py" "$(ROOT)dist/"; fi

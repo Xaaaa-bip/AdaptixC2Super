@@ -22,6 +22,7 @@ func main() {
 		err         error
 		debug       = flag.Bool("debug", false, "Enable debug mode")
 		profilePath = flag.String("profile", "profile.yaml", "Path to YAML profile (default: profile.yaml in current working directory)")
+		enableWeb   = flag.Bool("web", false, "Enable integrated Web console (static UI from profile Web.root at Web.path)")
 	)
 
 	flag.Usage = func() {
@@ -75,6 +76,7 @@ func main() {
 
 	token.InitJWT(ts.Profile.Server.ATokenLive, ts.Profile.Server.RTokenLive)
 
+	ts.EnableWeb = *enableWeb
 	ts.Start()
 }
 

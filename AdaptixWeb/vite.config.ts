@@ -3,8 +3,11 @@ import react from '@vitejs/plugin-react'
 
 // On teamserver: proxy /api to local adaptixserver TLS.
 const target = process.env.VITE_API_TARGET || 'https://127.0.0.1:8080'
+// Product build under a console path, e.g. VITE_BASE=/cnmbzxc/
+const base = process.env.VITE_BASE || '/'
 
 export default defineConfig({
+  base,
   plugins: [react()],
   server: {
     host: '0.0.0.0',

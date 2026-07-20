@@ -1332,6 +1332,19 @@ html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
 }
+.gen-presets-platform {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.gen-agent-row { margin-bottom: 4px; }
+.gen-format-row {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gen-format-row button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 .gen-preset {
   height: auto; min-height: 88px; padding: 10px 12px;
   border-radius: 10px; flex-direction: column; align-items: flex-start;

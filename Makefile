@@ -95,7 +95,85 @@ server: prepare
 	@ cp AdaptixServer/ssl_gen.sh AdaptixServer/profile.yaml AdaptixServer/404page.html ./$(DIST_DIR)/
 	@ echo "[+] done"
 
-server-ext: clean server extenders
+### WEB ###
+
+# 直接拷贝已构建的静态控制台到 dist/web（不跑 npm）
+# 优先：AdaptixWeb/dist（本仓库前端产物）
+# 其次：WEB_SRC 环境变量 / 参数指定的现成 web 目录（如线上 dist/web）
+WEB_DIR := AdaptixWeb
+WEB_SRC ?=
+
+web: prepare
+	@ echo "[*] Copying Web console -> $(DIST_DIR)/web (no npm build) ..."
+	@ src=""; \
+	if [ -n "$(WEB_SRC)" ] && [ -d "$(WEB_SRC)" ] && [ -f "$(WEB_SRC)/index.html" ]; then \
+		src="$(WEB_SRC)"; \
+	elif [ -d "$(WEB_DIR)/dist" ] && [ -f "$(WEB_DIR)/dist/index.html" ]; then \
+		src="$(WEB_DIR)/dist"; \
+	elif [ -f "$(WEB_DIR)/index.html" ] && [ -d "$(WEB_DIR)/assets" ]; then \
+		src="$(WEB_DIR)"; \
+	else \
+		echo "[ERROR] 找不到 Web 静态产物。任选其一："; \
+		echo "  - 放好 $(WEB_DIR)/dist/（含 index.html）"; \
+		echo "  - 或 make web WEB_SRC=/path/to/existing/web"; \
+		exit 1; \
+	fi; \
+	echo "[*] source: $$src"; \
+	rm -rf $(DIST_DIR)/web; \
+	mkdir -p $(DIST_DIR)/web; \
+	cp -a "$$src"/. $(DIST_DIR)/web/; \
+	if [ ! -f $(DIST_DIR)/web/qqwry.ipdb ]; then \
+		if [ -f "$(WEB_DIR)/public/qqwry.ipdb" ]; then \
+			cp -f "$(WEB_DIR)/public/qqwry.ipdb" $(DIST_DIR)/web/qqwry.ipdb; \
+			echo "[+] qqwry.ipdb from $(WEB_DIR)/public"; \
+		elif [ -f "client/qqwry.ipdb" ]; then \
+			cp -f "client/qqwry.ipdb" $(DIST_DIR)/web/qqwry.ipdb; \
+			echo "[+] qqwry.ipdb from client/"; \
+		else \
+			echo "[!] qqwry.ipdb not found (optional)"; \
+		fi; \
+	fi; \
+	echo "[+] web done ($(DIST_DIR)/web)"
+
+### EXTENSION-KIT ###
+
+# profile axscripts 期望 dist 下: Extension-Kit/extension-kit.axs
+# 源码查找顺序: EXTKIT_SRC > ./Extension-Kit > AdaptixServer/Extension-Kit > client/Extension-Kit
+EXTKIT_DST := $(DIST_DIR)/Extension-Kit
+EXTKIT_SRC ?=
+
+extension-kit: prepare
+	@ echo "[*] Copying Extension-Kit -> $(EXTKIT_DST) ..."
+	@ src=""; \
+	if [ -n "$(EXTKIT_SRC)" ] && [ -d "$(EXTKIT_SRC)" ]; then \
+		src="$(EXTKIT_SRC)"; \
+	elif [ -f "Extension-Kit/extension-kit.axs" ]; then \
+		src="Extension-Kit"; \
+	elif [ -f "AdaptixServer/Extension-Kit/extension-kit.axs" ]; then \
+		src="AdaptixServer/Extension-Kit"; \
+	elif [ -f "client/Extension-Kit/extension-kit.axs" ]; then \
+		src="client/Extension-Kit"; \
+	else \
+		echo "[ERROR] 找不到 Extension-Kit（需含 extension-kit.axs）。请放到仓库根目录 Extension-Kit/"; \
+		echo "  或 AdaptixServer/Extension-Kit/；或 make extension-kit EXTKIT_SRC=/path/to/Extension-Kit"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$src/extension-kit.axs" ]; then \
+		echo "[ERROR] $$src/extension-kit.axs 不存在"; \
+		exit 1; \
+	fi; \
+	echo "[*] source: $$src"; \
+	rm -rf $(EXTKIT_DST); \
+	mkdir -p $(DIST_DIR); \
+	if command -v rsync >/dev/null 2>&1; then \
+		rsync -a --exclude='.git' --exclude='.git/**' "$$src"/ $(EXTKIT_DST)/; \
+	else \
+		cp -a "$$src" $(EXTKIT_DST); \
+		rm -rf $(EXTKIT_DST)/.git; \
+	fi; \
+	echo "[+] extension-kit done ($(EXTKIT_DST))"
+
+server-ext: clean server extenders web extension-kit
 	@ cp AdaptixServer/extenders/beacon_agent/dist/agent_beacon.so $(DIST_DIR)/extenders/beacon_agent/agent_beacon.so 2>/dev/null || true
 
 
@@ -183,9 +261,11 @@ help:
 	@ echo "  all              - Build everything (server, client, extenders)"
 	@ echo "  extenders        - Build only the extenders"
 	@ echo "  kharon-sync      - Copy agent_kharon + listener_kharon_http from KHRON_ROOT (default ../Kharon) into extenders + go work sync"
-	@ echo "  server-ext       - Build server and extenders (no client, ideal for VPS)"
+	@ echo "  server-ext       - Build server + extenders + web + Extension-Kit (no Qt client)"
 	@ echo "  server-ext-with-kharon - kharon-sync then server-ext (对齐 setup_kharon.sh 的拷贝步骤)"
 	@ echo "  server           - Build only the server"
+	@ echo "  web              - Copy Web static assets to dist/web (no npm; WEB_SRC=... optional)"
+	@ echo "  extension-kit    - Copy Extension-Kit to dist/ (default ./Extension-Kit)"
 	@ echo "  client-fast      - Build only the client in multithread mode (fast build)"
 	@ echo "  client           - Build only the client"
 	@ echo "  clean            - Remove dist directory"
@@ -208,4 +288,4 @@ help:
 	@ echo ""
 	@ echo "Platform: $(UNAME_S) [$(NPROC) proc]"
 
-.PHONY: all extenders kharon-sync server-ext server-ext-with-kharon server client clean clean-all docker-build-server docker-build-extenders docker-build-server-ext docker-build-all docker-up docker-down docker-logs docker-restart docker-clean docker-clean-all help prepare
+.PHONY: all extenders kharon-sync server-ext server-ext-with-kharon server web extension-kit client clean clean-all docker-build-server docker-build-extenders docker-build-server-ext docker-build-all docker-up docker-down docker-logs docker-restart docker-clean docker-clean-all help prepare

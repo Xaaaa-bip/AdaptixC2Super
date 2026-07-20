@@ -3,6 +3,33 @@ package profile
 type AdaptixProfile struct {
 	Server     *TsProfile    `yaml:"Teamserver"`
 	HttpServer *TsHttpServer `yaml:"HttpServer"`
+	// Web optional console UI (enabled only with CLI -web).
+	Web *TsWebConfig `yaml:"Web"`
+}
+
+// TsWebConfig controls the browser console listen address and entry path.
+// Only active when adaptixserver is started with -web.
+type TsWebConfig struct {
+	// Bind address for the Web console. Default 0.0.0.0.
+	Interface string `yaml:"interface"`
+	// Listen port. Default 8080. Same as Teamserver.port → mount on the API TLS listener.
+	Port int `yaml:"port"`
+	// Browser entry path for the console, e.g. "/" or "/cnmbzxc". Default "/".
+	Path string `yaml:"path"`
+	// Static files directory (vite build output), relative to process cwd. Default "web".
+	Root string `yaml:"root"`
+	// SPA fallback to index.html for unknown paths under Path. Default true when omitted.
+	Spa *bool `yaml:"spa"`
+	// Default API base for the login form. Empty = same-origin Teamserver.endpoint.
+	ApiBase string `yaml:"api_base"`
+}
+
+// SpaEnabled returns whether SPA fallback is on (default true).
+func (w *TsWebConfig) SpaEnabled() bool {
+	if w == nil || w.Spa == nil {
+		return true
+	}
+	return *w.Spa
 }
 
 type TsProfile struct {

@@ -294,3 +294,24 @@ export function downloadBytes(filename: string, bytes: Uint8Array) {
 export function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
 }
+
+
+/** Runtime config served by adaptixserver -web at {Web.path}/config.json */
+export type RuntimeConfig = {
+  api_base?: string
+  endpoint?: string
+  path?: string
+}
+
+export async function loadRuntimeConfig(): Promise<RuntimeConfig | null> {
+  try {
+    // import.meta.env.BASE_URL ends with / in Vite (e.g. / or /cnmbzxc/)
+    const base = (import.meta as any).env?.BASE_URL || '/'
+    const url = new URL('config.json', window.location.origin + base).toString()
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    return (await res.json()) as RuntimeConfig
+  } catch {
+    return null
+  }
+}

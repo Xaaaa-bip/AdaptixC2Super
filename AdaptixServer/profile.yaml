@@ -89,3 +89,16 @@ HttpServer:
       - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
       - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
       - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+
+# Integrated Web console (only when started with: ./adaptixserver -web)
+# Browser entry: https://<interface>:<port><path>
+Web:
+  interface: "0.0.0.0"
+  port: 8080
+  # Console entry path, e.g. "/" or "/cnmbzxc"
+  path: "/"
+  # vite build output directory (relative to process cwd; use dist/web when cwd=dist)
+  root: "web"
+  spa: true
+  # Login form default API base; empty = same-origin Teamserver.endpoint
+  api_base: ""

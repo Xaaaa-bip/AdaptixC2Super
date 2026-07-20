@@ -140,9 +140,13 @@ export function WebDelivery() {
     if (st.payload_route) setPayloadRoute(st.payload_route)
     if (st.agent_name) setAgentName(st.agent_name)
     if (st.format) {
-      // 兼容旧默认 Artifact Go Exe
-      if (st.format === 'Artifact Go Exe') setFormat(st.agent_name === 'gopher' ? 'Binary EXE' : 'Exe')
-      else setFormat(st.format)
+      // 兼容服务端历史默认值（已废弃的 Artifact 系列）
+      const legacy: Record<string, string> = {
+        'Artifact Go Exe': st.agent_name === 'gopher' ? 'Binary EXE' : 'Exe',
+        'Artifact C++ Exe': 'Exe',
+        'Artifact C++ DLL': 'DLL',
+      }
+      setFormat(legacy[st.format] || st.format)
     }
     if (st.listener) setListener(st.listener)
     if (st.c2_host_url) setC2Host(st.c2_host_url)
@@ -286,8 +290,7 @@ export function WebDelivery() {
             )}
 
             <div className="hint muted-hint" style={{ marginBottom: 10 }}>
-              旧默认 <code>Artifact Go Exe</code> 只适合 Gopher。当前按监听自动选 Agent：
-              BeaconHTTP/WS/… → <b>beacon/Exe</b>；GopherTCP → gopher；LinuxTCP → linux。
+              按监听自动选 Agent：BeaconHTTP/WS/… → <b>beacon/Exe</b>；GopherTCP → gopher；LinuxTCP → linux。
             </div>
 
             <div className="gen-section-title">1. 投递路由</div>

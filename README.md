@@ -16,15 +16,92 @@
 - **pe_header_mod**：PE 头混淆脚本
 - **调试清理**：移除冗余调试日志
 
-
+### 近期产品化（Web / 构建）
+- **集成 Web 控制台**：`./adaptixserver -profile profile.yaml -web`，静态页在 `dist/web`，入口路径见 profile `Web.path`（产品示例 `/cnmbzxc`）
+- **`make server-ext` 产物**：服务端 + extenders + **Web 静态拷贝** + **Extension-Kit 拷贝**（不编 Qt 客户端）
+- **Web**：不在 Makefile 里跑 `npm`；只把已有静态产物拷到 `dist/web`（见下方「构建说明」）
+- **Extension-Kit**：仓库根目录 `Extension-Kit/`（含 `extension-kit.axs`），`make extension-kit` / `server-ext` 自动拷到 `dist/Extension-Kit/`
+- **beacon_agent**：去掉强制 `cp artifacts`（目录常不存在会导致 make 失败）；Qt 载荷格式去掉 Artifact 三项，与 Web Generate 对齐
+- **载荷 / 监听 Web UI**：平台卡片、Stager/Exe 等格式、KharonHTTP / BeaconDiscord 等表单产品化
 
 ## 构建说明
-Server
-- git clone https://github.com/Xaaaa-bip/AdaptixC2
-- ./pre_install_linux_all.sh server
-- make server-ext
-Client
-- ./pre_install_linux_all.sh client
+
+### Server（推荐 VPS）
+
+```bash
+git clone https://github.com/Xaaaa-bip/AdaptixC2
+cd AdaptixC2
+./pre_install_linux_all.sh server
+make server-ext
+```
+
+`make server-ext` 会：
+
+1. `clean` 后编译 `adaptixserver` → `dist/`
+2. 编译全部默认 extenders → `dist/extenders/`
+3. **拷贝 Web 静态** → `dist/web/`（不执行 npm）
+4. **拷贝 Extension-Kit** → `dist/Extension-Kit/`
+
+#### Web 静态从哪来（只 copy）
+
+按优先级：
+
+1. `make web WEB_SRC=/path/to/web`（目录内需有 `index.html`）
+2. 否则 `AdaptixWeb/dist/`（需事先在本机/CI 用 Vite 编好）
+3. 否则 `AdaptixWeb/` 本身已是带 `assets/` 的静态树
+
+单独只更 Web：
+
+```bash
+make web
+# 或
+make web WEB_SRC=/root/some/existing/web
+```
+
+前端源码改完后，在有 Node 的环境先生成产物再 copy，例如：
+
+```bash
+cd AdaptixWeb
+# base 必须与 profile Web.path 一致（注意尾斜杠）
+npm run build -- --base=/cnmbzxc/
+cd ..
+make web
+```
+
+#### Extension-Kit
+
+- 源码位置（查找顺序）：`EXTKIT_SRC` → **`./Extension-Kit`** → `AdaptixServer/Extension-Kit` → `client/Extension-Kit`
+- 需含入口 `extension-kit.axs`
+- profile 中默认：`axscripts: - "Extension-Kit/extension-kit.axs"`（相对 **dist 工作目录**）
+
+```bash
+make extension-kit
+# 或
+make extension-kit EXTKIT_SRC=/path/to/Extension-Kit
+```
+
+#### 启动（必须在 dist 工作目录）
+
+```bash
+cd dist
+# 按需：./ssl_gen.sh 或配置 TLS；证书 server.rsa.crt/key 不会由 make 生成
+# 纯 API：
+./adaptixserver -profile profile.yaml
+# 带集成 Web：
+./adaptixserver -profile profile.yaml -web
+```
+
+说明：
+
+- `make` **不会**生成 TLS 证书、**不会**创建 `data/` 数据库；首次运行或拷贝现网证书/数据
+- `clean` 会删整个 `dist/`，之后需重新 `server-ext`，并自行恢复证书 / `data` / 现网改过的 `profile.yaml`
+
+### Client
+
+```bash
+./pre_install_linux_all.sh client
+# 见下文「本地编译方法」Qt 客户端
+```
 
 ## 相关插件
 - https://github.com/danieloz147/SpyIt vnc
@@ -38,6 +115,7 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 
 - 服务端：Golang
 - 客户端：C++ / Qt
+- Web 控制台：`AdaptixWeb`（可选，`-web` 挂载）
 - 运行平台：Linux / Windows / macOS
 
 官方文档入口：
@@ -54,8 +132,11 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 
 - `AdaptixServer/`：服务端源码与默认配置
 - `AdaptixClient/`：Qt 客户端源码
+- `AdaptixWeb/`：Web 控制台源码（构建产物可放 `AdaptixWeb/dist` 供 `make web` 拷贝）
+- `Extension-Kit/`：BOF / axscript 扩展（`make server-ext` 拷到 `dist/Extension-Kit`）
 - `.github/workflows/build.yml`：GitHub Actions 三平台构建流程
 - `scripts/`：辅助脚本
+- `Makefile`：`server` / `extenders` / `web` / `extension-kit` / `server-ext` / `client`
 
 ## GitHub Actions 一键构建
 
@@ -261,9 +342,19 @@ https://127.0.0.1:8843/api/login
 
 ## 编译产物位置
 
+### 推荐：`make server-ext`（仓库根目录）
+
+| 路径 | 说明 |
+|------|------|
+| `dist/adaptixserver` | 服务端二进制（支持 `-web`） |
+| `dist/extenders/` | 插件 so / objects / 配置 |
+| `dist/web/` | Web 静态（若源存在） |
+| `dist/Extension-Kit/` | BOF 扩展（若源存在） |
+| `dist/profile.yaml` | 默认配置模板（启动前可按环境改 `Web.path` 等） |
+
 ### 本地手工编译
 
-- 服务端：`AdaptixServer/AdaptixServer`
+- 服务端：`AdaptixServer/AdaptixServer` 或根目录 `make server` → `dist/adaptixserver`
 - 客户端：`build-client/AdaptixClient` 或 `AdaptixClient/build/AdaptixClient`
 
 ### GitHub Actions 产物

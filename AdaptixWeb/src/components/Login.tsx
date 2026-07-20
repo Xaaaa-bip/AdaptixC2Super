@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
-import { loadLoginPrefs } from '../utils'
+import { loadLoginPrefs, loadRuntimeConfig } from '../utils'
 
 export function Login() {
   const loginAndConnect = useStore((s) => s.loginAndConnect)
@@ -13,6 +13,23 @@ export function Login() {
   const [err, setErr] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [advanced, setAdvanced] = useState(!!prefs.baseUrl)
+
+  // Product mode: server may ship /config.json (or {base}config.json) with api_base.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (prefs.baseUrl) return
+      const cfg = await loadRuntimeConfig()
+      if (cancelled || !cfg) return
+      const api = (cfg.api_base || '').trim()
+      if (api) {
+        setBaseUrl(api)
+        setAdvanced(true)
+      }
+      // empty api_base => same-origin /api (leave baseUrl empty)
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()

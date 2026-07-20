@@ -163,6 +163,10 @@ type TsConnector struct {
 	publicGroup            *gin.RouterGroup
 	dynamicEndpoints       map[string]gin.HandlerFunc
 	dynamicPublicEndpoints map[string]gin.HandlerFunc
+
+	// optional Web console (-web); nil when disabled
+	webUI     *WebUI
+	webEngine *gin.Engine // used only when Web.port != Teamserver.port
 }
 
 func tlsVersionFromString(v string) (uint16, error) {
@@ -264,7 +268,7 @@ func default404Middleware(httpError profile.TsHttpError) gin.HandlerFunc {
 	}
 }
 
-func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profile.TsHttpServer) (*TsConnector, error) {
+func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profile.TsHttpServer, webUI *WebUI) (*TsConnector, error) {
 	gin.SetMode(gin.ReleaseMode)
 
 	var connector = new(TsConnector)

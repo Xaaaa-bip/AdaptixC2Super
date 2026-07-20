@@ -209,10 +209,25 @@ func (ts *Teamserver) Start() {
 		ts.Parameters.Interfaces = append(ts.Parameters.Interfaces, "127.0.0.1")
 	}
 
-	ts.AdaptixServer, err = connector.NewTsConnector(ts, *ts.Profile.Server, *ts.Profile.HttpServer)
+	var webUI *connector.WebUI
+	if ts.EnableWeb {
+		webUI, err = connector.ValidateAndLoadWebUI(true, ts.Profile.Web, ts.Profile.Server.Endpoint)
+		if err != nil {
+			logs.Error("", "Web UI: "+err.Error())
+			return
+		}
+	}
+
+	ts.AdaptixServer, err = connector.NewTsConnector(ts, *ts.Profile.Server, *ts.Profile.HttpServer, webUI)
 	if err != nil {
 		logs.Error("", "Failed to init HTTP handler: "+err.Error())
 		return
+	}
+	if webUI != nil {
+		if err = ts.AdaptixServer.MountWebUI(webUI); err != nil {
+			logs.Error("", "Web UI mount: "+err.Error())
+			return
+		}
 	}
 
 	ts.Extender.LoadPlugins(ts.Profile.Server.Extenders)
@@ -221,6 +236,7 @@ func (ts *Teamserver) Start() {
 
 	go ts.AdaptixServer.Start(&stopped)
 	logs.Success("", "Starting server -> https://%s:%v%s", ts.Profile.Server.Interface, ts.Profile.Server.Port, ts.Profile.Server.Endpoint)
+	ts.AdaptixServer.StartWebListener()
 
 	ts.RestoreData()
 	logs.Success("", "The AdaptixC2 server is ready")

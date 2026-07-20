@@ -28,8 +28,10 @@ function suggestName(type: string) {
     BeaconTCP: 'tcp',
     BeaconSMB: 'smb',
     BeaconDNS: 'dns',
+    BeaconDiscord: 'discord',
     LinuxTCP: 'linux_tcp',
     GopherTCP: 'gopher',
+    KharonHTTP: 'kharon',
   }
   return map[type] || type.toLowerCase()
 }
@@ -320,46 +322,173 @@ export function Listeners() {
       )
     }
 
-    // GopherTCP
+    if (t === 'GopherTCP') {
+      return (
+        <>
+          <div className="field"><label>Host & port (Bind)</label>
+            <div className="field-inline">
+              <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
+              <input type="number" style={{ width: 110 }} value={c.port_bind || 4444}
+                onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="field field-top"><label>Callback addresses</label>
+            <textarea rows={3} value={arrToLines(c.callback_addresses)}
+              onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
+              placeholder={'192.168.1.1:4444\nserver2.com:5555'} />
+          </div>
+          <div className="field"><label>Timeout (sec)</label>
+            <input type="number" value={c.timeout ?? 10} onChange={(e) => setCfg('timeout', Number(e.target.value))} />
+          </div>
+          <div className="field field-top"><label>TCP banner</label>
+            <textarea rows={2} value={c.tcp_banner || c.banner || ''} onChange={(e) => setCfg('tcp_banner', e.target.value)} />
+          </div>
+          <div className="field field-top"><label>Error answer</label>
+            <textarea rows={2} value={c.error_answer || c.answer || 'Connection error...\n'}
+              onChange={(e) => setCfg('error_answer', e.target.value)} />
+          </div>
+          <div className="field"><label>Encryption key</label>
+            <div className="field-inline">
+              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+            </div>
+          </div>
+          <div className="field"><label>mTLS</label>
+            <label className="check-inline" style={{ color: 'var(--text)' }}>
+              <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> Use mTLS
+            </label>
+          </div>
+          {!!c.ssl && (
+            <div className="hint muted-hint">
+              mTLS 证书：Web 暂不传文件内容。字段名 ca_cert / server_cert / server_key / client_cert / client_key；可用 Qt 创建或服务端预置 PEM。
+            </div>
+          )}
+        </>
+      )
+    }
+
+    if (t === 'BeaconDiscord') {
+      return (
+        <>
+          <div className="field"><label>Bot Token</label>
+            <input className="mono" value={c.bot_token || ''} onChange={(e) => setCfg('bot_token', e.target.value)}
+              placeholder="Discord bot token（仅服务端）" />
+          </div>
+          <div className="field"><label>Beacon Channel ID</label>
+            <input className="mono" value={c.channel_beacon || ''} onChange={(e) => setCfg('channel_beacon', e.target.value)}
+              placeholder="beacon → server 消息频道" />
+          </div>
+          <div className="field"><label>Tasks Channel ID</label>
+            <input className="mono" value={c.channel_tasks || ''} onChange={(e) => setCfg('channel_tasks', e.target.value)}
+              placeholder="server → beacon 任务频道" />
+          </div>
+          <div className="field"><label>Webhook URL</label>
+            <input className="mono" value={c.webhook_url || ''} onChange={(e) => setCfg('webhook_url', e.target.value)}
+              placeholder="https://discord.com/api/webhooks/..." />
+          </div>
+          <div className="field"><label>Poll Interval (seconds)</label>
+            <input type="number" min={1} value={c.poll_interval ?? 5}
+              onChange={(e) => setCfg('poll_interval', Number(e.target.value))} />
+          </div>
+          <div className="field"><label>Cleanup</label>
+            <label className="check-inline" style={{ color: 'var(--text)' }}>
+              <input type="checkbox" checked={!!c.cleanup} onChange={(e) => setCfg('cleanup', e.target.checked)} />
+              Delete messages after reading
+            </label>
+          </div>
+          <div className="field"><label>Encryption key</label>
+            <div className="field-inline">
+              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey() + randomEncryptKey())}>Generate</button>
+            </div>
+          </div>
+          <div className="hint muted-hint">对齐 AXS：Discord C2 通道。Token/频道 ID 勿提交到公开仓库。</div>
+        </>
+      )
+    }
+
+    if (t === 'KharonHTTP') {
+      return (
+        <>
+          <div className="field"><label>Host & port (Bind)</label>
+            <div className="field-inline">
+              <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
+              <input type="number" style={{ width: 110 }} value={c.port_bind || 443}
+                onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="field"><label>Trusted Host Headers</label>
+            <label className="check-inline" style={{ color: 'var(--text)' }}>
+              <input type="checkbox" checked={!!c.trust_x_forwarded_host}
+                onChange={(e) => setCfg('trust_x_forwarded_host', e.target.checked)} />
+              Trust X-Forwarded-Host
+            </label>
+          </div>
+          <div className="field field-top"><label>Additional Trusted Hosts</label>
+            <textarea rows={3} value={c.additional_trusted_hosts || ''}
+              onChange={(e) => setCfg('additional_trusted_hosts', e.target.value)}
+              placeholder={'domain1.com\ndomain2.com'} />
+          </div>
+          <div className="field field-top"><label>Block User Agents</label>
+            <textarea rows={3} value={c.block_user_agents || ''}
+              onChange={(e) => setCfg('block_user_agents', e.target.value)}
+              placeholder={'curl*\nwget*'} />
+          </div>
+          <div className="field"><label>Domain Rotation</label>
+            <select value={c.domain_rotation_strategy || 'Random'}
+              onChange={(e) => setCfg('domain_rotation_strategy', e.target.value)}>
+              <option>Random</option>
+              <option>Round Robin</option>
+              <option>Failover</option>
+            </select>
+          </div>
+          <div className="field"><label>Upload Profile</label>
+            <input className="mono" value={c.uploaded_file || ''}
+              onChange={(e) => setCfg('uploaded_file', e.target.value)}
+              placeholder="服务端可读的 profile 路径（Web 暂不上传文件）" />
+            <div className="field-hint">Qt 为文件选择器；Web 填服务器本地路径或留空。</div>
+          </div>
+
+          <div className="field field-top"><label>Proxy Settings</label>
+            <div className="ssl-box">
+              <label className="check-inline" style={{ color: 'var(--text)' }}>
+                <input type="checkbox" checked={!!c.proxy_enabled}
+                  onChange={(e) => setCfg('proxy_enabled', e.target.checked)} /> 启用代理
+              </label>
+              {!!c.proxy_enabled && (
+                <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                  <input value={c.proxy_url || ''} onChange={(e) => setCfg('proxy_url', e.target.value)}
+                    placeholder="http://127.0.0.1:8080" />
+                  <div className="field-inline">
+                    <input style={{ flex: 1 }} value={c.proxy_user || ''} onChange={(e) => setCfg('proxy_user', e.target.value)}
+                      placeholder="Username" />
+                    <input style={{ flex: 1 }} type="password" value={c.proxy_pass || ''} onChange={(e) => setCfg('proxy_pass', e.target.value)}
+                      placeholder="Password" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="field field-top"><label>Use SSL (HTTPS)</label>
+            <div className="ssl-box">
+              <label className="check-inline" style={{ color: 'var(--text)' }}>
+                <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 启用 SSL/TLS
+              </label>
+              {!!c.ssl && (
+                <div className="dim" style={{ fontSize: 11.5, marginTop: 6 }}>
+                  证书/密钥文件选择在 Web 端未实现；留空由服务端处理，或在服务器放置 PEM。
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="hint muted-hint">对齐 <code>listener_kharon_http</code> ListenerUI（字段不同于 BeaconHTTP）。</div>
+        </>
+      )
+    }
+
     return (
-      <>
-        <div className="field"><label>Host & port (Bind)</label>
-          <div className="field-inline">
-            <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
-            <input type="number" style={{ width: 110 }} value={c.port_bind || 4444}
-              onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
-          </div>
-        </div>
-        <div className="field field-top"><label>Callback addresses</label>
-          <textarea rows={3} value={arrToLines(c.callback_addresses)}
-            onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
-            placeholder={'192.168.1.1:4444\nserver2.com:5555'} />
-        </div>
-        <div className="field"><label>Timeout (sec)</label>
-          <input type="number" value={c.timeout ?? 10} onChange={(e) => setCfg('timeout', Number(e.target.value))} />
-        </div>
-        <div className="field field-top"><label>TCP banner</label>
-          <textarea rows={2} value={c.tcp_banner || c.banner || ''} onChange={(e) => setCfg('tcp_banner', e.target.value)} />
-        </div>
-        <div className="field field-top"><label>Error answer</label>
-          <textarea rows={2} value={c.error_answer || c.answer || 'Connection error...\n'}
-            onChange={(e) => setCfg('error_answer', e.target.value)} />
-        </div>
-        <div className="field"><label>Encryption key</label>
-          <div className="field-inline">
-            <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-            <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
-          </div>
-        </div>
-        <div className="field"><label>mTLS</label>
-          <label className="check-inline" style={{ color: 'var(--text)' }}>
-            <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> Use mTLS
-          </label>
-        </div>
-        {!!c.ssl && (
-          <div className="hint muted-hint">mTLS 证书文件选择在 Web 端暂未实现（AXS 为文件选择器）。可先在服务端放好证书或用 Qt 客户端创建。</div>
-        )}
-      </>
+      <div className="hint warn-hint">未实现的监听类型：{t}。请用 Qt 客户端创建，或补充 Web 表单。</div>
     )
   }
 
@@ -410,6 +539,22 @@ export function Listeners() {
       if ((form.type === 'BeaconHTTP' || form.type === 'BeaconWS') && !(cfg.callback_addresses || []).length) {
         throw new Error('请至少添加一个 Callback address（host:port）')
       }
+      if (form.type === 'GopherTCP') {
+        const cbs = Array.isArray(cfg.callback_addresses)
+          ? cfg.callback_addresses
+          : linesToArr(String(cfg.callback_addresses || ''))
+        if (!cbs.length) throw new Error('GopherTCP 请至少添加一个 Callback address（host:port）')
+        cfg.callback_addresses = cbs
+      }
+      if (form.type === 'BeaconDiscord') {
+        if (!String(cfg.bot_token || '').trim()) throw new Error('Discord 需要 Bot Token')
+        if (!String(cfg.channel_beacon || '').trim() || !String(cfg.channel_tasks || '').trim()) {
+          throw new Error('Discord 需要填写 Beacon / Tasks Channel ID')
+        }
+      }
+      if (form.type === 'KharonHTTP') {
+        cfg.protocol = 'http'
+      }
       if (editMode) {
         await api.editListener(form.name, form.type, cfg)
         pushLog('ok', `监听器 ${form.name} 已更新`)
@@ -446,7 +591,7 @@ export function Listeners() {
           <EmptyState
             icon="◉"
             title="暂无监听器"
-            hint="对齐 Qt/AXS：HTTP · WS · TCP · SMB · DNS · Linux · Gopher"
+            hint="对齐 Qt/AXS：HTTP · WS · TCP · SMB · DNS · Discord · Linux · Gopher · Kharon"
             action={<button className="primary" onClick={() => openCreate()}>+ 新建监听器</button>}
           />
         ) : (

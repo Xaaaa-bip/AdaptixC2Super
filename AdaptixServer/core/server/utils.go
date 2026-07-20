@@ -39,6 +39,8 @@ type Teamserver struct {
 	AdaptixServer *connector.TsConnector
 	Extender      *extender.AdaptixExtender
 	Parameters    TsParameters
+	// EnableWeb is set from CLI -web (not from profile).
+	EnableWeb bool
 
 	TaskManager   *TaskManager
 	Broker        *MessageBroker

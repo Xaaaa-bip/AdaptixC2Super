@@ -79,6 +79,39 @@ func (p *AdaptixProfile) applyDefaults() {
 	if p.HttpServer.TLS.MaxVersion == "" {
 		p.HttpServer.TLS.MaxVersion = "TLS1.3"
 	}
+
+	if p.Web == nil {
+		p.Web = &TsWebConfig{}
+	}
+	if p.Web.Interface == "" {
+		p.Web.Interface = "0.0.0.0"
+	}
+	if p.Web.Port == 0 {
+		p.Web.Port = 8080
+	}
+	if strings.TrimSpace(p.Web.Path) == "" {
+		p.Web.Path = "/"
+	} else {
+		p.Web.Path = normalizeWebPath(p.Web.Path)
+	}
+	if strings.TrimSpace(p.Web.Root) == "" {
+		p.Web.Root = "web"
+	}
+}
+
+// normalizeWebPath forces a leading slash and strips a trailing slash (except root).
+func normalizeWebPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if len(p) > 1 {
+		p = strings.TrimRight(p, "/")
+	}
+	return p
 }
 
 func (p *AdaptixProfile) prepareHttpServer() {
@@ -283,6 +316,33 @@ func (p *AdaptixProfile) IsValid() error {
 		default:
 			logs.Error("", "'HttpServer.tls.client_auth' must be none, request, or require (current is %q)", p.HttpServer.TLS.ClientAuth)
 			valid = false
+		}
+	}
+
+	if p.Web != nil {
+		if p.Web.Port < 1 || p.Web.Port > 65535 {
+			logs.Error("", "'Web.port' must be between 1 and 65535 (current is %v)", p.Web.Port)
+			valid = false
+		}
+		wp := normalizeWebPath(p.Web.Path)
+		if wp == "" || !strings.HasPrefix(wp, "/") {
+			logs.Error("", "'Web.path' must be an absolute URI path (current is %q)", p.Web.Path)
+			valid = false
+		}
+		if p.Server != nil && p.Server.Endpoint != "" {
+			ep := strings.TrimRight(strings.TrimSpace(p.Server.Endpoint), "/")
+			if ep == "" {
+				ep = "/"
+			}
+			// Reject path equal to API endpoint or nesting either way (ambiguous with SPA).
+			conflict := wp == ep
+			if !conflict && wp != "/" && ep != "/" {
+				conflict = strings.HasPrefix(wp, ep+"/") || strings.HasPrefix(ep, wp+"/")
+			}
+			if conflict {
+				logs.Error("", "'Web.path' %q conflicts with 'Teamserver.endpoint' %q", wp, p.Server.Endpoint)
+				valid = false
+			}
 		}
 	}
 
