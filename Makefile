@@ -138,7 +138,7 @@ web: prepare
 ### EXTENSION-KIT ###
 
 # profile axscripts 期望 dist 下: Extension-Kit/extension-kit.axs
-# 源码查找顺序: EXTKIT_SRC > ./Extension-Kit > AdaptixServer/Extension-Kit > client/Extension-Kit
+# 源码查找顺序: EXTKIT_SRC > ./Extension-Kit > AdaptixServer/Extension-Kit
 EXTKIT_DST := $(DIST_DIR)/Extension-Kit
 EXTKIT_SRC ?=
 
@@ -151,11 +151,9 @@ extension-kit: prepare
 		src="Extension-Kit"; \
 	elif [ -f "AdaptixServer/Extension-Kit/extension-kit.axs" ]; then \
 		src="AdaptixServer/Extension-Kit"; \
-	elif [ -f "client/Extension-Kit/extension-kit.axs" ]; then \
-		src="client/Extension-Kit"; \
 	else \
 		echo "[ERROR] 找不到 Extension-Kit（需含 extension-kit.axs）。请放到仓库根目录 Extension-Kit/"; \
-		echo "  或 AdaptixServer/Extension-Kit/；或 make extension-kit EXTKIT_SRC=/path/to/Extension-Kit"; \
+		echo "  或 make extension-kit EXTKIT_SRC=/path/to/Extension-Kit"; \
 		exit 1; \
 	fi; \
 	if [ ! -f "$$src/extension-kit.axs" ]; then \

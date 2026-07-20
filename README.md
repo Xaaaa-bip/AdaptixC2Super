@@ -70,7 +70,7 @@ make web
 
 #### Extension-Kit
 
-- 源码位置（查找顺序）：`EXTKIT_SRC` → **`./Extension-Kit`** → `AdaptixServer/Extension-Kit` → `client/Extension-Kit`
+- 源码位置（查找顺序）：`EXTKIT_SRC` → **`./Extension-Kit`** → `AdaptixServer/Extension-Kit`（仓库仅维护根目录 `Extension-Kit/`）
 - 需含入口 `extension-kit.axs`
 - profile 中默认：`axscripts: - "Extension-Kit/extension-kit.axs"`（相对 **dist 工作目录**）
 
