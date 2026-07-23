@@ -540,11 +540,13 @@ export function Listeners() {
         throw new Error('请至少添加一个 Callback address（host:port）')
       }
       if (form.type === 'GopherTCP') {
+        // gopher_listener_tcp expects string (newline/comma list), not []string like BeaconHTTP.
+        // Server also accepts array via StringOrArray; send string for Qt/agent profile compatibility.
         const cbs = Array.isArray(cfg.callback_addresses)
-          ? cfg.callback_addresses
+          ? cfg.callback_addresses.map(String).map((s) => s.trim()).filter(Boolean)
           : linesToArr(String(cfg.callback_addresses || ''))
         if (!cbs.length) throw new Error('GopherTCP 请至少添加一个 Callback address（host:port）')
-        cfg.callback_addresses = cbs
+        cfg.callback_addresses = cbs.join('\n')
       }
       if (form.type === 'BeaconDiscord') {
         if (!String(cfg.bot_token || '').trim()) throw new Error('Discord 需要 Bot Token')

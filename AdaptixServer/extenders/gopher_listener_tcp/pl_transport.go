@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -38,11 +39,52 @@ type TransportTCP struct {
 	Active        bool
 }
 
+// StringOrArray accepts JSON string (Qt multi-line / profile) or []string (Web UI).
+// Always stored/marshaled as a single string for gopher_agent profile.
+type StringOrArray string
+
+func (s *StringOrArray) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		*s = ""
+		return nil
+	}
+	switch data[0] {
+	case '"':
+		var str string
+		if err := json.Unmarshal(data, &str); err != nil {
+			return err
+		}
+		*s = StringOrArray(str)
+		return nil
+	case '[':
+		var arr []string
+		if err := json.Unmarshal(data, &arr); err != nil {
+			return err
+		}
+		parts := make([]string, 0, len(arr))
+		for _, a := range arr {
+			a = strings.TrimSpace(a)
+			if a != "" {
+				parts = append(parts, a)
+			}
+		}
+		*s = StringOrArray(strings.Join(parts, "\n"))
+		return nil
+	default:
+		return fmt.Errorf("callback_addresses: expected string or array")
+	}
+}
+
+func (s StringOrArray) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(s))
+}
+
 type TransportConfig struct {
-	HostBind           string `json:"host_bind"`
-	PortBind           int    `json:"port_bind"`
-	Callback_addresses string `json:"callback_addresses"`
-	EncryptKey         string `json:"encrypt_key"`
+	HostBind           string        `json:"host_bind"`
+	PortBind           int           `json:"port_bind"`
+	Callback_addresses StringOrArray `json:"callback_addresses"`
+	EncryptKey         string        `json:"encrypt_key"`
 
 	Ssl        bool   `json:"ssl"`
 	CaCert     []byte `json:"ca_cert"`
@@ -130,10 +172,14 @@ func validConfig(config string) error {
 		return errors.New("PortBind must be in the range 1-65535")
 	}
 
-	if conf.Callback_addresses == "" {
+	cbRaw := strings.TrimSpace(string(conf.Callback_addresses))
+	if cbRaw == "" {
 		return errors.New("callback_servers is required")
 	}
-	lines := strings.Split(strings.TrimSpace(conf.Callback_addresses), "\n")
+	// Accept newline / comma separated lists (Web array already joined with \n).
+	lines := strings.FieldsFunc(cbRaw, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ','
+	})
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {

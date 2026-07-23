@@ -1,10 +1,34 @@
-# AdaptixC2 v1.5
+# AdaptixC2 v1.5.5
 
 ## 分支说明
 | 分支 | 说明 |
 |------|------|
-| `main` | 最新代码（**v1.5**） |
+| `main` | 最新代码（**v1.5.5**） |
 | `1.3` | v1.3 原始备份 |
+
+## v1.5.5 更新内容
+
+相对 v1.5，本版修复 **Web 缺资源白屏** 与 **GopherTCP callback 地址** 兼容问题（已在现网验证）。
+
+### Web UI 缺资源不再白屏（teamserver）
+- `core/connector/webui.go`：启动时 `inspectWebRoot` 检查 `index.html` 与其引用的 `.js`/`.css`，以及 `assets/` 是否非空
+- 静态不完整时：**不硬失败退出**，进入 **placeholder** 诊断页（说明原因与 `make web` 修复步骤），API 仍可用
+- 缺失的 `.js`/`.css` 等静态资源 **直接 404**，禁止 SPA 回退到 `index.html`（避免 Vite 把 HTML 当 JS 导致白屏）
+- 日志带 `mode=static|placeholder`
+
+### GopherTCP `callback_addresses` 兼容
+- `gopher_listener_tcp`：新增 `StringOrArray`，同时接受 JSON **string**（Qt 多行/profile）与 **[]string**（Web 表单）
+- 归一化为逗号/换行列表字符串，供 Agent profile 使用
+- 校验支持换行与逗号分隔
+- Web `Listeners.tsx`：GopherTCP 提交时将 callback 列表 **join 为字符串**，与 Qt/agent 一致
+
+### 涉及文件
+- `AdaptixServer/core/connector/webui.go`
+- `AdaptixServer/extenders/gopher_listener_tcp/pl_main.go`
+- `AdaptixServer/extenders/gopher_listener_tcp/pl_transport.go`
+- `AdaptixWeb/src/components/Listeners.tsx`
+
+---
 
 ## v1.5 更新内容
 

@@ -50,6 +50,15 @@ func InitPlugin(ts any, moduleDir string, listenerDir string) adaptix.PluginList
 	return &PluginListener{}
 }
 
+// normalizeCallbackAddresses turns multiline / mixed separators into "host:port, host:port".
+func normalizeCallbackAddresses(raw StringOrArray) StringOrArray {
+	cb := strings.ReplaceAll(string(raw), " ", "")
+	cb = strings.ReplaceAll(cb, "\r\n", "\n")
+	cb = strings.ReplaceAll(cb, "\n", ", ")
+	cb = strings.Trim(cb, ", ")
+	return StringOrArray(cb)
+}
+
 func (p *PluginListener) Create(name string, config string, customData []byte) (adaptix.ExtenderListener, adaptix.ListenerData, []byte, error) {
 	var (
 		listener     *Listener
@@ -71,9 +80,8 @@ func (p *PluginListener) Create(name string, config string, customData []byte) (
 			return nil, listenerData, customdData, err
 		}
 
-		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, " ", "")
-		conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, "\n", ", ")
-		conf.Callback_addresses = strings.TrimSuffix(conf.Callback_addresses, ", ")
+		// Normalize to "host:port, host:port" for AgentAddr / gopher profile string.
+		conf.Callback_addresses = normalizeCallbackAddresses(conf.Callback_addresses)
 
 		conf.Protocol = "tcp"
 	} else {
@@ -94,7 +102,7 @@ func (p *PluginListener) Create(name string, config string, customData []byte) (
 	listenerData = adaptix.ListenerData{
 		BindHost:  transport.Config.HostBind,
 		BindPort:  strconv.Itoa(transport.Config.PortBind),
-		AgentAddr: conf.Callback_addresses,
+		AgentAddr: string(conf.Callback_addresses),
 		Status:    "Stopped",
 	}
 
@@ -139,9 +147,7 @@ func (l *Listener) Edit(config string) (adaptix.ListenerData, []byte, error) {
 
 	/// START CODE HERE
 
-	conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, " ", "")
-	conf.Callback_addresses = strings.ReplaceAll(conf.Callback_addresses, "\n", ", ")
-	conf.Callback_addresses = strings.TrimSuffix(conf.Callback_addresses, ", ")
+	conf.Callback_addresses = normalizeCallbackAddresses(conf.Callback_addresses)
 
 	// Full sync: GetProfile / decrypt use transport.Config (same pitfall as BeaconHTTP Edit).
 	l.transport.Config.HostBind = conf.HostBind
@@ -171,7 +177,7 @@ func (l *Listener) Edit(config string) (adaptix.ListenerData, []byte, error) {
 	listenerData = adaptix.ListenerData{
 		BindHost:  l.transport.Config.HostBind,
 		BindPort:  strconv.Itoa(l.transport.Config.PortBind),
-		AgentAddr: l.transport.Config.Callback_addresses,
+		AgentAddr: string(l.transport.Config.Callback_addresses),
 		Status:    "Listen",
 	}
 	if !l.transport.Active {
