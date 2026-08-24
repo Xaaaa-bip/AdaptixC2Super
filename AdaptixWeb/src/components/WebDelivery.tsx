@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { AGENT_PROFILES } from '../api/listeners'
 import { copyText } from '../utils'
@@ -42,7 +42,7 @@ function agentsForListener(reg?: string, target?: Target): string[] {
   const r = String(reg || '')
   if (r === 'BeaconHTTP' || r === 'BeaconDNS') return target === 'linux' ? [] : ['beacon']
   if (r === 'BeaconWS') return target === 'linux' ? ['linux'] : ['beacon']
-  if (r === 'GopherTCP') return target === 'linux' ? ['linux', 'gopher'] : ['gopher']
+  if (r === 'GopherTCP') return target === 'linux' ? ['linux', 'gopher'] : []
   if (r === 'LinuxTCP') return target === 'linux' ? ['linux'] : []
   return []
 }
@@ -95,6 +95,7 @@ export function WebDelivery() {
   const [statusText, setStatusText] = useState('拉取服务端状态…')
   const [serverLine, setServerLine] = useState('')
   const [advanced, setAdvanced] = useState(false)
+  const lastTarget = useRef(target)
 
   const profile = AGENT_PROFILES.find((p) => p.agent === agentName) || AGENT_PROFILES[0]
 
@@ -117,14 +118,17 @@ export function WebDelivery() {
   }
 
   useEffect(() => {
+    const targetChanged = lastTarget.current !== target
+    lastTarget.current = target
     if (!compatible.length) {
       if (listener) setListener('')
       return
     }
-    if (!compatible.find((l) => l.l_name === listener)) {
-      const prefer = target === 'linux'
-        ? compatible.find((l) => l.l_reg_name === 'BeaconWS') || compatible[0]
-        : compatible.find((l) => l.l_reg_name === 'BeaconHTTP') || compatible[0]
+    const prefer = target === 'linux'
+      ? compatible.find((l) => l.l_reg_name === 'BeaconWS') || compatible[0]
+      : compatible.find((l) => l.l_reg_name === 'BeaconHTTP') || compatible[0]
+    const stillValid = compatible.find((l) => l.l_name === listener)
+    if (targetChanged || !stillValid) {
       applyListener(prefer.l_name, target)
     } else if (agentChoices.length && !agentChoices.includes(agentName)) {
       applyListener(listener, target)
