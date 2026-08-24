@@ -37,13 +37,13 @@ function teamserverApiOrigin(apiBase: string) {
   return ''
 }
 
-/** Agents that can actually callback on this listener. */
+/** Agents that can actually callback on this listener for the chosen OS. */
 function agentsForListener(reg?: string, target?: Target): string[] {
   const r = String(reg || '')
-  if (r === 'BeaconHTTP' || r === 'BeaconDNS') return ['beacon']
+  if (r === 'BeaconHTTP' || r === 'BeaconDNS') return target === 'linux' ? [] : ['beacon']
   if (r === 'BeaconWS') return target === 'linux' ? ['linux'] : ['beacon']
   if (r === 'GopherTCP') return target === 'linux' ? ['linux', 'gopher'] : ['gopher']
-  if (r === 'LinuxTCP') return ['linux']
+  if (r === 'LinuxTCP') return target === 'linux' ? ['linux'] : []
   return []
 }
 
@@ -93,6 +93,7 @@ export function WebDelivery() {
   const [pluginMissing, setPluginMissing] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [statusText, setStatusText] = useState('拉取服务端状态…')
+  const [serverLine, setServerLine] = useState('')
   const [advanced, setAdvanced] = useState(false)
 
   const profile = AGENT_PROFILES.find((p) => p.agent === agentName) || AGENT_PROFILES[0]
@@ -150,6 +151,7 @@ export function WebDelivery() {
       setTarget('windows')
     }
     setEnabled(!!st.listener)
+    setServerLine(st.listener ? `${st.listener} · ${st.agent_name || '-'} / ${st.format || '-'}` : '')
   }
 
   async function loadStatus() {
@@ -348,7 +350,11 @@ export function WebDelivery() {
 
           <div className="hint muted-hint" style={{ marginTop: 10 }}>
             {statusText}
-            {selected ? ` · ${selected.l_name} / ${agentName} / ${format}` : ''}
+            {serverLine ? `（服务端 ${serverLine}）` : ''}
+            {selected ? ` · 本页 ${selected.l_name} / ${agentName} / ${format}` : ''}
+            {enabled && selected && serverLine && !serverLine.startsWith(`${selected.l_name} ·`)
+              ? ' · 点启用后才会改成当前选择'
+              : ''}
             <br />
             脚本 <code className="mono">{c2Host || '…'}/deliver</code>
             {' '}载荷 <code className="mono">{c2Host || '…'}/deliver/payload</code>
