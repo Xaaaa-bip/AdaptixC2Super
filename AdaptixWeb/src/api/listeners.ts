@@ -10,15 +10,15 @@ export type ListenerTypeDef = {
 }
 
 export const LISTENER_TYPES: ListenerTypeDef[] = [
-  { type: 'BeaconHTTP', label: 'Beacon HTTP/S', protocol: 'http', kind: 'external', agentHint: 'beacon', group: 'Beacon' },
-  { type: 'BeaconWS', label: 'Beacon WebSocket', protocol: 'ws', kind: 'external', agentHint: 'beacon', group: 'Beacon' },
-  { type: 'BeaconTCP', label: 'Beacon TCP (bind)', protocol: 'bind_tcp', kind: 'internal', agentHint: 'beacon', group: 'Beacon' },
-  { type: 'BeaconSMB', label: 'Beacon SMB (pipe)', protocol: 'bind_smb', kind: 'internal', agentHint: 'beacon', group: 'Beacon' },
-  { type: 'BeaconDNS', label: 'Beacon DNS', protocol: 'dns', kind: 'external', agentHint: 'beacon', group: 'Beacon' },
-  { type: 'LinuxTCP', label: 'Linux TCP (bind)', protocol: 'bind_tcp', kind: 'internal', agentHint: 'linux', group: 'Linux' },
-  { type: 'GopherTCP', label: 'Gopher TCP', protocol: 'tcp', kind: 'external', agentHint: 'gopher', group: 'Gopher' },
-  { type: 'BeaconDiscord', label: 'Beacon Discord', protocol: 'discord', kind: 'external', agentHint: 'beacon', group: 'Beacon' },
-  { type: 'KharonHTTP', label: 'Kharon HTTP/S', protocol: 'http', kind: 'external', agentHint: 'kharon', group: 'Kharon' },
+  { type: 'BeaconHTTP', label: 'Windows HTTP', protocol: 'http', kind: 'external', agentHint: 'Windows Beacon 上线', group: 'Beacon' },
+  { type: 'BeaconWS', label: 'Linux WS', protocol: 'ws', kind: 'external', agentHint: 'Linux Agent 上线', group: 'Beacon' },
+  { type: 'BeaconTCP', label: 'Beacon TCP (bind)', protocol: 'bind_tcp', kind: 'internal', agentHint: 'Windows Beacon', group: 'Beacon' },
+  { type: 'BeaconSMB', label: 'Beacon SMB (pipe)', protocol: 'bind_smb', kind: 'internal', agentHint: 'Windows Beacon', group: 'Beacon' },
+  { type: 'BeaconDNS', label: 'Beacon DNS', protocol: 'dns', kind: 'external', agentHint: 'Windows Beacon', group: 'Beacon' },
+  { type: 'LinuxTCP', label: 'Linux TCP (bind)', protocol: 'bind_tcp', kind: 'internal', agentHint: 'Linux 反弹，不上线', group: 'Linux' },
+  { type: 'GopherTCP', label: 'Gopher TCP', protocol: 'tcp', kind: 'external', agentHint: 'Gopher / Linux Agent', group: 'Gopher' },
+  { type: 'BeaconDiscord', label: 'Beacon Discord', protocol: 'discord', kind: 'external', agentHint: 'Windows Beacon', group: 'Beacon' },
+  { type: 'KharonHTTP', label: 'Kharon HTTP/S', protocol: 'http', kind: 'external', agentHint: 'Kharon', group: 'Kharon' },
 ]
 
 export function randomHex(n = 16) {
@@ -72,8 +72,8 @@ export function defaultListenerConfig(type: string, publicHost = '110.41.87.17')
     case 'BeaconWS':
       return {
         host_bind: '0.0.0.0',
-        port_bind: 443,
-        callback_addresses: [`${publicHost}:443`],
+        port_bind: 4433,
+        callback_addresses: [`${publicHost}:4433`],
         http_method: 'GET',
         uri: ['/ws', '/chat', '/socket.io', '/graphql'],
         user_agent: ['Mozilla/5.0 (Windows NT 6.2; rv:20.0) Gecko/20121202 Firefox/20.0'],
@@ -233,7 +233,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
     ],
     arches: ['x86_64', 'ARM64'],
     // config.yaml 允许多种；Web 主推 LinuxTCP，也兼容已创建的 WS/Gopher
-    listeners: ['LinuxTCP', 'BeaconWS', 'GopherTCP'],
+    listeners: ['BeaconWS', 'GopherTCP', 'LinuxTCP'],
     defaultFormat: 'Binary ELF (Native)',
   },
   {

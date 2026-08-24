@@ -637,6 +637,10 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			Ssl, _ := listenerMap["ssl"].(bool)
 			ParameterName, _ := listenerMap["hb_header"].(string)
 			RequestHeaders, _ := listenerMap["request_headers"].(string)
+			RequestHeaders = strings.TrimLeft(RequestHeaders, "\r\n \t")
+			if RequestHeaders != "" && !strings.HasSuffix(RequestHeaders, "\r\n") {
+				RequestHeaders += "\r\n"
+			}
 
 			var Hosts []string
 			var Ports []int

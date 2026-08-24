@@ -35,7 +35,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [
   {
     id: 'linux',
     title: 'Linux',
-    desc: 'Native Agent · ELF / SO / Shellcode / Stager',
+    desc: 'Native Agent · 回连 BeaconWS · ELF',
     agents: ['linux'],
     defaultAgent: 'linux',
   },
@@ -131,10 +131,19 @@ export function Generate() {
   }, [agent, os])
 
   useEffect(() => {
-    if (compatible.length) {
-      if (!compatible.find((l) => l.l_name === listener)) setListener(compatible[0].l_name)
-    } else setListener('')
-  }, [compatible, listener])
+    if (!compatible.length) {
+      setListener('')
+      return
+    }
+    if (compatible.find((l) => l.l_name === listener)) return
+    const prefer =
+      agent === 'linux'
+        ? compatible.find((l) => l.l_reg_name === 'BeaconWS')
+        : agent === 'beacon'
+          ? compatible.find((l) => l.l_reg_name === 'BeaconHTTP')
+          : undefined
+    setListener((prefer || compatible[0]).l_name)
+  }, [compatible, listener, agent])
 
   const selectedListener = compatible.find((l) => l.l_name === listener)
   const showSleep = agent === 'beacon' || agent === 'kharon'
@@ -190,9 +199,21 @@ export function Generate() {
           <div className="card-hd">
             <h3>生成载荷</h3>
             <span className="spacer" />
-            <span className="dim" style={{ fontSize: 12 }}>选平台 → 选监听 → 选格式 → 下载</span>
+            <span className="dim" style={{ fontSize: 12 }}>选平台 → 选监听 → 下载文件</span>
           </div>
           <div className="card-bd gen-body">
+            <div className="hint muted-hint" style={{ marginBottom: 14 }}>
+              要一键上线，优先用
+              <button
+                type="button"
+                className="ghost"
+                style={{ marginLeft: 6 }}
+                onClick={() => { setTab('delivery'); openUiTab('delivery') }}
+              >
+                投递
+              </button>
+              ：复制一条命令即可。这里只下载文件。
+            </div>
             <div className="gen-section-title">1. 目标平台</div>
             <div className="gen-presets gen-presets-platform">
               {PLATFORM_PRESETS.map((p) => (

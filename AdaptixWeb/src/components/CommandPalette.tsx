@@ -38,9 +38,9 @@ export function CommandPalette({ open, onClose, go }: Props) {
     const nav: PaletteAction[] = [
       { id: 'nav-dash', group: '导航', label: '仪表盘', hint: 'G D', keywords: 'dashboard home', run: () => go('dashboard') },
       { id: 'nav-hosts', group: '导航', label: '主机列表', hint: 'G H', keywords: 'sessions hosts agents', run: () => go('sessions') },
+      { id: 'nav-delivery', group: '导航', label: '投递一键上线', hint: 'G W', keywords: 'webdelivery deliver oneliner powershell curl', run: () => go('delivery') },
       { id: 'nav-listeners', group: '导航', label: '监听器', keywords: 'listener', run: () => go('listeners') },
       { id: 'nav-gen', group: '导航', label: '生成载荷', keywords: 'generate payload beacon stager', run: () => go('generate') },
-      { id: 'nav-delivery', group: '导航', label: 'Web 投递一键上线', keywords: 'webdelivery deliver oneliner powershell curl', run: () => go('delivery') },
       { id: 'nav-tasks', group: '导航', label: '任务中心', keywords: 'tasks jobs', run: () => go('tasks') },
       { id: 'nav-dl', group: '导航', label: '文件下载', keywords: 'downloads', run: () => go('downloads') },
       { id: 'nav-tunnels', group: '导航', label: '隧道代理', keywords: 'tunnels proxy socks', run: () => go('tunnels') },

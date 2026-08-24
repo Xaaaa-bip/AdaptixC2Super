@@ -142,6 +142,24 @@ func normalizeConfig(c *WebDeliveryConfig) {
 	if c.CacheTTLMin < 0 {
 		c.CacheTTLMin = 0
 	}
+	c.C2HostURL = normalizeC2Host(c.C2HostURL)
+}
+
+// normalizeC2Host keeps only a real teamserver API origin (scheme + /api).
+// Listener bind addresses like "110.41.87.17:4433" must not become deliver URLs.
+func normalizeC2Host(u string) string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return ""
+	}
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+		return ""
+	}
+	u = strings.TrimRight(u, "/")
+	if !strings.Contains(u, "/api") {
+		return u + "/api"
+	}
+	return u
 }
 
 func handleConfigUpdate(username string, body []byte) (int, []byte) {
@@ -236,7 +254,7 @@ func handleStatus(username string, body []byte) (int, []byte) {
 }
 
 func publicBaseURL(r *http.Request) string {
-	baseURL := Config.C2HostURL
+	baseURL := normalizeC2Host(Config.C2HostURL)
 	if baseURL != "" {
 		return strings.TrimSuffix(baseURL, "/")
 	}

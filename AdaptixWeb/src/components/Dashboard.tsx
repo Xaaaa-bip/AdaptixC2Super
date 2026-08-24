@@ -47,12 +47,12 @@ export function Dashboard({ online, total, listeners }: { online: number; total:
               ? `${online} 台主机在线，可直接进入会话。`
               : total > 0
                 ? '有历史主机，当前全部离线。'
-                : '从监听与载荷开始，完成第一次上线。'}
+                : '打开投递，复制一条命令，完成第一次上线。'}
           </p>
         </div>
         <div className="home-actions">
-          <button type="button" className="primary" onClick={() => go('sessions')}>主机</button>
-          <button type="button" onClick={() => go('delivery')}>一键投递</button>
+          <button type="button" className="primary" onClick={() => go('delivery')}>一键投递</button>
+          <button type="button" onClick={() => go('sessions')}>主机</button>
           <button type="button" onClick={() => go('generate')}>生成载荷</button>
           <button type="button" onClick={() => go('listeners')}>监听器</button>
           <button type="button" onClick={() => go('graph')}>拓扑</button>
@@ -96,7 +96,7 @@ export function Dashboard({ online, total, listeners }: { online: number; total:
           {recentAgents.length === 0 ? (
             <div className="home-empty">
               <p>还没有主机</p>
-              <button type="button" className="primary" onClick={() => go('generate')}>生成载荷</button>
+              <button type="button" className="primary" onClick={() => go('delivery')}>一键投递</button>
             </div>
           ) : (
             <div className="home-rows">
