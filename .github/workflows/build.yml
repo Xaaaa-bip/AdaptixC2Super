@@ -27,16 +27,17 @@ jobs:
             artifact: AdaptixServer-linux-amd64
             output: AdaptixServer
             shell: bash
-          - name: windows-amd64
-            os: windows-latest
-            artifact: AdaptixServer-windows-amd64
-            output: AdaptixServer.exe
-            shell: bash
           - name: macos
             os: macos-14
             artifact: AdaptixServer-macos
             output: AdaptixServer
             shell: bash
+          # windows-amd64 先停：MinGW 构建太慢，改完再开
+          # - name: windows-amd64
+          #   os: windows-latest
+          #   artifact: AdaptixServer-windows-amd64
+          #   output: AdaptixServer.exe
+          #   shell: bash
 
     runs-on: ${{ matrix.os }}
     defaults:
@@ -98,6 +99,7 @@ jobs:
 
   adaptix-extenders:
     name: Extenders (plugins + cross-compile beacons)
+    if: false
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -170,7 +172,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: [adaptix-server, adaptix-extenders]
+    needs: [adaptix-server]
     if: >-
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' ||
@@ -220,7 +222,7 @@ jobs:
           - Commit: \`${GITHUB_SHA}\`
           - Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          资源：AdaptixServer-linux-amd64.zip / AdaptixServer-windows-amd64.zip / AdaptixServer-macos.zip / extenders-dist.zip"
+          资源：AdaptixServer-linux-amd64.zip / AdaptixServer-macos.zip"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" "${PRE[@]}"
             gh release upload "$TAG" dist-release/* --clobber

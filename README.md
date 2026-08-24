@@ -209,9 +209,9 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 一次工作流会生成：
 
 - `AdaptixServer-linux-amd64`
-- `AdaptixServer-windows-amd64`
 - `AdaptixServer-macos`
-- `extenders-dist`（Linux 原生插件与 beacon / gopher 产物）
+
+`AdaptixServer-windows-amd64` 与 `extenders-dist` 先停，改完再开。
 
 构建成功后会自动把上述产物打成 zip 发到 [Releases](https://github.com/Xaaaa-bip/AdaptixC2/releases)：
 
