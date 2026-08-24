@@ -251,7 +251,13 @@ export function WebDelivery() {
 
   function downloadPayload() {
     const q = target === 'linux' ? '?os=linux' : '?os=windows'
-    window.open(`${payloadUrl}${q}`, '_blank', 'noopener')
+    const a = document.createElement('a')
+    a.href = `${payloadUrl}${q}`
+    a.download = target === 'linux' ? 'agent.elf' : 'beacon.exe'
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
   }
 
   const selected = compatible.find((l) => l.l_name === listener)
@@ -347,7 +353,7 @@ export function WebDelivery() {
                 {busy ? '同步中…' : enabled ? '重新启用' : '启用投递'}
               </button>
               <button className="primary" disabled={!c2Host} onClick={copyCmd}>复制命令</button>
-              <button disabled={!c2Host || !enabled} onClick={downloadPayload}>直接下载载荷</button>
+              <button disabled={!c2Host} onClick={downloadPayload}>直接下载载荷</button>
               <button disabled={busy} onClick={() => loadStatus()}>刷新</button>
             </div>
           </div>
