@@ -8,7 +8,12 @@
 
 ## v1.5.5 更新内容
 
-相对 v1.5，本版修复 **Web 缺资源白屏** 与 **GopherTCP callback 地址** 兼容问题（已在现网验证）。
+相对 v1.5，本版修复 **Web 缺资源白屏** 与 **GopherTCP callback 地址** 兼容问题（已在现网验证），并 **移除 Qt 桌面客户端**，仓库以服务端 + Web 控制台为主。
+
+### 移除 Qt 客户端
+- 删除仓库内 `AdaptixClient/` 源码与 `make client` / `make client-fast` 目标
+- GitHub Actions 不再构建或上传 Qt 客户端产物
+- `pre_install_linux_all.sh` 仅安装服务端依赖；操作员界面改用集成 Web 控制台（`./adaptixserver -profile profile.yaml -web`）
 
 ### Web UI 缺资源不再白屏（teamserver）
 - `core/connector/webui.go`：启动时 `inspectWebRoot` 检查 `index.html` 与其引用的 `.js`/`.css`，以及 `assets/` 是否非空
@@ -48,7 +53,7 @@
 - Qt `ax_config` 去掉 Artifact 三项，与 Web 载荷格式对齐
 
 ### 构建系统（Makefile）
-- **`make server-ext`**（推荐 VPS）：`clean` → 编 server → 编 extenders → **拷贝 Web** → **拷贝 Extension-Kit**（不编 Qt 客户端）
+- **`make server-ext`**（推荐 VPS）：`clean` → 编 server → 编 extenders → **拷贝 Web** → **拷贝 Extension-Kit**
 - **`make web`**：只 **copy** 静态产物到 `dist/web`，**不**在 Makefile 里执行 `npm install` / `npm run build`
   - 源优先级：`WEB_SRC=...` → `AdaptixWeb/dist/` → 已是静态树的 `AdaptixWeb/`
 - **`make extension-kit`**：拷贝到 `dist/Extension-Kit/`
@@ -154,13 +159,6 @@ cd dist
 - `make` **不会**生成 TLS 证书、**不会**创建 `data/` 数据库；首次运行或拷贝现网证书/数据
 - `clean` 会删整个 `dist/`，之后需重新 `server-ext`，并自行恢复证书 / `data` / 现网改过的 `profile.yaml`
 
-### Client
-
-```bash
-./pre_install_linux_all.sh client
-# 见下文「本地编译方法」Qt 客户端
-```
-
 ## 相关插件
 - https://github.com/danieloz147/SpyIt vnc
 - https://github.com/vikialora/PersisTask-BOF-AdaptixC2 计划任务
@@ -172,8 +170,7 @@ cd dist
 Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 
 - 服务端：Golang
-- 客户端：C++ / Qt
-- Web 控制台：`AdaptixWeb`（可选，`-web` 挂载）
+- 操作员界面：`AdaptixWeb`（`-web` 挂载到 teamserver）
 - 运行平台：Linux / Windows / macOS
 
 官方文档入口：
@@ -189,16 +186,15 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 ## 目录结构
 
 - `AdaptixServer/`：服务端源码与默认配置
-- `AdaptixClient/`：Qt 客户端源码
 - `AdaptixWeb/`：Web 控制台源码（构建产物可放 `AdaptixWeb/dist` 供 `make web` 拷贝）
 - `Extension-Kit/`：BOF / axscript 扩展（`make server-ext` 拷到 `dist/Extension-Kit`）
-- `.github/workflows/build.yml`：GitHub Actions 三平台构建流程
+- `.github/workflows/build.yml`：GitHub Actions 服务端与 extenders 构建流程
 - `scripts/`：辅助脚本
-- `Makefile`：`server` / `extenders` / `web` / `extension-kit` / `server-ext` / `client`
+- `Makefile`：`server` / `extenders` / `web` / `extension-kit` / `server-ext`
 
 ## GitHub Actions 一键构建
 
-仓库已经提供了三平台整包构建流程，工作流文件为：
+仓库已经提供了服务端与 extenders 构建流程，工作流文件为：
 
 - `.github/workflows/build.yml`
 
@@ -208,23 +204,14 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 2. 提交 Pull Request 到 `main` 或 `master`
 3. 在 GitHub Actions 页面手动点击 `workflow_dispatch`
 
-一次工作流会生成以下三类整包产物：
+一次工作流会生成：
 
-- `Adaptix-linux-amd64`
-- `Adaptix-windows-amd64`
-- `Adaptix-macos-arm64`
+- `AdaptixServer-linux-amd64`
+- `AdaptixServer-windows-amd64`
+- `AdaptixServer-macos`
+- `extenders-dist`（Linux 原生插件与 beacon / gopher 产物）
 
-每个平台整包默认包含：
-
-- 服务端可执行文件
-- 客户端可执行文件
-- README
-- 服务端运行所需的默认配置文件
-
-额外说明：
-
-- Linux 和 macOS 整包会附带默认启用的原生 extenders `dist/` 目录
-- Windows 整包中的 `profile.yaml` 会自动禁用 extenders，避免因 Go plugin 平台差异导致启动时报错
+操作员界面使用集成 Web 控制台，不再构建 Qt 桌面客户端。
 
 ## 默认启用的 Extenders
 
@@ -253,20 +240,6 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 - macOS 需要 `pkg-config sqlite`
 - Windows 建议使用 GitHub Actions 或 `MSYS2 + MinGW`
 
-### 客户端
-
-- CMake `>= 3.28`
-- Ninja
-- OpenSSL 3
-- Qt `>= 6.8.0`
-
-客户端 Qt 组件至少需要：
-
-- `qtbase`
-- `qtdeclarative`
-- `qtsvg`
-- `qtwebsockets`
-
 ## 本地编译方法
 
 ### 1. 编译服务端
@@ -285,67 +258,6 @@ cd AdaptixServer
 $env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;" + $env:Path
 $env:CGO_ENABLED = "1"
 go build -ldflags="-s -w" -o AdaptixServer.exe .
-```
-
-### 2. 编译客户端
-
-#### Linux
-
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-  cmake ninja-build build-essential pkg-config libssl-dev \
-  libxkbcommon-dev libgl1-mesa-dev \
-  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-  libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
-  libxkbcommon-x11-0
-```
-
-安装 Qt 之后执行：
-
-```bash
-cmake -S AdaptixClient -B build-client -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH=/path/to/Qt
-cmake --build build-client --parallel
-```
-
-#### macOS
-
-推荐依赖安装方式：
-
-```bash
-brew install cmake ninja openssl@3 qtbase qtdeclarative qtsvg qtwebsockets
-```
-
-构建命令：
-
-```bash
-cmake -S AdaptixClient -B build-client -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH=/opt/homebrew \
-  -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
-cmake --build build-client --parallel
-```
-
-#### Windows
-
-推荐使用：
-
-- Qt 6.8.x MSVC 2022
-- OpenSSL 3
-- Ninja
-- Visual Studio 2022 Build Tools
-
-构建命令：
-
-```powershell
-cmake -S AdaptixClient -B build -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DADAPTIX_USE_SYSTEM_QT6=ON `
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.8.3\msvc2022_64" `
-  -DOPENSSL_ROOT_DIR="C:\Program Files\OpenSSL-Win64"
-cmake --build build --parallel
 ```
 
 ## 服务端运行方法
@@ -378,12 +290,7 @@ cd AdaptixServer
 https://127.0.0.1:8843/api/login
 ```
 
-## 客户端登录方法
-
-客户端编译完成后，启动可执行文件：
-
-- Linux / macOS：`AdaptixClient`
-- Windows：`AdaptixClient.exe`
+带 Web 控制台时，用 `./adaptixserver -profile profile.yaml -web` 启动，浏览器打开 `https://host:{Web.port}{Web.path}`。
 
 默认示例账号来自 `AdaptixServer/profile.yaml`：
 
@@ -413,20 +320,15 @@ https://127.0.0.1:8843/api/login
 ### 本地手工编译
 
 - 服务端：`AdaptixServer/AdaptixServer` 或根目录 `make server` → `dist/adaptixserver`
-- 客户端：`build-client/AdaptixClient` 或 `AdaptixClient/build/AdaptixClient`
 
 ### GitHub Actions 产物
 
 下载对应 artifact 后，目录中会包含：
 
-- `AdaptixServer/`
-- `AdaptixClient/`
-- `README.md`
+- `AdaptixServer` / `AdaptixServer.exe`
+- `extenders-dist`（Linux 构建）
 
-其中：
-
-- Linux / macOS 包可直接配合默认 `profile.yaml` 运行
-- Windows 包默认已禁用 extenders，适合只验证服务端基础启动与客户端连接
+Linux / macOS 产物可配合默认 `profile.yaml` 运行。Windows 包适合验证服务端基础启动；Go plugin 在 Windows 上不可用，需在 Linux 上加载 extenders。
 
 ## 常见问题
 
@@ -457,23 +359,19 @@ https://127.0.0.1:8843/api/login
 
 最稳妥的方式：
 
-- 直接使用 GitHub Actions 打好的整包产物
+- 直接使用 GitHub Actions 打好的服务端与 extenders 产物
 
-### 3. `Qt6Config.cmake` 找不到
-
-说明 Qt 开发环境没有正确安装，或 `CMAKE_PREFIX_PATH` 没有指向 Qt 根目录。
-
-### 4. `login failure`
+### 3. `login failure`
 
 优先检查：
 
 - 服务端是否真的在运行
-- 客户端填写的地址是否是 `https://127.0.0.1:8843`
+- 浏览器或 API 地址是否是 `https://127.0.0.1:8843`（Web 入口另加 `Web.path`）
 - 用户名是否为 `admin`
 - 密码是否与 `profile.yaml` 中 `operators.admin` 一致
 - `only_password` 是否为 `false`
 
-### 5. `bind: address already in use`
+### 4. `bind: address already in use`
 
 说明端口被占用。
 
