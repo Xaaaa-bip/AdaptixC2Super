@@ -3,12 +3,13 @@ name: Build
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -166,3 +167,67 @@ jobs:
             AdaptixServer/extenders/beacon_agent/dist
             AdaptixServer/extenders/agent_kharon/dist
             AdaptixServer/extenders/gopher_agent/dist
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [adaptix-server, adaptix-extenders]
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/master' ||
+       startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package release zips
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          if [ ! -d artifacts ] || [ -z "$(ls -A artifacts)" ]; then
+            echo "No artifacts to publish"
+            exit 1
+          fi
+          for dir in artifacts/*; do
+            [ -d "$dir" ] || continue
+            name="$(basename "$dir")"
+            (cd "$dir" && zip -r -q "../../dist-release/${name}.zip" .)
+            echo "packed ${name}.zip"
+          done
+          ls -lh dist-release
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            TITLE="${GITHUB_REF_NAME}"
+            PRE=()
+          else
+            TAG="latest"
+            TITLE="Latest (${GITHUB_SHA::7})"
+            PRE=(--prerelease --latest=false)
+          fi
+          NOTES="服务端构建产物（已移除 Qt AdaptixClient）。
+
+          - Commit: \`${GITHUB_SHA}\`
+          - Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          资源：AdaptixServer-linux-amd64.zip / AdaptixServer-windows-amd64.zip / AdaptixServer-macos.zip / extenders-dist.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" "${PRE[@]}"
+            gh release upload "$TAG" dist-release/* --clobber
+          else
+            gh release create "$TAG" dist-release/* \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --target "$GITHUB_SHA" \
+              "${PRE[@]}"
+          fi

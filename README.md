@@ -13,6 +13,7 @@
 ### 移除 Qt 客户端
 - 删除仓库内 `AdaptixClient/` 源码与 `make client` / `make client-fast` 目标
 - GitHub Actions 不再构建或上传 Qt 客户端产物
+- 服务端 / extenders 构建成功后自动发布 zip 到 GitHub Releases（`v*` 正式版，`main` 更新 `latest` 预发布）
 - `pre_install_linux_all.sh` 仅安装服务端依赖；操作员界面改用集成 Web 控制台（`./adaptixserver -profile profile.yaml -web`）
 
 ### Web UI 缺资源不再白屏（teamserver）
@@ -188,7 +189,7 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 - `AdaptixServer/`：服务端源码与默认配置
 - `AdaptixWeb/`：Web 控制台源码（构建产物可放 `AdaptixWeb/dist` 供 `make web` 拷贝）
 - `Extension-Kit/`：BOF / axscript 扩展（`make server-ext` 拷到 `dist/Extension-Kit`）
-- `.github/workflows/build.yml`：GitHub Actions 服务端与 extenders 构建流程
+- `.github/workflows/build.yml`：GitHub Actions 服务端与 extenders 构建，成功后自动发布到 Releases
 - `scripts/`：辅助脚本
 - `Makefile`：`server` / `extenders` / `web` / `extension-kit` / `server-ext`
 
@@ -201,8 +202,9 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 触发方式：
 
 1. 推送到 `main` 或 `master`
-2. 提交 Pull Request 到 `main` 或 `master`
-3. 在 GitHub Actions 页面手动点击 `workflow_dispatch`
+2. 推送 `v*` 标签（例如 `v1.5.6`）
+3. 提交 Pull Request 到 `main` 或 `master`（只构建，不发 Release）
+4. 在 GitHub Actions 页面手动点击 `workflow_dispatch`
 
 一次工作流会生成：
 
@@ -210,6 +212,11 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 - `AdaptixServer-windows-amd64`
 - `AdaptixServer-macos`
 - `extenders-dist`（Linux 原生插件与 beacon / gopher 产物）
+
+构建成功后会自动把上述产物打成 zip 发到 [Releases](https://github.com/Xaaaa-bip/AdaptixC2/releases)：
+
+- 推送 `v*` 标签 → 创建对应版本的正式 Release
+- 推送到 `main` / `master` → 更新名为 `latest` 的预发布（滚动覆盖）
 
 操作员界面使用集成 Web 控制台，不再构建 Qt 桌面客户端。
 
