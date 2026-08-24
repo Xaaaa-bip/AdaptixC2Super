@@ -18,24 +18,6 @@ SERVER_DEPENDENCIES=(
     g++-mingw-w64
 )
 
-CLIENT_DEPENDENCIES=(
-    git
-    gcc
-    g++
-    build-essential
-    make
-    cmake
-    mingw-w64
-    g++-mingw-w64
-    libssl-dev
-    qt6-base-dev
-    qt6-base-private-dev
-    libxkbcommon-dev
-    qt6-websockets-dev
-    qt6-declarative-dev
-    qt6-svg-dev
-)
-
 report_step() {
     echo
     echo "${YELLOW}[STEP]${NC} $1..."
@@ -153,20 +135,10 @@ actual_go_version_install() {
     fi
 }
 
-client_packets_install() {
-    report_step "Installing the packages dependencies for the client"
-    packets_install CLIENT_DEPENDENCIES
-}
-
 server_part() {
     repo_index_update
     server_packets_install
     actual_go_version_install
-}
-
-client_part() {
-    repo_index_update
-    client_packets_install
 }
 
 exec 2> "$ERROR_FILE"
@@ -176,23 +148,21 @@ if [[ $EUID != 0 ]]; then
     exit 1
 fi
 
-if [[ $# != 1 ]]; then
-    echo "Usage: pre_install_linux_all.sh <server|client|all>"
+if [[ $# -gt 1 ]]; then
+    echo "Usage: pre_install_linux_all.sh [server]"
     exit 1
 else
-    case "$1" in
-        server)
+    case "${1:-server}" in
+        server|all)
             server_part
             ;;
         client)
-            client_part
-            ;;
-        all)
-            server_part
-            client_part
+            echo "Qt client is no longer part of this repository. Use the Web console instead."
+            echo "Usage: pre_install_linux_all.sh [server]"
+            exit 1
             ;;
         *)
-            echo "Usage: pre_install_linux_all.sh <server|client|all>"
+            echo "Usage: pre_install_linux_all.sh [server]"
             exit 1
             ;;
     esac
