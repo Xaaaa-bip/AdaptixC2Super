@@ -164,9 +164,9 @@ const ICO: Record<string, React.ReactNode> = {
 const MENUS: Menu[] = [
   { id: 'dashboard', label: '概览', ico: 'dashboard', group: '总览', shortcut: 'G D' },
   { id: 'sessions', label: '主机', ico: 'sessions', group: '作战', shortcut: 'G H' },
+  { id: 'delivery', label: '投递', ico: 'delivery', group: '作战', shortcut: 'G W' },
   { id: 'listeners', label: '监听器', ico: 'listeners', group: '作战', shortcut: 'G L' },
   { id: 'generate', label: '载荷', ico: 'generate', group: '作战', shortcut: 'G P' },
-  { id: 'delivery', label: '投递', ico: 'delivery', group: '作战', shortcut: 'G W' },
   { id: 'tasks', label: '任务', ico: 'tasks', group: '作战', shortcut: 'G T' },
   { id: 'downloads', label: '下载', ico: 'downloads', group: '资产' },
   { id: 'tunnels', label: '隧道', ico: 'tunnels', group: '资产' },

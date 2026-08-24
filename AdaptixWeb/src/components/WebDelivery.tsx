@@ -28,7 +28,6 @@ function joinUrl(base: string, route: string) {
   return `${b}${r}`
 }
 
-/** Teamserver public API origin — never the listener bind address. */
 function teamserverApiOrigin(apiBase: string) {
   const raw = (apiBase || '').trim()
   if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '')
@@ -38,31 +37,36 @@ function teamserverApiOrigin(apiBase: string) {
   return ''
 }
 
-function agentForListenerReg(reg?: string): string {
+/** Agents that can actually callback on this listener. */
+function agentsForListener(reg?: string, target?: Target): string[] {
   const r = String(reg || '')
-  if (r.startsWith('Gopher')) return 'gopher'
-  if (r.startsWith('Linux')) return 'linux'
-  if (r.startsWith('Beacon')) return 'beacon'
-  return 'beacon'
+  if (r === 'BeaconHTTP' || r === 'BeaconDNS') return ['beacon']
+  if (r === 'BeaconWS') return target === 'linux' ? ['linux'] : ['beacon']
+  if (r === 'GopherTCP') return target === 'linux' ? ['linux', 'gopher'] : ['gopher']
+  if (r === 'LinuxTCP') return ['linux']
+  return []
 }
 
-function defaultFormat(agent: string) {
-  if (agent === 'gopher') return 'Binary EXE'
+function defaultFormat(agent: string, target: Target) {
+  if (agent === 'gopher') return target === 'linux' ? 'Binary .ELF' : 'Binary EXE'
   if (agent === 'linux') return 'Binary ELF (Native)'
   return 'Exe'
-}
-
-function defaultTarget(agent: string): Target {
-  return agent === 'linux' ? 'linux' : 'windows'
 }
 
 const DELIVER_LISTENERS = new Set([
   'BeaconHTTP',
   'BeaconWS',
   'BeaconDNS',
-  'LinuxTCP',
   'GopherTCP',
 ])
+
+function listenerHint(reg?: string) {
+  if (reg === 'BeaconWS') return 'Linux 走 HTTP Upgrade / WebSocket'
+  if (reg === 'BeaconHTTP') return 'Windows Beacon HTTP 回连'
+  if (reg === 'GopherTCP') return 'TCP 回连 · 可选 linux / gopher'
+  if (reg === 'BeaconDNS') return 'Windows Beacon DNS'
+  return ''
+}
 
 export function WebDelivery() {
   const listeners = useStore((s) => s.listeners) || {}
@@ -94,38 +98,21 @@ export function WebDelivery() {
   const profile = AGENT_PROFILES.find((p) => p.agent === agentName) || AGENT_PROFILES[0]
 
   const compatible = useMemo(() => {
-    return listenerList.filter((l) => {
-      const ag = agentForListenerReg(l.l_reg_name)
-      if (target === 'windows') return ag === 'beacon' || ag === 'gopher'
-      return ag === 'linux' || ag === 'gopher'
-    })
+    return listenerList.filter((l) => agentsForListener(l.l_reg_name, target).length > 0)
   }, [listenerList, target])
 
-  function applyListener(name: string, tgt: Target) {
+  const agentChoices = useMemo(() => {
+    const l = listenerList.find((x) => x.l_name === listener)
+    return agentsForListener(l?.l_reg_name, target)
+  }, [listenerList, listener, target])
+
+  function applyListener(name: string, tgt: Target, preferAgent?: string) {
     setListener(name)
     const l = listenerList.find((x) => x.l_name === name)
-    if (!l) return
-    const ag = agentForListenerReg(l.l_reg_name)
-    const resolved = tgt === 'linux' && ag === 'beacon' ? 'linux' : ag
-    // Beacon listener + Linux target is invalid; keep beacon and flip target instead.
-    if (tgt === 'linux' && ag === 'beacon') {
-      setTarget('windows')
-      setAgentName('beacon')
-      setFormat('Exe')
-      return
-    }
-    if (tgt === 'windows' && ag === 'linux') {
-      setTarget('linux')
-      setAgentName('linux')
-      setFormat(defaultFormat('linux'))
-      return
-    }
-    setAgentName(resolved)
-    if (resolved === 'gopher') {
-      setFormat(tgt === 'linux' ? 'Binary .ELF' : 'Binary EXE')
-    } else {
-      setFormat(defaultFormat(resolved))
-    }
+    const choices = agentsForListener(l?.l_reg_name, tgt)
+    const next = (preferAgent && choices.includes(preferAgent) ? preferAgent : choices[0]) || (tgt === 'linux' ? 'linux' : 'beacon')
+    setAgentName(next)
+    setFormat(defaultFormat(next, tgt))
   }
 
   useEffect(() => {
@@ -134,10 +121,15 @@ export function WebDelivery() {
       return
     }
     if (!compatible.find((l) => l.l_name === listener)) {
-      applyListener(compatible[0].l_name, target)
+      const prefer = target === 'linux'
+        ? compatible.find((l) => l.l_reg_name === 'BeaconWS') || compatible[0]
+        : compatible.find((l) => l.l_reg_name === 'BeaconHTTP') || compatible[0]
+      applyListener(prefer.l_name, target)
+    } else if (agentChoices.length && !agentChoices.includes(agentName)) {
+      applyListener(listener, target)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compatible])
+  }, [compatible, target])
 
   function applyStatus(st: Status) {
     if (st.agent_name) setAgentName(st.agent_name)
@@ -152,9 +144,11 @@ export function WebDelivery() {
     if (st.listener) setListener(st.listener)
     if (st.sleep) setSleep(st.sleep)
     if (typeof st.jitter === 'number') setJitter(st.jitter)
-    if (st.agent_name === 'linux') setTarget('linux')
-    else if (st.agent_name === 'gopher' && /ELF|Mach/i.test(st.format || '')) setTarget('linux')
-    else setTarget('windows')
+    if (st.agent_name === 'linux' || (st.agent_name === 'gopher' && /ELF|Mach/i.test(st.format || ''))) {
+      setTarget('linux')
+    } else {
+      setTarget('windows')
+    }
     setEnabled(!!st.listener)
   }
 
@@ -167,7 +161,7 @@ export function WebDelivery() {
       setStatusText(
         st.listener
           ? `已启用 · ${st.listener} · ${st.agent_name || '-'} / ${st.format || '-'}`
-          : '未启用：选一个监听后点启用',
+          : '未启用：选监听后点启用',
       )
     } catch (e: any) {
       const msg = e?.message || String(e)
@@ -189,6 +183,7 @@ export function WebDelivery() {
   }, [])
 
   const scriptUrl = useMemo(() => joinUrl(c2Host, SCRIPT_ROUTE), [c2Host])
+  const payloadUrl = useMemo(() => joinUrl(c2Host, PAYLOAD_ROUTE), [c2Host])
   const scriptPs = useMemo(() => `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}d=ps`, [scriptUrl])
   const scriptBash = useMemo(() => `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}d=bash`, [scriptUrl])
 
@@ -210,13 +205,9 @@ export function WebDelivery() {
       return
     }
     const l = listenerList.find((x) => x.l_name === listener)
-    const ag = agentForListenerReg(l?.l_reg_name)
-    if (target === 'windows' && ag === 'linux') {
-      pushToast('warn', 'Linux 监听不能投递 Windows')
-      return
-    }
-    if (target === 'linux' && ag === 'beacon') {
-      pushToast('warn', 'Beacon 监听不能投递 Linux，请换 LinuxTCP / GopherTCP')
+    const allowed = agentsForListener(l?.l_reg_name, target)
+    if (!allowed.includes(agentName)) {
+      pushToast('warn', `监听 ${l?.l_reg_name} 不能投递 ${agentName}`)
       return
     }
     setBusy(true)
@@ -252,6 +243,11 @@ export function WebDelivery() {
     pushToast(ok ? 'ok' : 'err', ok ? '已复制命令' : '复制失败')
   }
 
+  function downloadPayload() {
+    const q = target === 'linux' ? '?os=linux' : '?os=windows'
+    window.open(`${payloadUrl}${q}`, '_blank', 'noopener')
+  }
+
   const selected = compatible.find((l) => l.l_name === listener)
 
   return (
@@ -260,26 +256,31 @@ export function WebDelivery() {
         <div className="card-hd">
           <h3>Web 投递</h3>
           <span className="spacer" />
-          <span className="dim" style={{ fontSize: 12 }}>{statusText}</span>
+          <span className={`wd-pill ${enabled ? 'on' : ''}`}>{enabled ? '已启用' : '未启用'}</span>
         </div>
         <div className="card-bd wd-body">
           {pluginMissing && (
             <div className="hint warn-hint" style={{ marginBottom: 12 }}>
-              服务端未加载 webdelivery 插件。确认 profile 已启用并已编译 so 后重启 teamserver。
+              服务端未加载 webdelivery 插件。
             </div>
           )}
 
-          <div className="wd-step">1. 目标系统</div>
+          <div className="wd-step">1. 目标</div>
           <div className="chip-row">
             <button type="button" className={target === 'windows' ? 'primary' : ''} onClick={() => setTarget('windows')}>
-              Windows
+              Windows · Beacon
             </button>
             <button type="button" className={target === 'linux' ? 'primary' : ''} onClick={() => setTarget('linux')}>
-              Linux
+              Linux · Agent
             </button>
           </div>
+          <div className="hint muted-hint" style={{ marginTop: 6 }}>
+            {target === 'linux'
+              ? '配对：Linux Agent → BeaconWS（HTTP Upgrade）。没有独立的 LinuxHTTP。'
+              : '配对：Windows Beacon → BeaconHTTP。复制命令到目标机器执行。'}
+          </div>
 
-          <div className="wd-step">2. 监听器</div>
+          <div className="wd-step">2. 监听</div>
           {compatible.length === 0 ? (
             <div className="hint warn-hint">
               没有可用监听
@@ -294,41 +295,67 @@ export function WebDelivery() {
                   key={l.l_name}
                   type="button"
                   className={`gen-listener ${listener === l.l_name ? 'active' : ''}`}
-                  onClick={() => applyListener(l.l_name, target)}
+                  onClick={() => applyListener(l.l_name, target, agentName)}
                 >
                   <span className={`tag ${String(l.l_status).toLowerCase().includes('listen') ? 'listen' : 'offline'}`}>
                     {l.l_status || '-'}
                   </span>
                   <div className="meta">
                     <div className="name mono">{l.l_name}</div>
-                    <div className="sub">{l.l_reg_name || '-'} · {l.l_bind_host || '-'}:{l.l_bind_port || '-'}</div>
+                    <div className="sub">
+                      {l.l_reg_name} · {l.l_bind_host}:{l.l_bind_port}
+                      {listenerHint(l.l_reg_name) ? ` · ${listenerHint(l.l_reg_name)}` : ''}
+                    </div>
                   </div>
                 </button>
               ))}
             </div>
           )}
 
-          <div className="wd-step">3. 一键命令</div>
+          {agentChoices.length > 1 && (
+            <>
+              <div className="wd-step">Agent</div>
+              <div className="chip-row">
+                {agentChoices.map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    className={agentName === a ? 'primary' : ''}
+                    onClick={() => {
+                      setAgentName(a)
+                      setFormat(defaultFormat(a, target))
+                    }}
+                  >
+                    {a === 'linux' ? 'Linux Agent' : a === 'gopher' ? 'Gopher' : 'Beacon'}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="wd-step">3. 上线</div>
           <div className="wd-cmd-box">
-            <textarea className="wd-cmd mono" readOnly rows={4} value={c2Host ? command : '等待登录后生成命令…'} />
+            <textarea className="wd-cmd mono" readOnly rows={3} value={c2Host ? command : '等待登录后生成命令…'} />
             <div className="wd-cmd-actions">
-              <button className="primary" disabled={!c2Host} onClick={copyCmd}>复制命令</button>
               <button className="primary" disabled={busy || !listener} onClick={onEnable}>
                 {busy ? '同步中…' : enabled ? '重新启用' : '启用投递'}
               </button>
+              <button className="primary" disabled={!c2Host} onClick={copyCmd}>复制命令</button>
+              <button disabled={!c2Host || !enabled} onClick={downloadPayload}>直接下载载荷</button>
               <button disabled={busy} onClick={() => loadStatus()}>刷新</button>
             </div>
           </div>
 
           <div className="hint muted-hint" style={{ marginTop: 10 }}>
-            目标执行这条命令即可上线。脚本和载荷都走 teamserver
-            {' '}<code className="mono">{c2Host || '…'}/deliver</code>
-            ，不是监听端口。
-            {selected ? ` 当前 ${selected.l_name} · ${agentName}/${format}` : ''}
+            {statusText}
+            {selected ? ` · ${selected.l_name} / ${agentName} / ${format}` : ''}
+            <br />
+            脚本 <code className="mono">{c2Host || '…'}/deliver</code>
+            {' '}载荷 <code className="mono">{c2Host || '…'}/deliver/payload</code>
           </div>
 
           <button className="ghost" style={{ marginTop: 12 }} onClick={() => setAdvanced((v) => !v)}>
-            {advanced ? '收起高级' : '高级（sleep / 格式）'}
+            {advanced ? '收起高级' : '高级'}
           </button>
           {advanced && (
             <div className="wd-advanced">
