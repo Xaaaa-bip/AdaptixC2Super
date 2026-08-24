@@ -367,6 +367,10 @@ void ConnectorHTTP_SendData(Connector* self, BYTE* data_buf, ULONG data_size)
 						reqHeaders = tmpHeaders;
 					}
 
+					// Wine's WinHTTP rejects a header block that starts with CR/LF
+					// (ERROR_WINHTTP_INVALID_HEADER / 12153). Real Windows is looser.
+					while (reqHeaders && (*reqHeaders == '\r' || *reqHeaders == '\n' || *reqHeaders == ' '))
+						reqHeaders++;
 					WCHAR* hdrW = HttpMbToWc(data->functions, reqHeaders);
 					if (tmpHeaders) {
 						memset(tmpHeaders, 0, StrLenA(tmpHeaders));
