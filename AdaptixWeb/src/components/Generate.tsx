@@ -393,50 +393,89 @@ export function Generate() {
               )}
 
               {agent === 'beacon' && (
-                <div className="field">
-                  <label>伪装 / IAT</label>
-                  <div className="gen-opt-list">
-                    <label className="check-inline">
-                      <input type="checkbox" checked={iatHiding} onChange={(e) => setIatHiding(e.target.checked)} />
-                      IAT Hiding（空导入表 / no CRT）
-                    </label>
-                    {exeFormat && (
-                      <label className="check-inline">
-                        <input type="checkbox" checked={exePseudoSign} onChange={(e) => setExePseudoSign(e.target.checked)} />
-                        自签名 Authenticode（随机证书 + osslsigncode）
-                      </label>
-                    )}
-                    {peFormat && (
-                      <label className="check-inline">
-                        <input type="checkbox" checked={peHeaderMod} onChange={(e) => setPeHeaderMod(e.target.checked)} />
-                        PE header mod（Rich header + 时间戳 + checksum）
-                      </label>
-                    )}
-                    {peFormat && (
-                      <>
-                        <label className="check-inline">
-                          <input type="checkbox" checked={iconRandom} onChange={(e) => {
-                            setIconRandom(e.target.checked)
-                            if (e.target.checked) setIconFile(null)
-                          }} />
-                          随机 ICO 图标伪装
-                        </label>
-                        {!iconRandom && (
-                          <div className="field-inline">
-                            <input
-                              type="file"
-                              accept=".ico,image/x-icon,image/vnd.microsoft.icon"
-                              onChange={(e) => setIconFile(e.target.files?.[0] || null)}
-                            />
-                            <span className="dim" style={{ fontSize: 11.5 }}>
-                              {iconFile ? iconFile.name : '可选：自定义 .ico'}
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    )}
+                <>
+                  <div className="field">
+                    <label>IAT 隐藏</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={iatHiding ? 'primary' : ''}
+                        onClick={() => setIatHiding((v) => !v)}
+                        title="空导入表 / no CRT"
+                      >
+                        {iatHiding ? '开' : '关'}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                  <div className="field">
+                    <label>图标伪装</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={iconRandom ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? '随机嵌入 ICO' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => { setIconRandom(true); setIconFile(null) }}
+                      >
+                        随机 ICO
+                      </button>
+                      <button
+                        type="button"
+                        className={!iconRandom ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? '使用自定义 .ico' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => setIconRandom(false)}
+                      >
+                        自定义
+                      </button>
+                      {peFormat && !iconRandom && (
+                        <label className="gen-opt-file">
+                          <input
+                            type="file"
+                            accept=".ico,image/x-icon,image/vnd.microsoft.icon"
+                            onChange={(e) => setIconFile(e.target.files?.[0] || null)}
+                          />
+                          <span className="dim" style={{ fontSize: 11.5 }}>
+                            {iconFile ? iconFile.name : '选 .ico'}
+                          </span>
+                        </label>
+                      )}
+                      {!peFormat && (
+                        <span className="dim" style={{ fontSize: 11.5, alignSelf: 'center' }}>
+                          先选 EXE / DLL
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>自签名</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={exePseudoSign ? 'primary' : ''}
+                        disabled={!exeFormat}
+                        title={exeFormat ? '随机证书 + osslsigncode' : '仅 EXE / Service 可用'}
+                        onClick={() => setExePseudoSign((v) => !v)}
+                      >
+                        {exeFormat ? (exePseudoSign ? '开' : '关') : '仅 EXE'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>PE 头</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={peHeaderMod ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? 'Rich header + 时间戳 + checksum' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => setPeHeaderMod((v) => !v)}
+                      >
+                        {peFormat ? (peHeaderMod ? '开' : '关') : '仅 EXE / DLL'}
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -449,7 +488,7 @@ export function Generate() {
             )}
             {agent === 'beacon' && format !== 'Stager' && (
               <div className="hint muted-hint">
-                对齐官方 GenerateUI：IAT Hiding 默认开；360 QVM 扫同模式可关掉。Exe 默认证自签名 + 随机图标。
+                IAT 默认开。图标 / 自签名 / PE 头在 EXE、Service、DLL 上生效。
               </div>
             )}
             {agent === 'kharon' && (
