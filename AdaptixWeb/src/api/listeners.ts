@@ -272,7 +272,9 @@ export function defaultAgentConfig(agent: string, format: string, arch: string, 
       format,
       sleep: '5s',
       jitter: 0,
-      iat_hiding: false,
+      iat_hiding: true,
+      icon_random: format === 'Exe' || format === 'Service Exe' || format === 'DLL',
+      icon_content: '',
       exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
     }
   }

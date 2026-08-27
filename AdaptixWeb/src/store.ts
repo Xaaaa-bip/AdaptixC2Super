@@ -147,7 +147,8 @@ type State = {
   refreshRest: () => Promise<void>
   sendCommand: (cmdline: string) => Promise<void>
   generateBeacon: (cfg: {
-    listener: string; format: string; arch: string; sleep: string; jitter: number; iat_hiding: boolean
+    listener: string; format: string; arch: string; sleep: string; jitter: number
+    iat_hiding: boolean; icon_random?: boolean; icon_content?: string; exe_pseudo_sign?: boolean
   }) => Promise<{ filename: string; bytes: Uint8Array }>
   createHttpListener: (name: string, port: number, callback: string) => Promise<void>
   removeSelected: () => Promise<void>
@@ -918,7 +919,9 @@ export const useStore = create<State>((set, get) => ({
     const res = await api.generateAgent('beacon', [cfg.listener], {
       os: 'windows', arch: cfg.arch, format: cfg.format,
       sleep: cfg.sleep, jitter: cfg.jitter, iat_hiding: cfg.iat_hiding,
-      exe_pseudo_sign: cfg.format === 'Exe' || cfg.format === 'Service Exe',
+      icon_random: !!cfg.icon_random,
+      icon_content: cfg.icon_content || '',
+      exe_pseudo_sign: cfg.exe_pseudo_sign ?? (cfg.format === 'Exe' || cfg.format === 'Service Exe'),
     })
     const decoded = ApiClient.decodeGeneratePayload(res.message)
     pushLog('ok', `已生成 ${decoded.filename} (${decoded.bytes.length} bytes)`)
