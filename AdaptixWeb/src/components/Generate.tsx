@@ -81,7 +81,7 @@ export function Generate() {
   const [jitter, setJitter] = useState(0)
   const [listener, setListener] = useState('')
   const [iatHiding, setIatHiding] = useState(true)
-  const [iconRandom, setIconRandom] = useState(true)
+  const [iconMode, setIconMode] = useState<'off' | 'random' | 'custom'>('off')
   const [iconFile, setIconFile] = useState<File | null>(null)
   const [exePseudoSign, setExePseudoSign] = useState(true)
   const [peHeaderMod, setPeHeaderMod] = useState(true)
@@ -173,7 +173,7 @@ export function Generate() {
       let cfg = defaultAgentConfig(agent, format, arch, os)
       if (agent === 'beacon') {
         let iconContent = ''
-        if (peFormat && !iconRandom && iconFile) {
+        if (peFormat && iconMode === 'custom' && iconFile) {
           iconContent = await fileToBase64(iconFile)
         }
         cfg = {
@@ -181,7 +181,7 @@ export function Generate() {
           sleep,
           jitter,
           iat_hiding: iatHiding,
-          icon_random: peFormat && iconRandom,
+          icon_random: peFormat && iconMode === 'random',
           icon_content: iconContent,
           exe_pseudo_sign: exeFormat && exePseudoSign,
           pe_header_mod: peFormat && peHeaderMod,
@@ -412,23 +412,32 @@ export function Generate() {
                     <div className="chip-row">
                       <button
                         type="button"
-                        className={iconRandom ? 'primary' : ''}
+                        className={iconMode === 'off' ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? '不嵌入图标' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => { setIconMode('off'); setIconFile(null) }}
+                      >
+                        关
+                      </button>
+                      <button
+                        type="button"
+                        className={iconMode === 'random' ? 'primary' : ''}
                         disabled={!peFormat}
                         title={peFormat ? '随机嵌入 ICO' : '仅 EXE / Service / DLL 可用'}
-                        onClick={() => { setIconRandom(true); setIconFile(null) }}
+                        onClick={() => { setIconMode('random'); setIconFile(null) }}
                       >
                         随机 ICO
                       </button>
                       <button
                         type="button"
-                        className={!iconRandom ? 'primary' : ''}
+                        className={iconMode === 'custom' ? 'primary' : ''}
                         disabled={!peFormat}
                         title={peFormat ? '使用自定义 .ico' : '仅 EXE / Service / DLL 可用'}
-                        onClick={() => setIconRandom(false)}
+                        onClick={() => setIconMode('custom')}
                       >
                         自定义
                       </button>
-                      {peFormat && !iconRandom && (
+                      {peFormat && iconMode === 'custom' && (
                         <label className="gen-opt-file">
                           <input
                             type="file"
@@ -599,7 +608,7 @@ export function Generate() {
                   {peFormat && (
                     <div>
                       <span className="k">图标</span>
-                      <b>{iconRandom ? '随机 ICO' : (iconFile ? iconFile.name : '默认')}</b>
+                      <b>{iconMode === 'random' ? '随机 ICO' : iconMode === 'custom' ? (iconFile ? iconFile.name : '自定义') : '关'}</b>
                     </div>
                   )}
                 </>
