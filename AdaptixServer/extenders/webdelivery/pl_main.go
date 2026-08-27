@@ -450,6 +450,7 @@ func buildAgentConfigJSON(agent, osType, arch, format string) ([]byte, error) {
 		cfg["jitter"] = Config.Jitter
 		cfg["iat_hiding"] = false
 		cfg["exe_pseudo_sign"] = (format == "Exe" || format == "Service Exe")
+		cfg["pe_header_mod"] = (format == "Exe" || format == "Service Exe" || format == "DLL")
 	case "gopher":
 		cfg["os"] = osType
 		if osType == "" {

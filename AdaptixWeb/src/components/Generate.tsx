@@ -84,6 +84,7 @@ export function Generate() {
   const [iconRandom, setIconRandom] = useState(true)
   const [iconFile, setIconFile] = useState<File | null>(null)
   const [exePseudoSign, setExePseudoSign] = useState(true)
+  const [peHeaderMod, setPeHeaderMod] = useState(true)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState('')
   const [lastFile, setLastFile] = useState('')
@@ -183,6 +184,7 @@ export function Generate() {
           icon_random: peFormat && iconRandom,
           icon_content: iconContent,
           exe_pseudo_sign: exeFormat && exePseudoSign,
+          pe_header_mod: peFormat && peHeaderMod,
         }
       } else if (agent === 'kharon') {
         cfg = { ...cfg, sleep, jitter }
@@ -405,6 +407,12 @@ export function Generate() {
                       </label>
                     )}
                     {peFormat && (
+                      <label className="check-inline">
+                        <input type="checkbox" checked={peHeaderMod} onChange={(e) => setPeHeaderMod(e.target.checked)} />
+                        PE header mod（Rich header + 时间戳 + checksum）
+                      </label>
+                    )}
+                    {peFormat && (
                       <>
                         <label className="check-inline">
                           <input type="checkbox" checked={iconRandom} onChange={(e) => {
@@ -541,6 +549,12 @@ export function Generate() {
                     <div>
                       <span className="k">签名</span>
                       <b>{exePseudoSign ? '自签名' : '无'}</b>
+                    </div>
+                  )}
+                  {peFormat && (
+                    <div>
+                      <span className="k">PE头</span>
+                      <b>{peHeaderMod ? 'mod' : 'off'}</b>
                     </div>
                   )}
                   {peFormat && (

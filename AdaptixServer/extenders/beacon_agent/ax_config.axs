@@ -410,6 +410,9 @@ function GenerateUI(listeners_type)
     let checkExePseudoSign = form.create_check("Exe pseudo Authenticode (random self-signed, TS: openssl+osslsigncode)");
     checkExePseudoSign.setVisible(false);
 
+    let checkPeHeaderMod = form.create_check("PE header mod (Rich header + timestamp + checksum)");
+    checkPeHeaderMod.setChecked(true);
+
     //////////////////// DNS Settings
 
     let labelDnsMode = form.create_label("DNS Mode:");
@@ -552,10 +555,11 @@ function GenerateUI(listeners_type)
     layout.addWidget(checkIconRandom,     9, 1, 1, 1);
     layout.addWidget(iconSelector,        9, 2, 1, 1);
     layout.addWidget(checkExePseudoSign,  10, 0, 1, 3);
-    layout.addWidget(checkIatHiding,      11, 0, 1, 3);
-    layout.addWidget(group_proxy,        12, 0, 1, 3);
-    layout.addWidget(group_dns,          13, 0, 1, 3);
-    layout.addWidget(spacer2,            14, 0, 1, 3);
+    layout.addWidget(checkPeHeaderMod,    11, 0, 1, 3);
+    layout.addWidget(checkIatHiding,      12, 0, 1, 3);
+    layout.addWidget(group_proxy,        13, 0, 1, 3);
+    layout.addWidget(group_dns,          14, 0, 1, 3);
+    layout.addWidget(spacer2,            15, 0, 1, 3);
 
     function updateIconFileVisibility() {
         let pe = (comboAgentFormat.currentText() == "Exe" || comboAgentFormat.currentText() == "Service Exe" || comboAgentFormat.currentText() == "DLL");
@@ -591,6 +595,7 @@ function GenerateUI(listeners_type)
         }
         updateIconRowVisibility(text);
         updateExePseudoSignVisibility(text);
+        updatePeHeaderModVisibility(text);
     });
     form.connect(checkIconRandom, "stateChanged", function() {
         updateIconFileVisibility();
@@ -598,8 +603,12 @@ function GenerateUI(listeners_type)
     function updateExePseudoSignVisibility(fmt) {
         checkExePseudoSign.setVisible(fmt == "Exe" || fmt == "Service Exe");
     }
+    function updatePeHeaderModVisibility(fmt) {
+        checkPeHeaderMod.setVisible(fmt == "Exe" || fmt == "Service Exe" || fmt == "DLL");
+    }
     updateIconRowVisibility(comboAgentFormat.currentText());
     updateExePseudoSignVisibility(comboAgentFormat.currentText());
+    updatePeHeaderModVisibility(comboAgentFormat.currentText());
 
     let container = form.create_container()
     container.put("arch",                comboArch)
@@ -622,6 +631,7 @@ function GenerateUI(listeners_type)
     container.put("icon_random",         checkIconRandom)
     container.put("icon_content",        iconSelector)
     container.put("exe_pseudo_sign",     checkExePseudoSign)
+    container.put("pe_header_mod",       checkPeHeaderMod)
     container.put("iat_hiding",          checkIatHiding)
     container.put("use_proxy",           group_proxy)
     container.put("proxy_type",          comboProxyType)
@@ -637,7 +647,7 @@ function GenerateUI(listeners_type)
     return {
         ui_panel: panel,
         ui_container: container,
-        ui_height: 540,
+        ui_height: 570,
         ui_width: 500
     }
 }

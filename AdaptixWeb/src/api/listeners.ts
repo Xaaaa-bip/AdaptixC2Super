@@ -276,6 +276,7 @@ export function defaultAgentConfig(agent: string, format: string, arch: string, 
       icon_random: format === 'Exe' || format === 'Service Exe' || format === 'DLL',
       icon_content: '',
       exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+      pe_header_mod: format === 'Exe' || format === 'Service Exe' || format === 'DLL',
     }
   }
   if (agent === 'kharon') {
