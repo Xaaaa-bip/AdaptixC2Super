@@ -44,7 +44,7 @@ A BOFs that contains common enumeration and attack methods for Windows Active Di
 
 ## Creds-BOF
 
-BOF tools that can be used to harvest passwords [More details](https://github.com/Adaptix-Framework/Extension-Kit/blob/main/Creds-BOF/README.md)
+BOF tools that can be used to harvest passwords, plus in-memory official Mimikatz. [More details](https://github.com/Adaptix-Framework/Extension-Kit/blob/main/Creds-BOF/README.md)
 
 ![](./Creds-BOF/_img/01.png)
 

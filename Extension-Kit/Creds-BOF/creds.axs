@@ -5,6 +5,7 @@ var metadata = {
 
 ax.script_import(ax.script_dir() + "nanodump/nanodump.axs")
 ax.script_import(ax.script_dir() + "cookie-monster/cookie-monster.axs")
+ax.script_import(ax.script_dir() + "mimikatz/mimikatz.axs")
 
 /// COMMANDS
 
