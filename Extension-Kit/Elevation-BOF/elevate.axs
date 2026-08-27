@@ -9,7 +9,7 @@ var _cmd_getsystem_token = ax.create_command("token", "Elevate the current agent
 _cmd_getsystem_token.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
     let hook = function (task)
     {
-        if(/Impersonate to SYSTEM/.test(task.text)) {
+        if(/Impersonate to SYSTEM & TrustedInstaller succeeded/.test(task.text)) {
             ax.agent_set_impersonate(task.agent, "SYSTEM", true);
         }
         return task;
@@ -44,8 +44,6 @@ _cmd_uacbybass_regshell.setPreHook(function (id, cmdline, parsed_json, ...parsed
 });
 var cmd_uacbybass = ax.create_command("uacbybass", "Perform UAC bypass");
 cmd_uacbybass.addSubCommands([_cmd_uacbybass_sspi, _cmd_uacbybass_regshell]);
-var cmd_uacbypass = ax.create_command("uacbypass", "Perform UAC bypass (alias of uacbybass)");
-cmd_uacbypass.addSubCommands([_cmd_uacbybass_sspi, _cmd_uacbybass_regshell]);
 
 
 var cmd_dcom_potato = ax.create_command("potato-dcom", "DCOMPotato - get SYSTEM via SeImpersonate privileges.", "potato-dcom --run C:\\Windows\\System32\\cmd.exe /c whoami /all");
@@ -114,7 +112,7 @@ cmd_printspoofer.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
 
 
 
-var group_test = ax.create_commands_group("Elevation-BOF", [cmd_getsystem, cmd_uacbybass, cmd_uacbypass, cmd_dcom_potato, cmd_printspoofer]);
+var group_test = ax.create_commands_group("Elevation-BOF", [cmd_getsystem, cmd_uacbybass, cmd_dcom_potato, cmd_printspoofer]);
 ax.register_commands_group(group_test, ["beacon", "gopher", "kharon"], ["windows"], []);
 
 

