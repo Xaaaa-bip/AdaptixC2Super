@@ -98,6 +98,27 @@ export function Hosts({ active = true }: { active?: boolean }) {
     openConsole(a.a_id)
   }
 
+  function focusTerm() {
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLInputElement>('.term-in input')?.focus()
+    })
+  }
+
+  function openData(id: string) {
+    const a = agents[id]
+    setDataDlg({
+      id,
+      sleep: a?.a_sleep != null ? String(a.a_sleep) : '5',
+      jitter: a?.a_jitter != null ? String(a.a_jitter) : '0',
+      computer: a?.a_computer || '',
+      username: a?.a_username || '',
+      domain: a?.a_domain || '',
+      process: a?.a_process || '',
+      internal_ip: a?.a_internal_ip || '',
+      external_ip: a?.a_external_ip || '',
+    })
+  }
+
   function tryFiles(id: string) {
     const a = agents[id]
     if (!a || !isAgentOnline(a)) { pushToast('warn', '主机离线，无法打开文件管理'); return }
@@ -146,6 +167,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
         type="button"
         className={`sess-item ${selected === a.a_id ? 'active' : ''}`}
         onClick={() => pick(a)}
+        onDoubleClick={() => { pick(a); focusTerm() }}
         onContextMenu={(e) => {
           e.preventDefault()
           selectAgent(a.a_id)
@@ -286,6 +308,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
                       key={a.a_id}
                       className={selected === a.a_id ? 'selected' : ''}
                       onClick={() => pick(a)}
+                      onDoubleClick={() => { pick(a); focusTerm() }}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         selectAgent(a.a_id)
@@ -301,7 +324,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
                       </td>
                       <td>
                         <div>{a.a_domain ? `${a.a_domain}\\` : ''}{a.a_username || '-'}</div>
-                        {a.a_elevated ? <div className="cell-sub signal">elevated</div> : null}
+                        {a.a_elevated ? <div className="cell-sub signal">提权</div> : null}
                       </td>
                       <td className="mono">{a.a_internal_ip || '-'}</td>
                       <td className="mono" title={ext || ''}>{ext || '-'}</td>
@@ -329,80 +352,45 @@ export function Hosts({ active = true }: { active?: boolean }) {
       {ctx && (
         <div
           className="ctx sess-ctx"
-          style={{ left: Math.min(ctx.x, window.innerWidth - 220), top: Math.min(ctx.y, window.innerHeight - 420) }}
+          style={{
+            left: Math.min(ctx.x, window.innerWidth - 228),
+            top: Math.min(ctx.y, Math.max(8, window.innerHeight - 80)),
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="ctx-hd mono">{agents[ctx.id]?.a_computer || ctx.id}</div>
-          <button type="button" onClick={() => { openConsole(ctx.id); setCtx(null) }}>命令终端</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { setCmdDlg({ id: ctx.id, cmd: '' }); setCtx(null) }}>执行命令…</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { tryPty(ctx.id); setCtx(null) }}>交互 PTY</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { tryFiles(ctx.id); setCtx(null) }}>文件管理</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { tryProcs(ctx.id); setCtx(null) }}>进程管理</button>
+          <div className="ctx-hd mono" title={ctx.id}>{agents[ctx.id]?.a_computer || ctx.id}</div>
+          <button type="button" onClick={() => { openConsole(ctx.id); setCtx(null); focusTerm() }}>打开终端</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { setCmdDlg({ id: ctx.id, cmd: '' }); setCtx(null) }}>执行命令</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { tryPty(ctx.id); setCtx(null) }}>PTY</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { tryFiles(ctx.id); setCtx(null) }}>文件</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { tryProcs(ctx.id); setCtx(null) }}>进程</button>
           <button type="button" disabled={!ctxOnline} onClick={() => { tryVnc(ctx.id); setCtx(null) }}>VNC</button>
-          <button type="button" onClick={() => { openTunnels(ctx.id); setCtx(null) }}>打开隧道</button>
-          <div className="sep" />
+          <button type="button" onClick={() => { openTunnels(ctx.id); setCtx(null) }}>隧道</button>
           <button type="button" disabled={!ctxOnline} onClick={async () => {
-            try { await api.commandRaw(ctx.id, 'pwd'); openConsole(ctx.id) } catch (e: any) { pushLog('err', e.message || String(e)) }
-            setCtx(null)
-          }}>查看当前目录</button>
-          <button type="button" disabled={!ctxOnline} onClick={async () => {
-            try { await api.commandRaw(ctx.id, 'getuid'); openConsole(ctx.id) } catch (e: any) { pushLog('err', e.message || String(e)) }
-            setCtx(null)
-          }}>获取当前用户</button>
-          <button type="button" disabled={!ctxOnline} onClick={async () => {
-            // PostEx-BOF 注册名为 screenshot_bof（不是内置 screenshot）
-            try { await api.commandRaw(ctx.id, 'screenshot_bof'); openConsole(ctx.id); pushToast('ok', '已下发截图 BOF (screenshot_bof)') }
+            try { await api.commandRaw(ctx.id, 'screenshot_bof'); openConsole(ctx.id); pushToast('ok', '已下发截图') }
             catch (e: any) { pushLog('err', e.message || String(e)) }
             setCtx(null)
-          }}>截图 (BOF)</button>
+          }}>截图</button>
           <div className="sep" />
-          <button type="button" disabled={!ctxOnline} onClick={() => {
-            const a = agents[ctx.id]
-            setDataDlg({
-              id: ctx.id,
-              sleep: a?.a_sleep != null ? String(a.a_sleep) : '5',
-              jitter: a?.a_jitter != null ? String(a.a_jitter) : '0',
-              computer: a?.a_computer || '',
-              username: a?.a_username || '',
-              domain: a?.a_domain || '',
-              process: a?.a_process || '',
-              internal_ip: a?.a_internal_ip || '',
-              external_ip: a?.a_external_ip || '',
-            })
-            setCtx(null)
-          }} title="修改 Sleep / Jitter（下发 sleep 命令）">
-            Sleep… {ctxAgent?.a_sleep != null ? `(${ctxAgent.a_sleep}s)` : ''}
-          </button>
           <button type="button" disabled={!ctxOnline} onClick={async () => {
             try {
               await api.commandRaw(ctx.id, 'sleep 0')
               openConsole(ctx.id)
-              pushToast('ok', '已下发 sleep 0（交互加速）')
+              pushToast('ok', '已下发 sleep 0')
             } catch (e: any) { pushLog('err', e.message || String(e)) }
             setCtx(null)
-          }}>交互加速 (sleep 0)</button>
+          }}>交互加速</button>
+          <button type="button" onClick={() => { openData(ctx.id); setCtx(null) }}
+            title={ctxAgent?.a_sleep != null ? `当前 sleep ${ctxAgent.a_sleep}s` : 'Sleep / 资料'}>
+            Sleep / 资料
+          </button>
           <div className="sep" />
-          <button type="button" onClick={async () => { await clearServerConsole(ctx.id); setCtx(null) }}>清除控制台数据</button>
-          <button type="button" onClick={() => {
-            const a = agents[ctx.id]
-            setDataDlg({
-              id: ctx.id,
-              sleep: a?.a_sleep != null ? String(a.a_sleep) : '5',
-              jitter: a?.a_jitter != null ? String(a.a_jitter) : '0',
-              computer: a?.a_computer || '',
-              username: a?.a_username || '',
-              domain: a?.a_domain || '',
-              process: a?.a_process || '',
-              internal_ip: a?.a_internal_ip || '',
-              external_ip: a?.a_external_ip || '',
-            })
-            setCtx(null)
-          }}>Set data…</button>
+          <button type="button" onClick={async () => { await clearServerConsole(ctx.id); setCtx(null) }}>清空终端</button>
           <button type="button" onClick={async () => {
             const ok = await copyText(ctx.id)
             pushToast(ok ? 'ok' : 'err', ok ? `已复制 ${ctx.id}` : '复制失败')
             setCtx(null)
-          }}>复制会话 ID</button>
+          }}>复制 ID</button>
           <button type="button" onClick={async () => {
             const tag = prompt('标签：')
             if (tag != null) {
@@ -410,13 +398,13 @@ export function Hosts({ active = true }: { active?: boolean }) {
               catch (e: any) { pushLog('err', e.message || String(e)) }
             }
             setCtx(null)
-          }}>设置标签</button>
+          }}>标签</button>
           <div className="sep" />
           <button type="button" className="danger" onClick={async () => {
             if (!confirm(`删除主机 ${ctx.id}？`)) { setCtx(null); return }
             selectAgent(ctx.id); setCtx(null)
             await removeSelected().catch((e) => pushLog('err', String(e)))
-          }}>删除主机</button>
+          }}>删除</button>
         </div>
       )}
 
@@ -474,34 +462,34 @@ export function Hosts({ active = true }: { active?: boolean }) {
       {dataDlg && (
         <div className="mask" onClick={() => setDataDlg(null)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-            <h2>Set data</h2>
+            <h2>Sleep / 资料</h2>
             <div className="dim mono" style={{ marginBottom: 8 }}>{dataDlg.id}</div>
             <div className="field-grid-2">
-              <div className="field"><label>Sleep（秒，下发任务）</label>
+              <div className="field"><label>Sleep（秒）</label>
                 <input value={dataDlg.sleep} onChange={(e) => setDataDlg({ ...dataDlg, sleep: e.target.value })} />
               </div>
               <div className="field"><label>Jitter %</label>
                 <input value={dataDlg.jitter} onChange={(e) => setDataDlg({ ...dataDlg, jitter: e.target.value })} />
               </div>
             </div>
-            <div className="hint muted-hint">Sleep/Jitter 通过 <code>sleep</code> 命令下发；下方字段写入服务端展示数据。</div>
+            <div className="hint muted-hint">Sleep / Jitter 会下发任务；下面只改控制台展示。</div>
             <div className="field-grid-2">
-              <div className="field"><label>Computer</label>
+              <div className="field"><label>主机名</label>
                 <input value={dataDlg.computer} onChange={(e) => setDataDlg({ ...dataDlg, computer: e.target.value })} />
               </div>
-              <div className="field"><label>Username</label>
+              <div className="field"><label>用户</label>
                 <input value={dataDlg.username} onChange={(e) => setDataDlg({ ...dataDlg, username: e.target.value })} />
               </div>
-              <div className="field"><label>Domain</label>
+              <div className="field"><label>域</label>
                 <input value={dataDlg.domain} onChange={(e) => setDataDlg({ ...dataDlg, domain: e.target.value })} />
               </div>
-              <div className="field"><label>Process</label>
+              <div className="field"><label>进程</label>
                 <input value={dataDlg.process} onChange={(e) => setDataDlg({ ...dataDlg, process: e.target.value })} />
               </div>
-              <div className="field"><label>Internal IP</label>
+              <div className="field"><label>内网 IP</label>
                 <input value={dataDlg.internal_ip} onChange={(e) => setDataDlg({ ...dataDlg, internal_ip: e.target.value })} />
               </div>
-              <div className="field"><label>External IP</label>
+              <div className="field"><label>外网 IP</label>
                 <input value={dataDlg.external_ip} onChange={(e) => setDataDlg({ ...dataDlg, external_ip: e.target.value })} />
               </div>
             </div>

@@ -403,7 +403,7 @@ export default function App() {
       if (!mod && e.key === '/') {
         // focus host search if on sessions, else open palette
         if ((useStore.getState().activeUiTab || useStore.getState().tab) === 'sessions') {
-          const el = document.querySelector<HTMLInputElement>('.hosts input[type="search"]')
+          const el = document.querySelector<HTMLInputElement>('.sess-search')
           if (el) { e.preventDefault(); el.focus(); el.select(); return }
         }
         e.preventDefault()

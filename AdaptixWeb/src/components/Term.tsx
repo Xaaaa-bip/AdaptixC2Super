@@ -100,8 +100,7 @@ export function Term({ active = true }: { active?: boolean }) {
     setCmd('')
     setHistIdx(-1)
     setBusy(false)
-    if (active && agentId) inputRef.current?.focus()
-  }, [agentId, active])
+  }, [agentId])
 
   // 页签被关掉的主机，同步丢掉其本地命令历史
   useEffect(() => {
@@ -152,21 +151,22 @@ export function Term({ active = true }: { active?: boolean }) {
   return (
     <div className={`term ${active ? '' : 'is-parked'}`} aria-hidden={!active}>
       <div className="term-tabs">
-        {openTabs.length === 0 && <button className="t active">Terminal</button>}
-        {openTabs.map((id) => {
-          const a = agents[id]
-          const title = a ? `${a.a_computer || id}` : id
-          const on = a ? isAgentOnline(a) : false
-          return (
-            <button key={id} className={`t ${activeTab === id ? 'active' : ''}`}
-              onClick={() => { setActiveConsoleTab(id); selectAgent(id) }} title={id}>
-              <span className={`sdot ${on ? 'on' : 'off'}`} style={{ width: 6, height: 6, marginRight: 6 }} />
-              {title}
-              <span className="x" onClick={(e) => { e.stopPropagation(); onCloseTab(id) }}>×</span>
-            </button>
-          )
-        })}
-        <span style={{ flex: 1 }} />
+        <div className="term-tablist">
+          {openTabs.length === 0 && <button className="t active">终端</button>}
+          {openTabs.map((id) => {
+            const a = agents[id]
+            const title = a ? `${a.a_computer || id}` : id
+            const on = a ? isAgentOnline(a) : false
+            return (
+              <button key={id} className={`t ${activeTab === id ? 'active' : ''}`}
+                onClick={() => { setActiveConsoleTab(id); selectAgent(id) }} title={id}>
+                <span className={`sdot ${on ? 'on' : 'off'}`} style={{ width: 6, height: 6, marginRight: 6 }} />
+                {title}
+                <span className="x" onClick={(e) => { e.stopPropagation(); onCloseTab(id) }}>×</span>
+              </button>
+            )
+          })}
+        </div>
         {agentId && (
           <div className="term-quick">
             {QUICK.map((q) => (

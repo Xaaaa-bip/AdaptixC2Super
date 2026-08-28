@@ -173,14 +173,14 @@ export function Listeners() {
                 onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
             </div>
           </div>
-          <div className="field field-top"><label>Callback addresses</label>
+          <div className="field field-top"><label>回连地址</label>
             <EditableList
               value={Array.isArray(c.callback_addresses) ? c.callback_addresses : linesToArr(String(c.callback_addresses || ''))}
               onChange={(v) => setCfg('callback_addresses', v)}
               placeholder="host:port"
             />
           </div>
-          <div className="field"><label>Method</label>
+          <div className="field"><label>方法</label>
             <select value={c.http_method || (t === 'BeaconWS' ? 'GET' : 'POST')} onChange={(e) => setCfg('http_method', e.target.value)}
               disabled={t === 'BeaconWS'}>
               {t === 'BeaconWS' ? <option>GET</option> : (<><option>POST</option><option>GET</option></>)}
@@ -200,16 +200,16 @@ export function Listeners() {
               placeholder="Mozilla/5.0 ..."
             />
           </div>
-          <div className="field"><label>Heartbeat Header</label>
+          <div className="field"><label>心跳头</label>
             <input value={c.hb_header || ''} onChange={(e) => setCfg('hb_header', e.target.value)} />
           </div>
-          <div className="field"><label>Encryption key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>生成</button>
             </div>
           </div>
-          <div className="field field-top"><label>Use SSL (HTTPS)</label>
+          <div className="field field-top"><label>使用 SSL</label>
             <div className="ssl-box">
               <label className="check-inline" style={{ color: 'var(--text)' }}>
                 <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 启用 SSL/TLS
@@ -228,16 +228,16 @@ export function Listeners() {
     if (t === 'BeaconTCP') {
       return (
         <>
-          <div className="field"><label>Bind port</label>
+          <div className="field"><label>绑定端口</label>
             <input type="number" value={c.port_bind || 9000} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
           </div>
-          <div className="field"><label>Prepend data</label>
+          <div className="field"><label>前置数据</label>
             <input className="mono" value={c.prepend_data || ''} onChange={(e) => setCfg('prepend_data', e.target.value)} />
           </div>
-          <div className="field"><label>Encryption key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>生成</button>
             </div>
           </div>
         </>
@@ -247,13 +247,13 @@ export function Listeners() {
     if (t === 'BeaconSMB') {
       return (
         <>
-          <div className="field"><label>Pipename (C2)</label>
+          <div className="field"><label>管道名</label>
             <input value={c.pipename || ''} onChange={(e) => setCfg('pipename', e.target.value)} placeholder="mypipe" />
           </div>
-          <div className="field"><label>Encryption key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>生成</button>
             </div>
           </div>
         </>
@@ -263,39 +263,39 @@ export function Listeners() {
     if (t === 'BeaconDNS') {
       return (
         <>
-          <div className="field"><label>Host & Port (Bind)</label>
+          <div className="field"><label>绑定 Host & Port</label>
             <div className="field-inline">
               <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
               <input type="number" style={{ width: 110 }} value={c.port_bind || 53}
                 onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
             </div>
           </div>
-          <div className="field"><label>Authoritative Domain(s)</label>
+          <div className="field"><label>权威域名</label>
             <input value={c.domain || ''} onChange={(e) => setCfg('domain', e.target.value)} placeholder="ns1.c2.com,ns2.backup.com" />
           </div>
-          <div className="field"><label>Max Payload (bytes)</label>
+          <div className="field"><label>最大载荷 (字节)</label>
             <input type="number" value={c.pkt_size || 4096} onChange={(e) => setCfg('pkt_size', Number(e.target.value))} />
           </div>
-          <div className="field"><label>DNS TTL (seconds)</label>
+          <div className="field"><label>DNS TTL (秒)</label>
             <input type="number" value={c.ttl || 5} onChange={(e) => setCfg('ttl', Number(e.target.value))} />
           </div>
-          <div className="field"><label>Encryption Key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>生成</button>
             </div>
           </div>
-          <div className="field"><label>Burst Mode</label>
+          <div className="field"><label>Burst 模式</label>
             <label className="check-inline" style={{ color: 'var(--text)' }}>
-              <input type="checkbox" checked={!!c.burst_enabled} onChange={(e) => setCfg('burst_enabled', e.target.checked)} /> Enable Burst Mode
+              <input type="checkbox" checked={!!c.burst_enabled} onChange={(e) => setCfg('burst_enabled', e.target.checked)} /> 启用 Burst
             </label>
           </div>
           {!!c.burst_enabled && (
             <>
-              <div className="field"><label>Burst Sleep (ms)</label>
+              <div className="field"><label>Burst Sleep (毫秒)</label>
                 <input type="number" value={c.burst_sleep ?? 50} onChange={(e) => setCfg('burst_sleep', Number(e.target.value))} />
               </div>
-              <div className="field"><label>Burst Jitter (%)</label>
+              <div className="field"><label>Burst 抖动 %</label>
                 <input type="number" value={c.burst_jitter ?? 0} onChange={(e) => setCfg('burst_jitter', Number(e.target.value))} />
               </div>
             </>
@@ -308,13 +308,13 @@ export function Listeners() {
       // linux_listener_tcp/ax_config.axs: Bind port + Encryption key only
       return (
         <>
-          <div className="field"><label>Bind port</label>
+          <div className="field"><label>绑定端口</label>
             <input type="number" value={c.port_bind || 4444} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
           </div>
-          <div className="field"><label>Encryption key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>生成</button>
             </div>
           </div>
           <div className="hint muted-hint">对齐 AXS：Linux TCP 为 internal bind，仅绑定端口 + 加密密钥。</div>
@@ -325,37 +325,37 @@ export function Listeners() {
     if (t === 'GopherTCP') {
       return (
         <>
-          <div className="field"><label>Host & port (Bind)</label>
+          <div className="field"><label>绑定 Host & Port</label>
             <div className="field-inline">
               <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
               <input type="number" style={{ width: 110 }} value={c.port_bind || 4444}
                 onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
             </div>
           </div>
-          <div className="field field-top"><label>Callback addresses</label>
+          <div className="field field-top"><label>回连地址</label>
             <textarea rows={3} value={arrToLines(c.callback_addresses)}
               onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
               placeholder={'192.168.1.1:4444\nserver2.com:5555'} />
           </div>
-          <div className="field"><label>Timeout (sec)</label>
+          <div className="field"><label>超时 (秒)</label>
             <input type="number" value={c.timeout ?? 10} onChange={(e) => setCfg('timeout', Number(e.target.value))} />
           </div>
-          <div className="field field-top"><label>TCP banner</label>
+          <div className="field field-top"><label>TCP Banner</label>
             <textarea rows={2} value={c.tcp_banner || c.banner || ''} onChange={(e) => setCfg('tcp_banner', e.target.value)} />
           </div>
-          <div className="field field-top"><label>Error answer</label>
+          <div className="field field-top"><label>错误应答</label>
             <textarea rows={2} value={c.error_answer || c.answer || 'Connection error...\n'}
               onChange={(e) => setCfg('error_answer', e.target.value)} />
           </div>
-          <div className="field"><label>Encryption key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>生成</button>
             </div>
           </div>
           <div className="field"><label>mTLS</label>
             <label className="check-inline" style={{ color: 'var(--text)' }}>
-              <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> Use mTLS
+              <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 使用 mTLS
             </label>
           </div>
           {!!c.ssl && (
@@ -386,20 +386,20 @@ export function Listeners() {
             <input className="mono" value={c.webhook_url || ''} onChange={(e) => setCfg('webhook_url', e.target.value)}
               placeholder="https://discord.com/api/webhooks/..." />
           </div>
-          <div className="field"><label>Poll Interval (seconds)</label>
+          <div className="field"><label>轮询间隔 (秒)</label>
             <input type="number" min={1} value={c.poll_interval ?? 5}
               onChange={(e) => setCfg('poll_interval', Number(e.target.value))} />
           </div>
           <div className="field"><label>Cleanup</label>
             <label className="check-inline" style={{ color: 'var(--text)' }}>
               <input type="checkbox" checked={!!c.cleanup} onChange={(e) => setCfg('cleanup', e.target.checked)} />
-              Delete messages after reading
+              读后删除消息
             </label>
           </div>
-          <div className="field"><label>Encryption key</label>
+          <div className="field"><label>加密密钥</label>
             <div className="field-inline">
               <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey() + randomEncryptKey())}>Generate</button>
+              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey() + randomEncryptKey())}>生成</button>
             </div>
           </div>
           <div className="hint muted-hint">对齐 AXS：Discord C2 通道。Token/频道 ID 勿提交到公开仓库。</div>
@@ -410,31 +410,31 @@ export function Listeners() {
     if (t === 'KharonHTTP') {
       return (
         <>
-          <div className="field"><label>Host & port (Bind)</label>
+          <div className="field"><label>绑定 Host & Port</label>
             <div className="field-inline">
               <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
               <input type="number" style={{ width: 110 }} value={c.port_bind || 443}
                 onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
             </div>
           </div>
-          <div className="field"><label>Trusted Host Headers</label>
+          <div className="field"><label>信任 Host 头</label>
             <label className="check-inline" style={{ color: 'var(--text)' }}>
               <input type="checkbox" checked={!!c.trust_x_forwarded_host}
                 onChange={(e) => setCfg('trust_x_forwarded_host', e.target.checked)} />
-              Trust X-Forwarded-Host
+              信任 X-Forwarded-Host
             </label>
           </div>
-          <div className="field field-top"><label>Additional Trusted Hosts</label>
+          <div className="field field-top"><label>额外信任主机</label>
             <textarea rows={3} value={c.additional_trusted_hosts || ''}
               onChange={(e) => setCfg('additional_trusted_hosts', e.target.value)}
               placeholder={'domain1.com\ndomain2.com'} />
           </div>
-          <div className="field field-top"><label>Block User Agents</label>
+          <div className="field field-top"><label>拦截 User-Agent</label>
             <textarea rows={3} value={c.block_user_agents || ''}
               onChange={(e) => setCfg('block_user_agents', e.target.value)}
               placeholder={'curl*\nwget*'} />
           </div>
-          <div className="field"><label>Domain Rotation</label>
+          <div className="field"><label>域名轮换</label>
             <select value={c.domain_rotation_strategy || 'Random'}
               onChange={(e) => setCfg('domain_rotation_strategy', e.target.value)}>
               <option>Random</option>
@@ -442,14 +442,14 @@ export function Listeners() {
               <option>Failover</option>
             </select>
           </div>
-          <div className="field"><label>Upload Profile</label>
+          <div className="field"><label>Profile 路径</label>
             <input className="mono" value={c.uploaded_file || ''}
               onChange={(e) => setCfg('uploaded_file', e.target.value)}
               placeholder="服务端可读的 profile 路径（Web 暂不上传文件）" />
             <div className="field-hint">Qt 为文件选择器；Web 填服务器本地路径或留空。</div>
           </div>
 
-          <div className="field field-top"><label>Proxy Settings</label>
+          <div className="field field-top"><label>代理</label>
             <div className="ssl-box">
               <label className="check-inline" style={{ color: 'var(--text)' }}>
                 <input type="checkbox" checked={!!c.proxy_enabled}
@@ -461,16 +461,16 @@ export function Listeners() {
                     placeholder="http://127.0.0.1:8080" />
                   <div className="field-inline">
                     <input style={{ flex: 1 }} value={c.proxy_user || ''} onChange={(e) => setCfg('proxy_user', e.target.value)}
-                      placeholder="Username" />
+                      placeholder="用户名" />
                     <input style={{ flex: 1 }} type="password" value={c.proxy_pass || ''} onChange={(e) => setCfg('proxy_pass', e.target.value)}
-                      placeholder="Password" />
+                      placeholder="密码" />
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="field field-top"><label>Use SSL (HTTPS)</label>
+          <div className="field field-top"><label>使用 SSL</label>
             <div className="ssl-box">
               <label className="check-inline" style={{ color: 'var(--text)' }}>
                 <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 启用 SSL/TLS
@@ -499,22 +499,22 @@ export function Listeners() {
         <div className="field"><label>X-Forwarded-For</label>
           <label className="check-inline" style={{ color: 'var(--text)' }}>
             <input type="checkbox" checked={!!c['x-forwarded-for']} onChange={(e) => setCfg('x-forwarded-for', e.target.checked)} />
-            Trust X-Forwarded-For
+            信任 X-Forwarded-For
           </label>
         </div>
-        <div className="field field-top"><label>Host Headers</label>
+        <div className="field field-top"><label>Host 头</label>
           <EditableList
             value={Array.isArray(c.host_header) ? c.host_header : linesToArr(String(c.host_header || ''))}
             onChange={(v) => setCfg('host_header', v)}
             placeholder="host.example.com"
           />
         </div>
-        <div className="field field-top"><label>Request Headers</label>
+        <div className="field field-top"><label>请求头</label>
           <textarea rows={5} value={c.request_headers || ''}
             onChange={(e) => setCfg('request_headers', e.target.value)}
             placeholder={'One per line, exact match required:\nX-Custom: value'} />
         </div>
-        <div className="field field-top"><label>Server Headers</label>
+        <div className="field field-top"><label>响应头</label>
           <textarea rows={4} value={c.server_headers || ''}
             onChange={(e) => setCfg('server_headers', e.target.value)}
             placeholder="Server: nginx" />
@@ -696,22 +696,22 @@ export function Listeners() {
             {isHttpLike ? (
               <>
                 <div className="ax-tabs">
-                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>Main settings</button>
-                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP Headers</button>
-                  <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>Page Error</button>
-                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>Page Payload</button>
+                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>基本</button>
+                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP 头</button>
+                  <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>错误页</button>
+                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>Payload 页</button>
                 </div>
                 <div className="ax-tab-body">
                   {tab === 'main' && renderMain()}
                   {tab === 'headers' && renderHeaders()}
                   {tab === 'error' && (
-                    <div className="field field-top"><label>Page Error</label>
+                    <div className="field field-top"><label>错误页</label>
                       <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
                         onChange={(e) => setCfg('page-error', e.target.value)} />
                     </div>
                   )}
                   {tab === 'payload' && (
-                    <div className="field field-top"><label>Page Payload</label>
+                    <div className="field field-top"><label>Payload 页</label>
                       <textarea rows={10} className="mono" value={form.config['page-payload'] || ''}
                         onChange={(e) => setCfg('page-payload', e.target.value)} />
                       <div className="field-hint">使用占位符 <code>&lt;&lt;&lt;PAYLOAD_DATA&gt;&gt;&gt;</code></div>

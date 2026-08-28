@@ -1248,12 +1248,14 @@ html[data-theme="dark"] .conn-chip.is-sync {
 }
 .sess-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+  min-height: 48px;
+  overflow: hidden;
 }
 .sess-search {
   min-width: 220px;
@@ -1274,9 +1276,13 @@ html[data-theme="dark"] .conn-chip.is-sync {
 }
 .sess-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
   align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  justify-content: flex-end;
 }
 .sess-actions button {
   height: 30px;
