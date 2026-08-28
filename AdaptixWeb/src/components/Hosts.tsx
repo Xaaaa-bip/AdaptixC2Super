@@ -329,7 +329,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
                       <td className="mono">{a.a_internal_ip || '-'}</td>
                       <td className="mono" title={ext || ''}>{ext || '-'}</td>
                       <td className="dim" title={geo || (ext ? '解析中/未知' : '')}>{geo || (ext ? '…' : '-')}</td>
-                      <td>
+                      <td title={a.a_process || ''}>
                         <div>{a.a_process || '-'}</div>
                         <div className="cell-sub mono">{a.a_pid || ''}</div>
                       </td>

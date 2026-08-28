@@ -50,10 +50,17 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
   const activeRef = useRef(active)
 
   function focusTerm() {
+    try { termRef.current?.focus() } catch { /* ignore */ }
+  }
+
+  function safeFit() {
+    const el = hostRef.current
+    if (!el || el.clientWidth < 40 || el.clientHeight < 20) return
     try {
-      termRef.current?.focus()
-      const ta = hostRef.current?.querySelector('textarea') as HTMLTextAreaElement | null
-      ta?.focus()
+      fitRef.current?.fit()
+      if (termRef.current) {
+        setGeom({ cols: termRef.current.cols || 80, rows: termRef.current.rows || 24 })
+      }
     } catch { /* ignore */ }
   }
 
@@ -71,16 +78,11 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
     activeRef.current = active
     if (!active) return
     const t = window.setTimeout(() => {
-      try {
-        fitRef.current?.fit()
-        if (termRef.current) {
-          setGeom({ cols: termRef.current.cols || 80, rows: termRef.current.rows || 24 })
-        }
-        focusTerm()
-      } catch { /* ignore */ }
+      safeFit()
+      if (status === 'running' || status === 'idle') focusTerm()
     }, 40)
     return () => window.clearTimeout(t)
-  }, [active, status])
+  }, [active])
 
   useEffect(() => {
     setProgram(defaultProgram(agent))
@@ -113,22 +115,18 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
         term.loadAddon(fit)
         term.open(hostRef.current)
         try { term.options.disableStdin = false } catch { /* ignore */ }
-        fit.fit()
         termRef.current = term
         fitRef.current = fit
-        setGeom({ cols: term.cols || 80, rows: term.rows || 24 })
-        // Keep a live onData from mount so start() cannot miss the listener.
+        safeFit()
         dataDispRef.current = term.onData((data: string) => sendPty(data))
-        window.setTimeout(() => focusTerm(), 30)
+        const proc = String(agent?.a_process || '')
         term.writeln('\x1b[90m# 交互 PTY · 选择程序后点「启动」\x1b[0m')
         term.writeln(`\x1b[90m# host=${agent?.a_computer || agentId} · ${live ? '在线' : '离线'} · oemcp=${oemCp}\x1b[0m`)
+        if (proc) term.writeln(`\x1b[90m# process=${proc}\x1b[0m`)
         term.writeln('\x1b[90m# 切换其它页签会保持会话；关闭 PTY 页签才会断开\x1b[0m')
         ro = new ResizeObserver(() => {
           if (!activeRef.current) return
-          try {
-            fit.fit()
-            if (termRef.current) setGeom({ cols: termRef.current.cols || 80, rows: termRef.current.rows || 24 })
-          } catch { /* ignore */ }
+          safeFit()
         })
         ro.observe(hostRef.current)
       } catch (e: any) {
@@ -163,7 +161,6 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       return
     }
     const term = termRef.current
-    const fit = fitRef.current
     if (!term) {
       pushToast('err', '终端组件未就绪（xterm 可能被 CDN 拦截）')
       return
@@ -172,7 +169,7 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
     setStatus('connecting')
     setErr('')
     try { await acquireInteractBoost(agentId) } catch { /* */ }
-    try { fit?.fit() } catch { /* ignore */ }
+    safeFit()
     const terminalId = randomTerminalId()
     termIdRef.current = terminalId
     const size_w = Math.max(20, term.cols || 80)
@@ -248,6 +245,7 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       <div className="toolbar">
         <strong>交互 PTY</strong>
         <span className="mono dim">{agent?.a_computer || agentId}</span>
+        {agent?.a_process ? <span className="mono dim" title={agent.a_process}>{agent.a_process}</span> : null}
         <span className={`tag ${live ? 'online' : 'offline'}`}>{live ? '在线' : '离线'}</span>
         <span className={`tag ${status === 'running' ? 'listen' : status === 'error' ? 'offline' : 'warn'}`}>{status}</span>
         <div className="sep" />
@@ -288,9 +286,7 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       <div
         className="pty-host"
         ref={hostRef}
-        tabIndex={0}
         onMouseDown={() => focusTerm()}
-        onClick={() => focusTerm()}
       />
       <div className="pty-foot dim">
         binary WS · channel_terminal · id={termIdRef.current || '-'} · {geom.cols}x{geom.rows}

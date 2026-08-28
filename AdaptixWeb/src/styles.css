@@ -1676,35 +1676,20 @@ html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px
   min-height: 0;
   background: #141414;
   padding: 4px 6px 0;
-  position: relative;
   outline: none;
+  overflow: hidden;
 }
-.pty-host .xterm { height: 100%; position: relative; }
+.pty-host .xterm { height: 100%; }
 .pty-host .xterm-viewport { overflow-y: auto !important; }
-/* Global textarea { height:30px } + xterm left:-9999em + overflow:hidden
-   makes Chrome drop focus — helper must stay inside the host. */
-.xterm .xterm-helpers { position: absolute; top: 0; left: 0; z-index: 10; }
-.xterm .xterm-helper-textarea,
-.pty-host textarea.xterm-helper-textarea {
-  position: absolute !important;
-  left: 0 !important;
-  top: 0 !important;
-  width: 8px !important;
-  height: 8px !important;
+/* Neutralize global form textarea styles — do not restyle xterm layers. */
+.xterm-helper-textarea {
+  height: auto !important;
   min-height: 0 !important;
   padding: 0 !important;
-  margin: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
-  opacity: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  color: transparent !important;
-  caret-color: transparent !important;
-  resize: none !important;
-  overflow: hidden !important;
-  z-index: 10 !important;
-  outline: none !important;
 }
 .pty-foot {
   padding: 4px 10px;
