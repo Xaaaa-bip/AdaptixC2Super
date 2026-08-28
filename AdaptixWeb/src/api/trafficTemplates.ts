@@ -21,12 +21,39 @@ export type TrafficTemplate = {
   patch: TrafficPatch
 }
 
-const IIS_404 = `<!DOCTYPE html>
-<html>
-<head><title>404 - File or directory not found.</title></head>
+const APACHE_404 = `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>404 Not Found</title>
+</head><body>
+<h1>Not Found</h1>
+<p>The requested URL was not found on this server.</p>
+<hr>
+<address>Apache/2.4.58 (Ubuntu) Server at localhost Port 443</address>
+</body></html>`
+
+const IIS_404 = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"/>
+<title>404 - File or directory not found.</title>
+<style type="text/css">
+body{margin:0;font-size:.7em;font-family:Verdana,Arial,Helvetica,sans-serif;background:#EEEEEE;}
+fieldset{padding:0 15px 10px 15px;}
+h1{font-size:2.4em;margin:0;color:#FFF;}
+h2{font-size:1.7em;margin:0;color:#CC0000;}
+#header{width:96%;margin:0;padding:6px 2%;font-family:"trebuchet MS",Verdana,sans-serif;color:#FFF;background-color:#555555;}
+#content{margin:0 0 0 2%;position:relative;}
+.content-container{background:#FFF;width:96%;margin-top:8px;padding:10px;}
+</style>
+</head>
 <body>
-<h2>404 - File or directory not found.</h2>
-<h3>The resource you are looking for might have been removed, had its name changed, or is temporarily unavailable.</h3>
+<div id="header"><h1>Server Error</h1></div>
+<div id="content">
+ <div class="content-container"><fieldset>
+  <h2>404 - File or directory not found.</h2>
+  <h3>The resource you are looking for might have been removed, had its name changed, or is temporarily unavailable.</h3>
+ </fieldset></div>
+</div>
 </body>
 </html>`
 
@@ -34,16 +61,52 @@ const NGINX_404 = `<html>
 <head><title>404 Not Found</title></head>
 <body>
 <center><h1>404 Not Found</h1></center>
-<hr><center>nginx</center>
+<hr><center>nginx/1.24.0</center>
 </body>
 </html>`
 
-const APACHE_404 = `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head><title>404 Not Found</title></head>
-<body>
-<h1>Not Found</h1>
+const CLOUDFLARE_404 = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Attention Required! | Cloudflare</title>
+</head>
+<body style="margin:0;background:#fff;color:#222;font-family:Helvetica,Arial,sans-serif;">
+<div style="background:#222;color:#fff;padding:14px 24px;font-size:18px;letter-spacing:.04em;">cloudflare</div>
+<div style="max-width:720px;margin:48px auto;padding:0 20px;">
+<h1 style="font-weight:600;font-size:28px;">Error 404</h1>
 <p>The requested URL was not found on this server.</p>
-</body></html>`
+<p style="color:#666;font-size:13px;">Ray ID: 8e2a000000000000 &middot; Cloudflare</p>
+</div>
+</body>
+</html>`
+
+const GOOGLE_404 = `<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Error 404 (Not Found)!!1</title>
+<style>html,body{margin:0;padding:0;background:#fff;color:#222;font:15px/22px Arial,sans-serif}body{padding:48px 24px}ins{color:#777;text-decoration:none}</style>
+<p><b>404.</b> <ins>That’s an error.</ins></p>
+<p>The requested URL was not found on this server. <ins>That’s all we know.</ins></p>
+`
+
+const ALIYUN_404 = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>NoSuchKey</Code>
+  <Message>The specified key does not exist.</Message>
+  <RequestId>000000000000000000000000</RequestId>
+  <HostId>oss-cn-hangzhou.aliyuncs.com</HostId>
+</Error>`
+
+const WEWORK_404 = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>404</title></head>
+<body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;text-align:center;padding:80px 20px;color:#333;background:#f5f5f5;">
+<div style="font-size:64px;color:#07C160;font-weight:650;">404</div>
+<p style="font-size:16px;margin:12px 0 0;">页面不存在</p>
+<p style="color:#999;font-size:13px;">The requested resource is not available.</p>
+</body>
+</html>`
 
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 const EDGE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0'
@@ -123,7 +186,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
       hb_header: 'X-Goog-Request-Id',
       request_headers: 'Accept: application/json\nAccept-Language: zh-CN,zh;q=0.9\nContent-Type: application/json',
       server_headers: 'Server: ESF\nX-Content-Type-Options: nosniff\nX-Frame-Options: SAMEORIGIN\nContent-Type: application/json; charset=utf-8',
-      'page-error': NGINX_404,
+      'page-error': GOOGLE_404,
       'page-payload': '{"response":{"protocol":"3.1","apps":[]},"data":"<<<PAYLOAD_DATA>>>"}',
     },
   },
@@ -142,7 +205,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
       hb_header: 'X-Requested-With',
       request_headers: 'Accept: application/json, text/plain, */*\nAccept-Language: zh-CN,zh;q=0.9',
       server_headers: 'Server: nginx\nContent-Type: application/json; charset=utf-8\nX-Content-Type-Options: nosniff',
-      'page-error': NGINX_404,
+      'page-error': WEWORK_404,
       'page-payload': '{"errcode":0,"errmsg":"ok","data":"<<<PAYLOAD_DATA>>>"}',
     },
   },
@@ -160,8 +223,8 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
       ],
       hb_header: 'x-oss-request-id',
       request_headers: 'Accept: application/json\nContent-Type: application/json',
-      server_headers: 'Server: AliyunOSS\nContent-Type: application/json; charset=utf-8\nx-oss-request-id: 000000000000000000000000',
-      'page-error': NGINX_404,
+      server_headers: 'Server: AliyunOSS\nContent-Type: application/xml; charset=utf-8\nx-oss-request-id: 000000000000000000000000',
+      'page-error': ALIYUN_404,
       'page-payload': '{"RequestId":"0000","Code":"OK","Data":"<<<PAYLOAD_DATA>>>"}',
     },
   },
@@ -193,7 +256,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
       hb_header: 'X-Request-ID',
       request_headers: 'Accept: */*\nAccept-Language: zh-CN,zh;q=0.9',
       server_headers: 'Server: cloudflare\nContent-Type: application/javascript; charset=utf-8\nCache-Control: public, max-age=60',
-      'page-error': NGINX_404,
+      'page-error': CLOUDFLARE_404,
       'page-payload': '/*! build */window.__BOOT="<<<PAYLOAD_DATA>>>";',
     },
   },

@@ -138,7 +138,8 @@ export function Listeners() {
     if (!tpl) return
     setForm((f) => ({ ...f, config: applyTrafficTemplate(f.config, f.type, tpl) }))
     setTplId(id)
-    pushToast('ok', `已套用「${tpl.label}」流量模板`)
+    setTab('error')
+    pushToast('ok', `已套用「${tpl.label}」，错误页已换成对应模板`)
   }
 
   function setCfg(key: string, value: any) {
@@ -727,7 +728,7 @@ export function Listeners() {
                       ))}
                     </div>
                     <div className="field-hint">
-                      套用 URI / UA / 心跳头 / 请求响应头 / 错误页与回包。绑定地址、回连、SSL、密钥不动。
+                      套用后会切到「错误页」预览：URI / UA / 头 / 错误页 / 回包一起换。绑定、回连、SSL、密钥不动。
                     </div>
                   </div>
                 </div>
@@ -742,8 +743,18 @@ export function Listeners() {
                   {tab === 'headers' && renderHeaders()}
                   {tab === 'error' && (
                     <div className="field field-top"><label>错误页</label>
-                      <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
-                        onChange={(e) => setCfg('page-error', e.target.value)} />
+                      <div className="page-preview-wrap">
+                        <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
+                          onChange={(e) => setCfg('page-error', e.target.value)} />
+                        <div className="page-preview">
+                          <div className="page-preview-k">预览</div>
+                          <iframe
+                            title="错误页预览"
+                            sandbox=""
+                            srcDoc={form.config['page-error'] || '<p>空</p>'}
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
                   {tab === 'payload' && (
