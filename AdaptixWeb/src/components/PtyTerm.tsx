@@ -74,29 +74,40 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
     const sock = wsRef.current
     if (!sock || sock.readyState !== WebSocket.OPEN || data == null || data === '') return false
     try {
-      // text frame first — some browsers / proxies drop raw Uint8Array sends
-      sock.send(data)
+      // Binary frame, same as Qt. End with \n so server can expand to \r\n for oem_cp.
+      sock.send(new TextEncoder().encode(data))
       return true
     } catch {
-      try {
-        sock.send(new TextEncoder().encode(data))
-        return true
-      } catch {
-        return false
-      }
+      try { sock.send(data); return true } catch { return false }
     }
+  }
+
+  function writeRemote(ev: MessageEvent) {
+    const term = termRef.current
+    if (!term) return
+    try {
+      if (typeof ev.data === 'string') term.write(ev.data)
+      else if (ev.data instanceof ArrayBuffer) term.write(new Uint8Array(ev.data))
+      else if (ev.data instanceof Blob) {
+        ev.data.arrayBuffer().then((buf) => termRef.current?.write(new Uint8Array(buf)))
+      }
+    } catch { /* ignore */ }
   }
 
   function submitLine() {
     if (status !== 'running') return
     const raw = line
     setLine('')
-    const payload = isWin ? `${raw}\r` : `${raw}\n`
+    // Always terminate with \n. Windows oem_cp path turns \n into \r\n.
+    // A lone \r is ignored by cmd.exe when stdin is a pipe — no echo, no run.
+    const payload = `${raw}\n`
     const ok = sendPty(payload)
     try {
-      termRef.current?.writeln(ok ? `\x1b[90m${raw}\x1b[0m` : `\x1b[31m发送失败: ${raw}\x1b[0m`)
+      if (raw) termRef.current?.writeln(`\x1b[90m→ ${raw}\x1b[0m`)
+      if (ok) termRef.current?.writeln('\x1b[90m  已发送，等主机回连出结果\x1b[0m')
+      else termRef.current?.writeln('\x1b[31m  发送失败：通道未开\x1b[0m')
     } catch { /* ignore */ }
-    if (!ok) pushToast('warn', 'PTY 通道未就绪，等回显后再输入')
+    if (!ok) pushToast('warn', 'PTY 通道未就绪')
     focusCmd()
   }
 
@@ -218,22 +229,14 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       if (disposed.current) { ws.close(); return }
       wsRef.current = ws
       setStatus('running')
-      // WS open only means channel registered; shell starts after next agent check-in.
       term.writeln('\x1b[32m[+] WebSocket 已建立，已下发 SHELL_START\x1b[0m')
-      term.writeln('\x1b[90m    等待 agent 拉任务并 Resume（建议 sleep 0；有回显即可输入）\x1b[0m')
+      term.writeln('\x1b[90m    等下面出现 D:\\... 提示符再输入；sleep 大则慢\x1b[0m')
       pushLog('ok', `PTY 通道已建立 ${agentId} ${program}`, false)
       pushToast('ok', 'PTY 通道已建立，等待 agent 回显')
 
-      ws.onmessage = (ev) => {
-        if (!termRef.current) return
-        try {
-          if (typeof ev.data === 'string') termRef.current.write(ev.data)
-          else if (ev.data instanceof ArrayBuffer) termRef.current.write(new Uint8Array(ev.data))
-          else if (ev.data instanceof Blob) {
-            ev.data.arrayBuffer().then((buf) => termRef.current?.write(new Uint8Array(buf)))
-          }
-        } catch { /* ignore */ }
-      }
+      const drain = (ws as any).__drain as ((h: (ev: MessageEvent) => void) => void) | undefined
+      if (drain) drain(writeRemote)
+      else ws.onmessage = writeRemote
       ws.onclose = () => {
         if (wsRef.current === ws) {
           wsRef.current = null

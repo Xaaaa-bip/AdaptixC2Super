@@ -76,6 +76,14 @@ export async function openTerminalChannel(
       return
     }
     ws.binaryType = 'arraybuffer'
+    // Attach immediately so the cmd banner is not dropped during the 120ms wait.
+    const queued: MessageEvent[] = []
+    ws.onmessage = (ev) => { queued.push(ev) }
+    ;(ws as any).__drain = (handler: (ev: MessageEvent) => void) => {
+      for (const ev of queued) handler(ev)
+      queued.length = 0
+      ws.onmessage = handler
+    }
     let settled = false
     const timer = window.setTimeout(() => {
       if (!settled) {
