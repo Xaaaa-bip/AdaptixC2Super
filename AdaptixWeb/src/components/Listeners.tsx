@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { LISTENER_TYPES, defaultListenerConfig, randomEncryptKey } from '../api/listeners'
+import { applyTrafficTemplate, templatesFor } from '../api/trafficTemplates'
 import { EmptyState } from './ui'
 
 type FormState = {
@@ -103,6 +104,7 @@ export function Listeners() {
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState<TabId>('main')
   const [q, setQ] = useState('')
+  const [tplId, setTplId] = useState('official')
   const [form, setForm] = useState<FormState>(() => ({
     name: 'http',
     type: 'BeaconHTTP',
@@ -127,16 +129,29 @@ export function Listeners() {
       type,
       config: defaultListenerConfig(type),
     })
+    setTplId('official')
     setTab('main')
+  }
+
+  function applyTpl(id: string) {
+    const tpl = templatesFor(form.type).find((t) => t.id === id)
+    if (!tpl) return
+    setForm((f) => ({ ...f, config: applyTrafficTemplate(f.config, f.type, tpl) }))
+    setTplId(id)
+    pushToast('ok', `已套用「${tpl.label}」流量模板`)
   }
 
   function setCfg(key: string, value: any) {
     setForm((f) => ({ ...f, config: { ...f.config, [key]: value } }))
+    if (['uri', 'user_agent', 'hb_header', 'request_headers', 'server_headers', 'page-error', 'page-payload', 'http_method'].includes(key)) {
+      setTplId('')
+    }
   }
 
   function openCreate(type = 'BeaconHTTP') {
     setEditMode(false)
     setForm({ name: suggestName(type), type, config: defaultListenerConfig(type) })
+    setTplId('official')
     setTab('main')
     setShow(true)
   }
@@ -155,6 +170,7 @@ export function Listeners() {
       type,
       config: { ...base, ...cfg },
     })
+    setTplId('')
     setTab('main')
     setShow(true)
   }
@@ -695,6 +711,26 @@ export function Listeners() {
 
             {isHttpLike ? (
               <>
+                <div className="field field-top"><label>流量模板</label>
+                  <div>
+                    <div className="chip-row traffic-tpls">
+                      {templatesFor(form.type).map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className={tplId === t.id ? 'primary' : ''}
+                          title={t.hint}
+                          onClick={() => applyTpl(t.id)}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="field-hint">
+                      套用 URI / UA / 心跳头 / 请求响应头 / 错误页与回包。绑定地址、回连、SSL、密钥不动。
+                    </div>
+                  </div>
+                </div>
                 <div className="ax-tabs">
                   <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>基本</button>
                   <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP 头</button>

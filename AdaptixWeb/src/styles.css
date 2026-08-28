@@ -1632,6 +1632,8 @@ html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px
 }
 .listener-type b { font-size: 12.5px; }
 .listener-type .sub { font-size: 11px; color: var(--text-3); }
+.traffic-tpls { margin-bottom: 4px; }
+.traffic-tpls button { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
 .ax-tabs {
   display: flex; gap: 4px; flex-wrap: wrap;
   margin: 8px 0 0; padding-bottom: 0;

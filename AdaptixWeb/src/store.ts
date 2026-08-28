@@ -6,6 +6,7 @@ import {
   Listener, P, Packet, Pivot, Task,
 } from './api/types'
 import { clearSession, isAgentOnline, loadSession, saveLoginPrefs, saveSession } from './utils'
+import { defaultListenerConfig } from './api/listeners'
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36) }
 function now() { return Date.now() }
@@ -932,14 +933,9 @@ export const useStore = create<State>((set, get) => ({
   createHttpListener: async (name, port, callback) => {
     const { api, pushLog } = get()
     const config = {
-      host_bind: '0.0.0.0', port_bind: port,
+      ...defaultListenerConfig('BeaconHTTP'),
+      port_bind: port,
       callback_addresses: [callback],
-      encrypt_key: randomHex(16),
-      http_method: 'POST', hb_header: 'X-Beacon-Id',
-      host_header: [], uri: ['/api/v1/status'],
-      user_agent: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
-      ssl: false, 'page-error': '<html>404</html>',
-      'page-payload': '<html><!--<<<PAYLOAD_DATA>>>--></body></html>', protocol: 'http',
     }
     await api.createListener(name, 'BeaconHTTP', config)
     pushLog('ok', `监听器 ${name} 已创建`)
