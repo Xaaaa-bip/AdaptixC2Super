@@ -112,6 +112,7 @@ const LS = {
   loginUser: 'adaptix.login.user',
   loginBase: 'adaptix.login.base',
   termH: 'adaptix.term.h',
+  sessListCollapsed: 'adaptix.sess.list.collapsed',
   density: 'adaptix.ui.density',
   // F5 刷新后恢复会话（JWT 仅内存会丢）
   sessionAccess: 'adaptix.session.access',
@@ -271,14 +272,25 @@ export function clearSession() {
   } catch { /* ignore */ }
 }
 
+export const TERM_H_MIN = 88
+export const TERM_H_MAX = 900
+
 export function loadTermHeight(defaultH = 280) {
   const n = Number(localStorage.getItem(LS.termH))
-  if (Number.isFinite(n) && n >= 160 && n <= 560) return n
+  if (Number.isFinite(n) && n >= TERM_H_MIN && n <= TERM_H_MAX) return n
   return defaultH
 }
 
 export function saveTermHeight(h: number) {
   localStorage.setItem(LS.termH, String(Math.round(h)))
+}
+
+export function loadSessListCollapsed(): boolean {
+  return localStorage.getItem(LS.sessListCollapsed) === '1'
+}
+
+export function saveSessListCollapsed(v: boolean) {
+  localStorage.setItem(LS.sessListCollapsed, v ? '1' : '0')
 }
 
 export function downloadBytes(filename: string, bytes: Uint8Array) {

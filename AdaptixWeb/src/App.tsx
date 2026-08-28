@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Login } from './components/Login'
 import { Dashboard } from './components/Dashboard'
 import { Hosts } from './components/Hosts'
@@ -26,7 +26,7 @@ import { ShortcutHelp } from './components/ui'
 import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, tabAgentId } from './store'
 import {
   clamp, isAgentOnline, loadDensity, loadTermHeight, loadTheme,
-  saveDensity, saveTermHeight, saveTheme, type Density,
+  saveDensity, saveTermHeight, saveTheme, TERM_H_MAX, TERM_H_MIN, type Density,
 } from './utils'
 
 type Menu = { id: TabId; label: string; ico: string; group?: string; shortcut?: string }
@@ -218,6 +218,7 @@ export default function App() {
   const [density, setDensity] = useState<Density>(loadDensity)
   const [termH, setTermH] = useState(loadTermHeight)
   const [dragging, setDragging] = useState(false)
+  const lastExpandedTermH = useRef(Math.max(loadTermHeight(), 220))
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [chord, setChord] = useState<string | null>(null)
@@ -277,23 +278,32 @@ export default function App() {
   }, [connected, refreshRest])
 
   useEffect(() => {
+    document.documentElement.classList.toggle('is-resizing-term', dragging)
     if (!dragging) return
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       const layout = document.querySelector('.content.with-term') as HTMLElement | null
       if (!layout) return
       const rect = layout.getBoundingClientRect()
-      const h = clamp(rect.bottom - e.clientY, 160, 560)
+      const max = Math.min(TERM_H_MAX, Math.max(TERM_H_MIN, Math.round(window.innerHeight * 0.78)))
+      const h = clamp(rect.bottom - e.clientY, TERM_H_MIN, max)
       setTermH(h)
     }
     const onUp = () => {
       setDragging(false)
-      setTermH((h) => { saveTermHeight(h); return h })
+      setTermH((h) => {
+        saveTermHeight(h)
+        if (h > TERM_H_MIN + 24) lastExpandedTermH.current = h
+        return h
+      })
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      document.documentElement.classList.remove('is-resizing-term')
     }
   }, [dragging])
 
@@ -641,10 +651,25 @@ export default function App() {
           {false && vncAgent && <VncPanel agentId={vncAgent} />}
           {current === 'sessions' && (
             <div
-              className={`term-resizer ${dragging ? 'active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); setDragging(true) }}
-              title="拖动调整终端高度"
-            />
+              className={`term-resizer ${dragging ? 'active' : ''} ${termH <= TERM_H_MIN + 8 ? 'is-compact' : ''}`}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return
+                e.preventDefault()
+                e.currentTarget.setPointerCapture?.(e.pointerId)
+                setDragging(true)
+              }}
+              onDoubleClick={() => {
+                const next = termH <= TERM_H_MIN + 8
+                  ? (lastExpandedTermH.current > TERM_H_MIN + 20 ? lastExpandedTermH.current : 280)
+                  : TERM_H_MIN
+                if (termH > TERM_H_MIN + 8) lastExpandedTermH.current = termH
+                setTermH(next)
+                saveTermHeight(next)
+              }}
+              title="拖动调整命令行高度，双击折叠 / 展开"
+            >
+              <span className="term-resizer-grip" />
+            </div>
           )}
           <Term active={current === 'sessions'} />
         </div>

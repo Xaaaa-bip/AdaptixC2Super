@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import type { Agent } from '../api/types'
-import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline } from '../utils'
+import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline, loadSessListCollapsed, saveSessListCollapsed } from '../utils'
 import { lookupIpGeoSync, preloadIpdb } from '../utils/ipdb'
 
 type Ctx = { x: number; y: number; id: string } | null
@@ -30,6 +30,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
 
   const [ctx, setCtx] = useState<Ctx>(null)
   const [openG, setOpenG] = useState({ online: true, offline: true })
+  const [listCollapsed, setListCollapsed] = useState(loadSessListCollapsed)
   const [busy, setBusy] = useState(false)
   // 动态心跳：每秒刷新 age 文案（对齐 Qt LastTickWorker 500ms）
   const [nowTick, setNowTick] = useState(() => Date.now())
@@ -185,9 +186,22 @@ export function Hosts({ active = true }: { active?: boolean }) {
   }
 
   return (
-    <div className={`sess ${active ? '' : 'is-parked'}`} aria-hidden={!active}>
-      {/* 左侧：在线 / 离线分组列表 */}
-      <aside className="sess-list">
+    <div className={`sess ${active ? '' : 'is-parked'} ${listCollapsed ? 'is-list-collapsed' : ''}`} aria-hidden={!active}>
+      {/* 左侧：在线 / 离线分组列表，可整栏折叠让出表格宽度 */}
+      <aside className={`sess-list ${listCollapsed ? 'is-collapsed' : ''}`}>
+        {listCollapsed ? (
+          <button
+            type="button"
+            className="sess-list-rail"
+            title="展开在线主机"
+            onClick={() => { setListCollapsed(false); saveSessListCollapsed(false) }}
+          >
+            <span className="sess-list-rail-ico" aria-hidden>▸</span>
+            <span className="sess-list-rail-k">在线</span>
+            <span className="signal">{online.length}</span>
+          </button>
+        ) : (
+        <>
         <div className="sess-list-hd">
           <div>
             <div className="sess-k">主机</div>
@@ -196,9 +210,20 @@ export function Hosts({ active = true }: { active?: boolean }) {
               <span className="dim"> / {filteredFixed.length}</span>
             </div>
           </div>
-          <button type="button" className="ghost" style={{ height: 28 }} disabled={busy} onClick={() => void doRefresh()}>
-            {busy ? '…' : '刷新'}
-          </button>
+          <div className="sess-list-hd-actions">
+            <button type="button" className="ghost" style={{ height: 28 }} disabled={busy} onClick={() => void doRefresh()}>
+              {busy ? '…' : '刷新'}
+            </button>
+            <button
+              type="button"
+              className="ghost sess-list-fold"
+              style={{ height: 28 }}
+              title="折叠在线列表"
+              onClick={() => { setListCollapsed(true); saveSessListCollapsed(true) }}
+            >
+              ◂
+            </button>
+          </div>
         </div>
         <div className="sess-list-bd">
           <button type="button" className="sess-g" onClick={() => setOpenG((g) => ({ ...g, online: !g.online }))}>
@@ -221,11 +246,23 @@ export function Hosts({ active = true }: { active?: boolean }) {
               : <div className="sess-empty">无离线主机</div>
           )}
         </div>
+        </>
+        )}
       </aside>
 
       {/* 右侧：工具条 + 主机表 */}
       <section className="sess-main">
         <div className="sess-bar">
+          {listCollapsed && (
+            <button
+              type="button"
+              className="ghost sess-list-unfold"
+              title="展开在线主机"
+              onClick={() => { setListCollapsed(false); saveSessListCollapsed(false) }}
+            >
+              ▸ 在线 {online.length}
+            </button>
+          )}
           <input
             className="sess-search"
             type="search"
