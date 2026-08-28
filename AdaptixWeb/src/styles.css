@@ -418,6 +418,11 @@ html[data-theme="dark"] .tag.offline { color: var(--ink-3); background: rgba(240
 html[data-theme="dark"] .tag.listen { color: var(--accent-2); background: var(--accent-soft); border-color: transparent; }
 
 /* terminal — 墨池（黑白） */
+.sess.is-parked,
+.term.is-parked {
+  display: none !important;
+}
+
 .term {
   min-height: 0;
   display: grid;

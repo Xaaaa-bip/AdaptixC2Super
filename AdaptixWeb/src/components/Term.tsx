@@ -42,7 +42,7 @@ const QUICK = [
   { label: '截图', cmd: 'screenshot_bof' },
 ]
 
-export function Term() {
+export function Term({ active = true }: { active?: boolean }) {
   const agents = useStore((s) => s.agents) || {}
   const lines = useStore((s) => s.consoleLines) || []
   const openTabs = useStore((s) => s.openConsoleTabs) || []
@@ -65,6 +65,8 @@ export function Term() {
   const [histIdx, setHistIdx] = useState(-1)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const wasActiveRef = useRef(active)
+  const viewLenRef = useRef(0)
   const agentId = activeTab
   const agent = agentId ? agents[agentId] : null
   const live = agent ? isAgentOnline(agent) : false
@@ -78,15 +80,28 @@ export function Term() {
     })
     .filter(Boolean) as typeof lines
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [view.length, agentId])
+  useEffect(() => {
+    if (!active) {
+      wasActiveRef.current = false
+      viewLenRef.current = view.length
+      return
+    }
+    const justShown = !wasActiveRef.current
+    wasActiveRef.current = true
+    const grew = view.length !== viewLenRef.current
+    viewLenRef.current = view.length
+    if (justShown || grew) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+    }
+  }, [view.length, agentId, active])
 
   // 切换主机：清空输入框与历史索引，避免把 A 的命令/↑历史带到 B
   useEffect(() => {
     setCmd('')
     setHistIdx(-1)
     setBusy(false)
-    if (agentId) inputRef.current?.focus()
-  }, [agentId])
+    if (active && agentId) inputRef.current?.focus()
+  }, [agentId, active])
 
   // 页签被关掉的主机，同步丢掉其本地命令历史
   useEffect(() => {
@@ -135,7 +150,7 @@ export function Term() {
   }
 
   return (
-    <div className="term">
+    <div className={`term ${active ? '' : 'is-parked'}`} aria-hidden={!active}>
       <div className="term-tabs">
         {openTabs.length === 0 && <button className="t active">Terminal</button>}
         {openTabs.map((id) => {

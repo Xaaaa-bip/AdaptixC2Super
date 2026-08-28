@@ -6,7 +6,7 @@ import { lookupIpGeoSync, preloadIpdb } from '../utils/ipdb'
 
 type Ctx = { x: number; y: number; id: string } | null
 
-export function Hosts() {
+export function Hosts({ active = true }: { active?: boolean }) {
   const agents = useStore((s) => s.agents) || {}
   const filter = useStore((s) => s.filter)
   const onlyActive = useStore((s) => s.onlyActive)
@@ -86,6 +86,13 @@ export function Hosts() {
     preloadIpdb().then((ok) => { if (ok) setGeoVer((v) => v + 1) }).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (active) return
+    setCtx(null)
+    setCmdDlg(null)
+    setDataDlg(null)
+  }, [active])
+
   function pick(a: Agent) {
     selectAgent(a.a_id)
     openConsole(a.a_id)
@@ -156,7 +163,7 @@ export function Hosts() {
   }
 
   return (
-    <div className="sess">
+    <div className={`sess ${active ? '' : 'is-parked'}`} aria-hidden={!active}>
       {/* 左侧：在线 / 离线分组列表 */}
       <aside className="sess-list">
         <div className="sess-list-hd">

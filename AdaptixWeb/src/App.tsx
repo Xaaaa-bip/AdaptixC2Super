@@ -603,7 +603,7 @@ export default function App() {
 
         <div className={`ops-body content ${current === 'sessions' ? 'with-term' : ''}`}>
           {current === 'dashboard' && <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />}
-          {current === 'sessions' && <Hosts />}
+          <Hosts active={current === 'sessions'} />
           {current === 'listeners' && <Listeners />}
           {current === 'generate' && <Generate />}
           {current === 'delivery' && <WebDelivery />}
@@ -636,15 +636,13 @@ export default function App() {
           {/* legacy single vncAgent unused when openVncTabs covers it */}
           {false && vncAgent && <VncPanel agentId={vncAgent} />}
           {current === 'sessions' && (
-            <>
-              <div
-                className={`term-resizer ${dragging ? 'active' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); setDragging(true) }}
-                title="拖动调整终端高度"
-              />
-              <Term />
-            </>
+            <div
+              className={`term-resizer ${dragging ? 'active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); setDragging(true) }}
+              title="拖动调整终端高度"
+            />
           )}
+          <Term active={current === 'sessions'} />
         </div>
 
         <footer className="ops-status">
