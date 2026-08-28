@@ -316,19 +316,27 @@ export default function App() {
     const isTyping = (t: EventTarget | null) => {
       const el = t as HTMLElement | null
       if (!el) return false
+      if (el.closest?.('.xterm, .pty-host, .pty-page, .vnc-page')) return true
       const tag = el.tagName
       return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
     }
 
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
+      const cur = (useStore.getState().activeUiTab || useStore.getState().tab) as TabId
+      const inPty = isPtyTab(cur) || isVncTab(cur) || isTyping(e.target)
 
-      // Ctrl/Cmd+K command palette
+      // Ctrl/Cmd+K command palette — still available in PTY
       if (mod && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         setPaletteOpen((v) => !v)
         setHelpOpen(false)
         setChord(null)
+        return
+      }
+
+      // PTY / VNC need raw keys (Esc, g, /, Ctrl+C). Do not steal them.
+      if (inPty && (isPtyTab(cur) || isVncTab(cur) || (e.target as HTMLElement | null)?.closest?.('.xterm, .pty-host, .pty-page'))) {
         return
       }
 
@@ -361,12 +369,11 @@ export default function App() {
       if (paletteOpen) return
       if (isTyping(e.target)) return
 
-      // Esc close overlays / dynamic tab
+      // Esc close overlays / file·proc tabs — never close PTY/VNC (Esc belongs to the shell)
       if (e.key === 'Escape') {
         if (helpOpen) { e.preventDefault(); setHelpOpen(false); return }
         if (paletteOpen) { e.preventDefault(); setPaletteOpen(false); return }
-        const cur = (useStore.getState().activeUiTab || useStore.getState().tab) as TabId
-        if (isInteractTab(cur)) {
+        if (isInteractTab(cur) && !isPtyTab(cur) && !isVncTab(cur)) {
           e.preventDefault()
           closeUiTab(cur)
         }

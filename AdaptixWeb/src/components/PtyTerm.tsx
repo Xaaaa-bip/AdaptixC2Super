@@ -49,18 +49,37 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
   const dataDispRef = useRef<any>(null)
   const activeRef = useRef(active)
 
+  function focusTerm() {
+    try {
+      termRef.current?.focus()
+      const ta = hostRef.current?.querySelector('textarea') as HTMLTextAreaElement | null
+      ta?.focus()
+    } catch { /* ignore */ }
+  }
+
+  function sendPty(data: string) {
+    const sock = wsRef.current
+    if (!sock || sock.readyState !== WebSocket.OPEN || !data) return
+    try {
+      sock.send(new TextEncoder().encode(data))
+    } catch {
+      try { sock.send(data) } catch { /* ignore */ }
+    }
+  }
+
   useEffect(() => {
     activeRef.current = active
-    if (active) {
-      // re-fit when becoming visible again (display:none → block)
+    if (!active) return
+    const t = window.setTimeout(() => {
       try {
         fitRef.current?.fit()
         if (termRef.current) {
           setGeom({ cols: termRef.current.cols || 80, rows: termRef.current.rows || 24 })
-          if (status === 'running') termRef.current.focus()
         }
+        focusTerm()
       } catch { /* ignore */ }
-    }
+    }, 40)
+    return () => window.clearTimeout(t)
   }, [active, status])
 
   useEffect(() => {
@@ -93,10 +112,14 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
         const fit = new FitAddon()
         term.loadAddon(fit)
         term.open(hostRef.current)
+        try { term.options.disableStdin = false } catch { /* ignore */ }
         fit.fit()
         termRef.current = term
         fitRef.current = fit
         setGeom({ cols: term.cols || 80, rows: term.rows || 24 })
+        // Keep a live onData from mount so start() cannot miss the listener.
+        dataDispRef.current = term.onData((data: string) => sendPty(data))
+        window.setTimeout(() => focusTerm(), 30)
         term.writeln('\x1b[90m# 交互 PTY · 选择程序后点「启动」\x1b[0m')
         term.writeln(`\x1b[90m# host=${agent?.a_computer || agentId} · ${live ? '在线' : '离线'} · oemcp=${oemCp}\x1b[0m`)
         term.writeln('\x1b[90m# 切换其它页签会保持会话；关闭 PTY 页签才会断开\x1b[0m')
@@ -197,14 +220,10 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       }
       ws.onerror = () => setErr('WebSocket 错误')
 
-      try { dataDispRef.current?.dispose?.() } catch { /* ignore */ }
-      dataDispRef.current = term.onData((data: string) => {
-        const sock = wsRef.current
-        if (!sock || sock.readyState !== WebSocket.OPEN) return
-        // send as binary for agent shell write path
-        sock.send(new TextEncoder().encode(data))
-      })
-      term.focus()
+      if (!dataDispRef.current) {
+        dataDispRef.current = term.onData((data: string) => sendPty(data))
+      }
+      window.setTimeout(() => focusTerm(), 30)
     } catch (e: any) {
       const msg = e?.message || String(e)
       setErr(msg)
@@ -217,8 +236,6 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
   function stop(notify = true) {
     const ws = wsRef.current
     wsRef.current = null
-    try { dataDispRef.current?.dispose?.() } catch { /* ignore */ }
-    dataDispRef.current = null
     if (ws) {
       try { ws.close() } catch { /* ignore */ }
     }
@@ -268,7 +285,13 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
         <button className="ghost" onClick={() => closeUiTab(`pty:${agentId}` as any)}>关闭</button>
       </div>
       {err && <div className="banner warn">{err}</div>}
-      <div className="pty-host" ref={hostRef} />
+      <div
+        className="pty-host"
+        ref={hostRef}
+        tabIndex={0}
+        onMouseDown={() => focusTerm()}
+        onClick={() => focusTerm()}
+      />
       <div className="pty-foot dim">
         binary WS · channel_terminal · id={termIdRef.current || '-'} · {geom.cols}x{geom.rows}
         {' '}· oem_cp={oemCp}

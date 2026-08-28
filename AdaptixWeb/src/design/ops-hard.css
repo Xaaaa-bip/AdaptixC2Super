@@ -622,7 +622,9 @@ html[data-theme="dark"] .conn-chip.is-sync {
 .ops-body.content > .sess,
 .ops-body.content > .page,
 .ops-body.content > .fm,
-.ops-body.content > .form-page {
+.ops-body.content > .form-page,
+.ops-body.content > .pty-page,
+.ops-body.content > .vnc-page {
   flex: 1 1 auto;
   height: 100%;
   max-height: 100%;
