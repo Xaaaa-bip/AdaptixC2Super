@@ -184,13 +184,13 @@ export function Term({ active = true }: { active?: boolean }) {
           title="清空 (Ctrl+L)" onClick={() => agentId && clearConsole(agentId)}>⌫</button>
       </div>
       <div className="term-out" onClick={() => inputRef.current?.focus()}>
-        {!agentId && <div className="muted">选择主机后执行命令。快捷：whoami · pwd · ipconfig · screenshot_bof · ↑↓ 历史</div>}
+        {!agentId && <div className="muted">点主机后按 Enter 输入命令。快捷：whoami · pwd · ipconfig · screenshot_bof · ↑↓ 历史</div>}
         {agentId && view.length === 0 && (
           <div className="muted">
             <span className={`sdot ${live ? 'on' : 'off'}`} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', marginRight: 8, verticalAlign: 'middle' }} />
             [{agent?.a_computer || agentId}] 就绪 · {agent?.a_username || '-'}@{agent?.a_internal_ip || '-'}
             {agent?.a_sleep != null ? ` · sleep ${agent.a_sleep}s` : ''}
-            {!live ? ' · 离线（命令可排队，文件/进程不可用）' : ''}
+            {!live ? ' · 离线（命令可排队，文件/进程不可用）' : ' · 按 Enter 输入'}
           </div>
         )}
         {view.map((l) => <div key={l.id} className={`ln ${l.kind}`}>{l.text}</div>)}

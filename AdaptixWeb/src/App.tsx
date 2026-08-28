@@ -422,6 +422,19 @@ export default function App() {
         }
         e.preventDefault()
         setPaletteOpen(true)
+        return
+      }
+
+      // 主机页：Enter 聚焦底部命令行（对话框 / 右键菜单打开时不抢）
+      if (!mod && e.key === 'Enter') {
+        const tab = useStore.getState().activeUiTab || useStore.getState().tab
+        if (tab === 'sessions' && !document.querySelector('.mask, .ctx, .dlg')) {
+          const el = document.querySelector<HTMLInputElement>('.term-in input')
+          if (el && !el.disabled) {
+            e.preventDefault()
+            el.focus()
+          }
+        }
       }
     }
 

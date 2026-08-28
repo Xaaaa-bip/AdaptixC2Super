@@ -1351,10 +1351,23 @@ html[data-theme="dark"] .conn-chip.is-sync {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-2);
-  max-width: 260px;
+  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sess-sleep {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.sess-sleep.on,
+.sess-table .sleep-on {
+  color: var(--live);
+  font-weight: 650;
+}
+.sess-table .sleep-hi {
+  color: #b58900;
+  font-weight: 650;
 }
 .sess-table-wrap {
   min-height: 0;

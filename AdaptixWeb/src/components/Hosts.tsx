@@ -94,9 +94,33 @@ export function Hosts({ active = true }: { active?: boolean }) {
     setDataDlg(null)
   }, [active])
 
-  function pick(a: Agent) {
+  function pick(a: Agent, opts?: { focus?: boolean }) {
+    const again = selected === a.a_id
     selectAgent(a.a_id)
     openConsole(a.a_id)
+    if (opts?.focus || again) focusTerm()
+  }
+
+  function sleepSecOf(a?: Agent | null) {
+    const n = Number(a?.a_sleep)
+    return Number.isFinite(n) && n >= 0 ? n : 5
+  }
+
+  async function boostSleep(id: string) {
+    const a = agents[id]
+    if (!a || !isAgentOnline(a)) { pushToast('warn', '主机离线，无法加速'); return }
+    if (sleepSecOf(a) === 0) { pushToast('info', '已经是 sleep 0'); return }
+    try {
+      await api.commandRaw(id, 'sleep 0')
+      openConsole(id)
+      pushToast('ok', '已下发 sleep 0，等主机回连后生效')
+    } catch (e: any) {
+      pushLog('err', e?.message || String(e))
+    }
+  }
+
+  function confirmRemove(id: string, label?: string) {
+    return confirm(`删除主机 ${label || id}？`)
   }
 
   function focusTerm() {
@@ -168,7 +192,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
         type="button"
         className={`sess-item ${selected === a.a_id ? 'active' : ''}`}
         onClick={() => pick(a)}
-        onDoubleClick={() => { pick(a); focusTerm() }}
+        onDoubleClick={() => pick(a, { focus: true })}
         onContextMenu={(e) => {
           e.preventDefault()
           selectAgent(a.a_id)
@@ -277,14 +301,29 @@ export function Hosts({ active = true }: { active?: boolean }) {
           <div className="sess-actions">
             {selectedAgent ? (
               <>
-                <span className="sess-sel mono">{selectedAgent.a_computer || selected}</span>
+                <span className="sess-sel mono" title={selected || ''}>
+                  {selectedAgent.a_computer || selected}
+                  <span className={`sess-sleep ${sleepSecOf(selectedAgent) === 0 ? 'on' : ''}`}>
+                    {sleepSecOf(selectedAgent) === 0 ? 'sleep 0' : `sleep ${sleepSecOf(selectedAgent)}s`}
+                  </span>
+                </span>
                 <span className="sep" />
                 <button disabled={!selectedOnline} onClick={() => selected && tryFiles(selected)}>文件</button>
                 <button disabled={!selectedOnline} onClick={() => selected && tryProcs(selected)}>进程</button>
                 <button disabled={!selectedOnline} onClick={() => selected && tryPty(selected)}>PTY</button>
                 <button disabled={!selectedOnline} onClick={() => selected && tryVnc(selected)}>VNC</button>
                 <button onClick={() => selected && openTunnels(selected)}>隧道</button>
-                <button className="danger" onClick={() => removeSelected().catch((e) => pushLog('err', String(e)))}>删除</button>
+                <button
+                  disabled={!selectedOnline || sleepSecOf(selectedAgent) === 0}
+                  title={sleepSecOf(selectedAgent) === 0 ? '已经是 sleep 0' : '下发 sleep 0，加快回连'}
+                  onClick={() => selected && void boostSleep(selected)}
+                >
+                  {sleepSecOf(selectedAgent) === 0 ? '已加速' : '加速'}
+                </button>
+                <button className="danger" onClick={() => {
+                  if (!selected || !confirmRemove(selected, selectedAgent.a_computer || selected)) return
+                  removeSelected().catch((e) => pushLog('err', String(e)))
+                }}>删除</button>
               </>
             ) : (
               <span className="dim">在左侧选择主机，或点击右侧表格行</span>
@@ -329,6 +368,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
                   <th>系统</th>
                   <th>监听</th>
                   <th title="距上次回连 / 配置 sleep（动态刷新）">心跳</th>
+                  <th title="Beacon sleep 间隔。大则命令要等一拍，可点加速">Sleep</th>
                   <th>标签</th>
                 </tr>
               </thead>
@@ -345,7 +385,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
                       key={a.a_id}
                       className={selected === a.a_id ? 'selected' : ''}
                       onClick={() => pick(a)}
-                      onDoubleClick={() => { pick(a); focusTerm() }}
+                      onDoubleClick={() => pick(a, { focus: true })}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         selectAgent(a.a_id)
@@ -375,6 +415,9 @@ export function Hosts({ active = true }: { active?: boolean }) {
                       <td className="mono" title={fmtTime(a.a_last_tick)}>
                         <div className={live ? '' : 'dim'}>{hb.text}</div>
                         {hb.sub ? <div className="cell-sub">{hb.sub}</div> : null}
+                      </td>
+                      <td className={`mono ${sleepSecOf(a) === 0 ? 'sleep-on' : sleepSecOf(a) >= 30 ? 'sleep-hi' : ''}`}>
+                        {sleepSecOf(a) === 0 ? '0 · 交互' : `${sleepSecOf(a)}s`}
                       </td>
                       <td>{a.a_tags || ''}</td>
                     </tr>
@@ -409,14 +452,10 @@ export function Hosts({ active = true }: { active?: boolean }) {
             setCtx(null)
           }}>截图</button>
           <div className="sep" />
-          <button type="button" disabled={!ctxOnline} onClick={async () => {
-            try {
-              await api.commandRaw(ctx.id, 'sleep 0')
-              openConsole(ctx.id)
-              pushToast('ok', '已下发 sleep 0')
-            } catch (e: any) { pushLog('err', e.message || String(e)) }
+          <button type="button" disabled={!ctxOnline || sleepSecOf(ctxAgent) === 0} onClick={async () => {
+            await boostSleep(ctx.id)
             setCtx(null)
-          }}>交互加速</button>
+          }}>{sleepSecOf(ctxAgent) === 0 ? '已加速' : '交互加速'}</button>
           <button type="button" onClick={() => { openData(ctx.id); setCtx(null) }}
             title={ctxAgent?.a_sleep != null ? `当前 sleep ${ctxAgent.a_sleep}s` : 'Sleep / 资料'}>
             Sleep / 资料
@@ -438,7 +477,7 @@ export function Hosts({ active = true }: { active?: boolean }) {
           }}>标签</button>
           <div className="sep" />
           <button type="button" className="danger" onClick={async () => {
-            if (!confirm(`删除主机 ${ctx.id}？`)) { setCtx(null); return }
+            if (!confirmRemove(ctx.id, ctxAgent?.a_computer || ctx.id)) { setCtx(null); return }
             selectAgent(ctx.id); setCtx(null)
             await removeSelected().catch((e) => pushLog('err', String(e)))
           }}>删除</button>
