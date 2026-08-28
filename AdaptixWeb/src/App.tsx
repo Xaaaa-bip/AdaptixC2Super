@@ -324,9 +324,8 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
       const cur = (useStore.getState().activeUiTab || useStore.getState().tab) as TabId
-      const inPty = isPtyTab(cur) || isVncTab(cur) || isTyping(e.target)
 
-      // Ctrl/Cmd+K command palette — still available in PTY
+      // Ctrl/Cmd+K command palette
       if (mod && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         setPaletteOpen((v) => !v)
@@ -335,10 +334,8 @@ export default function App() {
         return
       }
 
-      // PTY / VNC need raw keys (Esc, g, /, Ctrl+C). Do not steal them.
-      if (inPty && (isPtyTab(cur) || isVncTab(cur) || (e.target as HTMLElement | null)?.closest?.('.xterm, .pty-host, .pty-page'))) {
-        return
-      }
+      // PTY / VNC / 任何输入框：不要抢按键
+      if (isPtyTab(cur) || isVncTab(cur) || isTyping(e.target)) return
 
       // ? open shortcut help (when not typing)
       if (!mod && e.key === '?' && !isTyping(e.target)) {

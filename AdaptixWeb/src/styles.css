@@ -1681,6 +1681,37 @@ html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px
 }
 .pty-host .xterm { height: 100%; }
 .pty-host .xterm-viewport { overflow-y: auto !important; }
+.pty-prog {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pty-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-top: 1px solid var(--line-2);
+  background: #1c1c1c;
+}
+.pty-in .ps1 {
+  color: #d0d0ca;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pty-in input.pty-cmd {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  font-family: var(--mono);
+  background: #101010;
+  border-color: rgba(255,255,255,.12);
+  color: #ecece8;
+}
 /* Neutralize global form textarea styles — do not restyle xterm layers. */
 .xterm-helper-textarea {
   height: auto !important;

@@ -40,10 +40,12 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
   const [status, setStatus] = useState<'idle' | 'connecting' | 'running' | 'stopped' | 'error'>('idle')
   const [err, setErr] = useState('')
   const [geom, setGeom] = useState({ cols: 80, rows: 24 })
+  const [line, setLine] = useState('')
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<any>(null)
   const fitRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const cmdRef = useRef<HTMLInputElement>(null)
   const termIdRef = useRef('')
   const disposed = useRef(false)
   const dataDispRef = useRef<any>(null)
@@ -51,6 +53,10 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
 
   function focusTerm() {
     try { termRef.current?.focus() } catch { /* ignore */ }
+  }
+
+  function focusCmd() {
+    window.requestAnimationFrame(() => cmdRef.current?.focus())
   }
 
   function safeFit() {
@@ -66,12 +72,32 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
 
   function sendPty(data: string) {
     const sock = wsRef.current
-    if (!sock || sock.readyState !== WebSocket.OPEN || !data) return
+    if (!sock || sock.readyState !== WebSocket.OPEN || data == null || data === '') return false
     try {
-      sock.send(new TextEncoder().encode(data))
+      // text frame first — some browsers / proxies drop raw Uint8Array sends
+      sock.send(data)
+      return true
     } catch {
-      try { sock.send(data) } catch { /* ignore */ }
+      try {
+        sock.send(new TextEncoder().encode(data))
+        return true
+      } catch {
+        return false
+      }
     }
+  }
+
+  function submitLine() {
+    if (status !== 'running') return
+    const raw = line
+    setLine('')
+    const payload = isWin ? `${raw}\r` : `${raw}\n`
+    const ok = sendPty(payload)
+    try {
+      termRef.current?.writeln(ok ? `\x1b[90m${raw}\x1b[0m` : `\x1b[31m发送失败: ${raw}\x1b[0m`)
+    } catch { /* ignore */ }
+    if (!ok) pushToast('warn', 'PTY 通道未就绪，等回显后再输入')
+    focusCmd()
   }
 
   useEffect(() => {
@@ -79,7 +105,7 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
     if (!active) return
     const t = window.setTimeout(() => {
       safeFit()
-      if (status === 'running' || status === 'idle') focusTerm()
+      if (status === 'running') focusCmd()
     }, 40)
     return () => window.clearTimeout(t)
   }, [active])
@@ -220,7 +246,7 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       if (!dataDispRef.current) {
         dataDispRef.current = term.onData((data: string) => sendPty(data))
       }
-      window.setTimeout(() => focusTerm(), 30)
+      window.setTimeout(() => focusCmd(), 50)
     } catch (e: any) {
       const msg = e?.message || String(e)
       setErr(msg)
@@ -261,14 +287,17 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
           {presets.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}
           <option value="__custom__">自定义</option>
         </select>
-        <input
-          className="mono"
-          style={{ minWidth: 260, flex: 1 }}
-          disabled={status === 'running' || status === 'connecting'}
-          value={program}
-          onChange={(e) => setProgram(e.target.value)}
-          placeholder="程序路径"
-        />
+        {status === 'running' || status === 'connecting' ? (
+          <span className="mono dim pty-prog" title={program}>{program}</span>
+        ) : (
+          <input
+            className="mono"
+            style={{ minWidth: 260, flex: 1 }}
+            value={program}
+            onChange={(e) => setProgram(e.target.value)}
+            placeholder="程序路径"
+          />
+        )}
         <button className="primary" disabled={!live || status === 'connecting' || status === 'running'} onClick={start}>
           {status === 'connecting' ? '连接中…' : '启动'}
         </button>
@@ -286,12 +315,36 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
       <div
         className="pty-host"
         ref={hostRef}
-        onMouseDown={() => focusTerm()}
+        onMouseDown={() => focusCmd()}
       />
+      <div className="pty-in">
+        <span className="ps1">{isWin ? '>' : '$'}</span>
+        <input
+          ref={cmdRef}
+          className="pty-cmd mono"
+          disabled={status !== 'running'}
+          value={line}
+          placeholder={status === 'running' ? (isWin ? '在此输入命令，回车发送，例如 dir / whoami' : '在此输入命令，回车发送') : '先点「启动」，通道就绪后再输入'}
+          onChange={(e) => setLine(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              submitLine()
+              return
+            }
+            if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault()
+              sendPty('\x03')
+              try { termRef.current?.write('^C') } catch { /* ignore */ }
+            }
+          }}
+        />
+        <button className="primary" disabled={status !== 'running'} onClick={() => submitLine()}>发送</button>
+      </div>
       <div className="pty-foot dim">
-        binary WS · channel_terminal · id={termIdRef.current || '-'} · {geom.cols}x{geom.rows}
+        底部输入框发送到 shell · 点终端也可聚焦输入框
+        {' '}· id={termIdRef.current || '-'} · {geom.cols}x{geom.rows}
         {' '}· oem_cp={oemCp}
-        {' '}· 切页保持会话 · 关页签才断开
       </div>
     </div>
   )
