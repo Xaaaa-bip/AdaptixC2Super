@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { ApiClient } from './api/http'
+import { defaultListenerConfig } from './api/listeners'
 import { SyncSocket } from './api/ws'
 import {
   Agent, AppLog, ChatMessage, ConsoleLine, DEFAULT_SUBSCRIPTIONS, DownloadItem,
@@ -928,14 +929,9 @@ export const useStore = create<State>((set, get) => ({
   createHttpListener: async (name, port, callback) => {
     const { api, pushLog } = get()
     const config = {
-      host_bind: '0.0.0.0', port_bind: port,
+      ...defaultListenerConfig('BeaconHTTP'),
+      port_bind: port,
       callback_addresses: [callback],
-      encrypt_key: randomHex(16),
-      http_method: 'POST', hb_header: 'X-Beacon-Id',
-      host_header: [], uri: ['/api/v1/status'],
-      user_agent: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
-      ssl: false, 'page-error': '<html>404</html>',
-      'page-payload': '<html><!--<<<PAYLOAD_DATA>>>--></body></html>', protocol: 'http',
     }
     await api.createListener(name, 'BeaconHTTP', config)
     pushLog('ok', `监听器 ${name} 已创建`)
@@ -1045,9 +1041,4 @@ function normDl(p: any): DownloadItem {
     d_filename: p.d_filename || p.filename || p.file,
     d_size: p.d_size || p.size,
   }
-}
-function randomHex(n: number) {
-  const a = new Uint8Array(n)
-  crypto.getRandomValues(a)
-  return Array.from(a).map((b) => b.toString(16).padStart(2, '0')).join('')
 }

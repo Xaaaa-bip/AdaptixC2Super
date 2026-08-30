@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { LISTENER_TYPES, defaultListenerConfig, randomEncryptKey } from '../api/listeners'
+import { applyTrafficTemplate, templatesFor } from '../api/trafficTemplates'
 import { EmptyState } from './ui'
 
 type FormState = {
@@ -103,6 +104,7 @@ export function Listeners() {
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState<TabId>('main')
   const [q, setQ] = useState('')
+  const [tplId, setTplId] = useState('official')
   const [form, setForm] = useState<FormState>(() => ({
     name: 'http',
     type: 'BeaconHTTP',
@@ -127,16 +129,30 @@ export function Listeners() {
       type,
       config: defaultListenerConfig(type),
     })
+    setTplId('official')
     setTab('main')
+  }
+
+  function applyTpl(id: string) {
+    const tpl = templatesFor(form.type).find((t) => t.id === id)
+    if (!tpl) return
+    setForm((f) => ({ ...f, config: applyTrafficTemplate(f.config, f.type, tpl) }))
+    setTplId(id)
+    setTab('error')
+    pushToast('ok', `已套用「${tpl.label}」，错误页已换成对应模板`)
   }
 
   function setCfg(key: string, value: any) {
     setForm((f) => ({ ...f, config: { ...f.config, [key]: value } }))
+    if (['uri', 'user_agent', 'hb_header', 'request_headers', 'server_headers', 'page-error', 'page-payload', 'http_method'].includes(key)) {
+      setTplId('')
+    }
   }
 
   function openCreate(type = 'BeaconHTTP') {
     setEditMode(false)
     setForm({ name: suggestName(type), type, config: defaultListenerConfig(type) })
+    setTplId('official')
     setTab('main')
     setShow(true)
   }
@@ -155,6 +171,7 @@ export function Listeners() {
       type,
       config: { ...base, ...cfg },
     })
+    setTplId('')
     setTab('main')
     setShow(true)
   }
@@ -695,19 +712,49 @@ export function Listeners() {
 
             {isHttpLike ? (
               <>
+                <div className="field field-top"><label>流量模板</label>
+                  <div>
+                    <div className="chip-row traffic-tpls">
+                      {templatesFor(form.type).map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className={tplId === t.id ? 'primary' : ''}
+                          title={t.hint}
+                          onClick={() => applyTpl(t.id)}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="field-hint">
+                      套用后会切到「错误页」预览：URI / UA / 头 / 错误页 / 回包一起换。绑定、回连、SSL、密钥不动。
+                    </div>
+                  </div>
+                </div>
                 <div className="ax-tabs">
-                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>Main settings</button>
-                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP Headers</button>
-                  <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>Page Error</button>
-                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>Page Payload</button>
+                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>基本</button>
+                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP 头</button>
+                  <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>错误页</button>
+                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>回包</button>
                 </div>
                 <div className="ax-tab-body">
                   {tab === 'main' && renderMain()}
                   {tab === 'headers' && renderHeaders()}
                   {tab === 'error' && (
-                    <div className="field field-top"><label>Page Error</label>
-                      <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
-                        onChange={(e) => setCfg('page-error', e.target.value)} />
+                    <div className="field field-top"><label>错误页</label>
+                      <div className="page-preview-wrap">
+                        <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
+                          onChange={(e) => setCfg('page-error', e.target.value)} />
+                        <div className="page-preview">
+                          <div className="page-preview-k">预览</div>
+                          <iframe
+                            title="错误页预览"
+                            sandbox=""
+                            srcDoc={form.config['page-error'] || '<p>空</p>'}
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
                   {tab === 'payload' && (

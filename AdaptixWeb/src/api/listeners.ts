@@ -1,3 +1,5 @@
+import { officialPatchFor } from './trafficTemplates'
+
 /** Listener types + defaults aligned with extenders ax_config.axs ListenerUI */
 
 export type ListenerTypeDef = {
@@ -32,20 +34,7 @@ export function randomEncryptKey() {
   return randomHex(16) // 16 bytes -> 32 hex chars
 }
 
-const DEFAULT_ERROR_PAGE = `<!DOCTYPE html>
-<html>
-<head>
-<title>ERROR 404 - Nothing Found</title>
-</head>
-<body>
-<h1 class="cover-heading">ERROR 404 - PAGE NOT FOUND</h1>
-</body>
-</html>`
-
-const HTTP_PAYLOAD = `{"status": "ok", "data": "<<<PAYLOAD_DATA>>>", "metrics": "sync"}`
-const WS_PAYLOAD = `{"type":"sync","channel":"presence","payload":"<<<PAYLOAD_DATA>>>"}`
-
-export function defaultListenerConfig(type: string, publicHost = '110.41.87.17'): Record<string, any> {
+export function defaultListenerConfig(type: string, publicHost = '101.42.136.73'): Record<string, any> {
   const key = randomEncryptKey()
   switch (type) {
     case 'BeaconHTTP':
@@ -53,42 +42,28 @@ export function defaultListenerConfig(type: string, publicHost = '110.41.87.17')
         host_bind: '0.0.0.0',
         port_bind: 443,
         callback_addresses: [`${publicHost}:443`],
-        http_method: 'POST',
-        uri: ['/api/v1/status', '/updates/check.php', '/content.html'],
-        user_agent: ['Mozilla/5.0 (Windows NT 6.2; rv:20.0) Gecko/20121202 Firefox/20.0'],
-        hb_header: 'X-Beacon-Id',
         encrypt_key: key,
         ssl: false,
         ssl_cert: '',
         ssl_key: '',
         'x-forwarded-for': false,
         host_header: [] as string[],
-        request_headers: '',
-        server_headers: '',
-        'page-error': DEFAULT_ERROR_PAGE,
-        'page-payload': HTTP_PAYLOAD,
         protocol: 'http',
+        ...officialPatchFor('BeaconHTTP'),
       }
     case 'BeaconWS':
       return {
         host_bind: '0.0.0.0',
         port_bind: 4433,
         callback_addresses: [`${publicHost}:4433`],
-        http_method: 'GET',
-        uri: ['/ws', '/chat', '/socket.io', '/graphql'],
-        user_agent: ['Mozilla/5.0 (Windows NT 6.2; rv:20.0) Gecko/20121202 Firefox/20.0'],
-        hb_header: 'Sec-WebSocket-Protocol',
         encrypt_key: key,
         ssl: false,
         ssl_cert: '',
         ssl_key: '',
         'x-forwarded-for': false,
         host_header: [] as string[],
-        request_headers: '',
-        server_headers: '',
-        'page-error': DEFAULT_ERROR_PAGE,
-        'page-payload': WS_PAYLOAD,
         protocol: 'ws',
+        ...officialPatchFor('BeaconWS'),
       }
     case 'BeaconTCP':
       // ax_config: port_bind, prepend_data, encrypt_key

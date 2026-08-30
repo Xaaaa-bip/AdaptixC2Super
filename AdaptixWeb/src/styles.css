@@ -1531,6 +1531,42 @@ html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px
 }
 .listener-type b { font-size: 12.5px; }
 .listener-type .sub { font-size: 11px; color: var(--text-3); }
+.traffic-tpls { margin-bottom: 4px; }
+.traffic-tpls button { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+.page-preview-wrap {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+.page-preview {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.page-preview-k {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.page-preview iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  border: 0;
+  background: #fff;
+}
+@media (max-width: 720px) {
+  .page-preview-wrap { grid-template-columns: 1fr; }
+}
 .ax-tabs {
   display: flex; gap: 4px; flex-wrap: wrap;
   margin: 8px 0 0; padding-bottom: 0;
