@@ -479,6 +479,9 @@ html[data-theme="dark"] .tag.listen { color: var(--accent-2); background: var(--
 }
 .field label { color: var(--text-2); font-size: 12px; }
 .field input, .field select, .field textarea { width: 100%; }
+.field input[type="checkbox"],
+.field input[type="radio"] { width: 14px; }
+.field input[type="file"] { width: auto; max-width: 100%; }
 .field textarea { height: auto; min-height: 64px; padding: 8px 10px; }
 .hint {
   margin: 8px 0;
@@ -1376,6 +1379,18 @@ html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px
 .gen-listener .name { font-weight: 600; }
 .gen-listener .sub { font-size: 11.5px; color: var(--text-3); }
 .gen-params { display: grid; gap: 4px; }
+.gen-opt-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.gen-opt-file input[type="file"] {
+  width: auto;
+  max-width: 220px;
+  height: 30px;
+  padding: 3px 8px;
+}
 .gen-summary { display: grid; gap: 10px; font-size: 12.5px; }
 .gen-summary > div { display: flex; gap: 10px; align-items: baseline; }
 .gen-summary .k { color: var(--text-3); min-width: 48px; flex: 0 0 auto; }

