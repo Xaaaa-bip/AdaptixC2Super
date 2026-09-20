@@ -1,0 +1,11 @@
+extender_type: "service"
+extender_file: "arachne_service.so"
+ax_file: "ax_config.axs"
+
+service_name: "arachne"
+service_config: |
+  enabled: false
+  mode: "bridge"
+  repo_url: "https://github.com/portbuster1337/ArachneC2"
+  data_dir: "data/arachne"
+  notes: "Bridge skeleton only. It does not start Arachne, build implants, or dispatch commands."

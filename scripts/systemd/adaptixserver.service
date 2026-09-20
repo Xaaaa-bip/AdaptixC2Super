@@ -1,0 +1,27 @@
+[Unit]
+Description=AdaptixC2 teamserver (WebUI + listeners) in /home/ad/dist
+After=network-online.target axrelay.service
+Wants=network-online.target axrelay.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ad/dist
+# 启动参数、环境变量都在这个脚本里（cd + source /root/axserv.environ + exec）。
+# 别把 ExecStart 直接写成 ./adaptixserver：profile 与 axscripts 路径按进程 cwd 解析。
+ExecStart=/root/axstart.sh
+# ★ Restart=always 不是 Restart=on-failure：本机已知有四种**退出码 0** 的死法，
+#   on-failure 对它们一律不生效，等于没配。
+# ★ 但代价要知道：InitJWT() 每次启动现生成 JWT 密钥 ⇒ 每自动重启一次，
+#   所有在线操作员被踢回登录页（见 memory adaptixc2-jwt-key-per-boot）。
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+StandardOutput=append:/home/ad/dist/server.log
+StandardError=append:/home/ad/dist/server.log
+
+[Install]
+WantedBy=multi-user.target

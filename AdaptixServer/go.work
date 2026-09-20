@@ -1,0 +1,18 @@
+go 1.25.4
+
+use (
+	.
+	./extenders/agent_kharon
+	./extenders/beacon_agent
+	./extenders/beacon_listener_dns
+	./extenders/beacon_listener_http
+	./extenders/beacon_listener_smb
+	./extenders/beacon_listener_tcp
+	./extenders/beacon_listener_ws
+	./extenders/beacon_listener_https_emu
+	./extenders/gopher_agent
+	./extenders/gopher_listener_tcp
+	./extenders/linux_agent
+	./extenders/listener_kharon_http
+	./extenders/vnc
+)

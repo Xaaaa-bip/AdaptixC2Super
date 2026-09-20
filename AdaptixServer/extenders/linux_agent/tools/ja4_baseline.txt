@@ -1,0 +1,40 @@
+# JA4 基线 — H1 传输层 TLS 指纹对齐目标
+# 采集: 2026-09-13, 服务器 10.7.34.40 (eth0), tshark 4.2.2, ja4.py (FoxIO-LLC/ja4 main)
+# 触发: curl 7.x/OpenSSL 3.x + Google Chrome 153 headless
+#
+# === 主目标 (Phase 1a 对齐对象) ===
+# curl / OpenSSL 3.x 客户端 — 无 GREASE、12 扩展、全标准, mbedtls 可仿
+curl-openssl:  JA4.1 = t13d3112h2_e8f1e7e78f70_b26ce05bbdd6
+#   JA4 解析: TLS1.3, 13 个 cipher, 12 个扩展, ALPN 首个 = h2
+#   cipher 原序 (JA4 只哈希前 10):
+#     1301,1302,1303,c02b,c02f,c02c,c030,cca9,cca8,c013,c014,009c,009d
+#   extension 原序 (JA4 哈希输入, tshark frame 4/90 实测):
+#     0x0000 server_name, 0x000b ec_point_formats, 0x000a supported_groups,
+#     0x0010 ALPN, 0x0016 encrypt_then_mac, 0x0017 extended_master_secret,
+#     0x0031 NPN, 0x000d signature_algorithms, 0x002b supported_versions,
+#     0x002d psk_key_exchange_modes, 0x0033 key_share, 0x0015 padding
+#   ALPN 列表: h2,http/1.1 (JA4 取首个)
+#   sig_algs 原序 (JA4_r.1): 0403,0503,0603,0807,0808,0809,080a,080b,
+#     0804,0805,0806,0401,0501,0601,0303,0301,0302,0402,0502,0602
+#
+# === 延伸目标 (Chrome 153, 含 GREASE + 17 扩展, 需重写扩展书写器) ===
+chrome-153:     JA4.1 = t13d1517h2_8daaf6152771_cb7bf5808d99
+#   extension 原序 (frame 126 实测): GREASE(0xfafa), psk_modes, sct,
+#     session_ticket, GREASE, ALPN, sig_algs, EMS, supported_versions, SNI,
+#     GREASE, 0xfe0d, groups, reneg_info, status_request, key_share,
+#     ec_point_formats, compress_certificate, GREASE
+#
+# === 判定 ===
+# Phase 1a Gate: agent ClientHello 的 JA4.1 == curl-openssl 行首哈希
+# 校验: tools/ja4_harness.sh (tshark 抓 agent 流量 → ja4.py → diff 本文件)
+
+# === Phase 1a 实测 (2026-09-13, agent_wss WSS 会话, mbedtls 3.6.3 默认 ClientHello) ===
+agent-mbedtls-1a: JA4.1 = t13d0607h2_a150a9413979_7cebfb61f895
+#   解析: TLS1.3, 6 cipher (1301..1305+GREASE), 7 扩展
+#   (SNI/ALPN/versions/key_share/psk_modes/groups/sig_algs), ALPN 首项 h2
+#   与 curl 基线的差异 = Phase 1b 的 ClientHello 书写器改造目标
+
+# === Phase 1b 实测 (2026-09-13, agent_ja4c, MBEDTLS_AX_JA4 书写器) ===
+#   JA4.1 = t13d3112h2_e8f1e7e78f70_b26ce05bbdd6 == curl/OpenSSL 基线, 完全一致
+#   改造: 31 密文(curl 原序, 1302 打头) + 12 扩展原序(0,11,10,16,22,23,49,13,43,45,51,21)
+#         + curl 的 20 签名算法 + ALPN h2。会话功能无损(getuid 往返 OK)。

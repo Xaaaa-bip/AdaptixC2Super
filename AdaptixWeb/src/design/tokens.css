@@ -1,0 +1,165 @@
+/* AdaptixWeb — 冷石墨仪表盘
+   ------------------------------------------------------------
+   这不是"赛博朋克海报"，是一件仪表。操作员盯着它看几小时，
+   所以：底色彻底后退、只有活的东西发光、每个颜色只干一件事。
+
+   前一版的问题：近黑偏绿的底 + 满屏酸性绿 + 红绿两个径向晕混在
+   一起 → 整页糊成一团浑浊的棕绿，没有任何层级。三个改动解决它：
+   1. 底改成冷石墨（蓝向），红绿晕不再互相染色；
+   2. 红不再兼任"强调色"——强调交给青，红只留危险，语义不再打架；
+   3. 绿降级为状态点专用，不再当填充色铺满界面。
+   ------------------------------------------------------------ */
+
+/* JetBrains Mono 自托管（官方字体包，本地化无外部请求） */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-400.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-700.ttf") format("truetype");
+}
+
+:root,
+html[data-theme="dark"] {
+  /* ── 底：冷石墨，蓝向。刻意不用绿调黑 ──
+     明度阶梯（实测合成值，改前请重新算一遍）：
+       页面 #07090d  →  外壳 #0e131b  →  面板 #141b26  →  浮层 #1e2634
+     上一版四层全挤在 4%–6% 明度，看起来就是一张平的黑纸。
+     深色界面里"更高"只能靠"更亮"表达，所以底部压到 #07090d，
+     面板抬到 #141b26，拉开 5 个点才读得出层级。 */
+  --paper: #07090d;
+  --surface: #0e131b;
+  --surface-2: #141b26;
+  --panel-elevated: #1e2634;
+  --th-bg: #10151d;
+
+  /* ── 正文：冷白，不是绿白 ──
+     --ink-3 是全站最弱的一级正文（时间戳、单位、表头辅助字），
+     用它的地方都还是真内容，不是装饰，所以必须过 4.5:1。
+     旧值 #5c6779 在面板 #141b26 上只有 3.2:1，读起来是"猜"不是"看"。
+     注意算的时候要拿"合成后的玻璃底"，不是 --surface-2：
+     玻璃面板实测合成出来是 rgb(29,37,50)，比 --surface-2(#141b26) 亮，
+     在它上面 #7d8798 只有 4.24:1，不够。
+     #838d9e → 合成玻璃底上 4.60:1，--surface-2 上更高。
+     （改这个值请重跑 scripts/contrast_audit.mjs，别手算。） */
+  --ink: #e6ebf2;
+  --ink-2: #98a4b7;
+  --ink-3: #838d9e;
+
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.05);
+
+  /* ── 强调：青。只给"活的"东西 —— 实时 / 可交互 / 焦点 ── */
+  --accent: #22d3ee;
+  --accent-2: #0ea5c4;
+  --accent-soft: rgba(34, 211, 238, 0.1);
+  --accent-glow: rgba(34, 211, 238, 0.2);
+  --accent-ink: #04222a; /* 青底上的深色字 */
+
+  /* ── 危险：红。只干这一件事，不再兼任强调 ── */
+  --cinnabar: #ff4d5e;
+  --cinnabar-soft: rgba(255, 77, 94, 0.1);
+  --danger: #ff4d5e;
+  --danger-ink: #2a0509;
+
+  /* ── 在线 / 成功：绿。只在状态点和小标记上出现，不做填充 ── */
+  --live: #34d399;
+  --live-soft: rgba(52, 211, 153, 0.1);
+  --signal: #34d399;
+  --signal-dim: #1f9e73;
+  --signal-glow: rgba(52, 211, 153, 0.12);
+  --success: #34d399;
+
+  --warn: #f5a524;
+  --warn-soft: rgba(245, 165, 36, 0.12);
+  --warning: #f5a524;
+  --error: #ff4d5e;
+
+  --sider-w: 56px;
+  --header-h: 50px;
+  --tabs-h: 36px;
+  /* 底栏高度。以前这个值有两份真值：.ops-main 的网格轨道写 28px，
+     .ops-status 自己写 min-height:32px —— 轨道装不下子项，于是底栏
+     整个往下溢出视口 6px（body 是 overflow:hidden，所以只是被切掉，
+     没有滚动条提示）。这里收成一个 token，两边都引用它。 */
+  --status-h: 32px;
+  /* toast 栈的底距。原来 .toast-host 是 bottom:16px —— 直接压在底栏上，
+     而底栏右侧正是快捷键提示（? 帮助），登录后头几秒新操作员最需要看的
+     就是它，偏偏被"实时同步完成"盖住。通知可以浮在内容上，但不该浮在
+     常驻 chrome 上，所以抬到底栏之上。--page-tips 再叠在它上面。
+     改这里，右下角三个东西（底栏 / toast / 提示面板）的相对关系一起动。 */
+  --toast-lane: calc(var(--status-h) + 12px);
+  --term-h: 280px;
+  --radius: 8px;
+  --radius-sm: 6px;
+
+  --mono: "JetBrains Mono", "Cascadia Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  --sans: "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-float: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.66);
+
+  /* 行态：悬停中性、选中用青。以前选中是红的 —— 红表示危险，
+     拿来表示"选中"会让操作员误读。 */
+  --row-hover: rgba(255, 255, 255, 0.035);
+  --row-selected: rgba(34, 211, 238, 0.09);
+
+  /* ── 终端：冷底、柔和绿字。纯 #00ff66 在近黑上会"振"，且是最典型的
+        黑客风陈词；降饱和后仍读作绿，久看不累。 ── */
+  --term-bg: #0a0d11;
+  --term-ink: #86efac;
+  --term-ink-dim: #3f7f5e;
+  /* 扫描线是铺满整壳的。以前用终端绿 —— 于是青色强调的界面上又蒙了
+     一层绿。扫描线是显像管的"亮度"不均，不是色度，用中性微冷白。 */
+  --crt-line: rgba(214, 232, 255, 0.028);
+
+  /* ── 毛玻璃：只上外壳与容器。数据密集区（表格 / 终端）保持不透明，
+        守住正文 4.5:1 对比度。玻璃要"读得出来"，靠的是面板比页面底更亮，
+        而不是更暗 —— 所以这里的值整体高于 --paper。 ── */
+  --glass-rail: rgba(15, 20, 29, 0.78);
+  --glass-chrome: rgba(17, 23, 33, 0.72);
+  --glass-panel: rgba(27, 36, 51, 0.66);
+  --glass-raised: rgba(33, 42, 57, 0.85);
+  --glass-line: rgba(255, 255, 255, 0.1);
+  --glass-line-hi: rgba(255, 255, 255, 0.18);
+  --glass-blur: 16px;
+  --glass-blur-lg: 24px;
+  --glass-sat: 130%;
+
+  /* ── 故障色（色差干涉）：不承载语义，只表示"显示正在响应"。
+        品红只做色差偏移的搭档，永远不做填充。 ── */
+  --glitch-c: #22d3ee;
+  --glitch-m: #ff2d95;
+  --glitch-c-soft: rgba(34, 211, 238, 0.3);
+  --glitch-m-soft: rgba(255, 45, 149, 0.28);
+  --glitch-dur: 0.32s;
+
+  /* ── 氛围：单色相。以前红+绿两个晕叠在一起就是一团浑浊的棕，
+        这是整页发闷的元凶。单色相 + 低 alpha = 干净。 ── */
+  --ambient-1: rgba(34, 211, 238, 0.17);
+  --ambient-2: rgba(56, 89, 140, 0.26);
+
+  /* legacy aliases */
+  --bg: var(--paper);
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --text: var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-3);
+  --primary: var(--accent);
+  --sider: var(--surface-2);
+  --sider-2: var(--surface-2);
+  --header: var(--surface);
+}
+
+html[data-density="compact"] {
+  --header-h: 46px;
+  --tabs-h: 32px;
+}

@@ -1,0 +1,472 @@
+/* ============================================================
+   AdaptixWeb — 毛玻璃 + 故障色层
+   青 #22d3ee / 品红 #ff2d95 · 玻璃 = 半透明底 + backdrop blur
+   ------------------------------------------------------------
+   设计原则（三条，别破）：
+   1. 玻璃是基底，故障是事件。静态面永远安静；青/品红只在
+      悬停 / 激活 / 实时 时出现，表示"显示正在响应"，不是装饰。
+   2. 色谱有语义分工。青=交互/焦点/实时，红=危险，绿=在线。
+      品红不承载语义，只做色差的另一半，永不做填充。
+   3. 数据可读性优先。表格 / 终端 / 代码区保持不透明，
+      毛玻璃只上外壳与容器，守住正文 4.5:1 对比度。
+
+   上一版的三个错，已改：
+   · 每格都描青/品红边 —— 选中行有 11 列 × 2 条 = 22 条彩色竖线。
+     色差是"一个边"的效果，铺到每格就成了噪点。现在只留行首一条青。
+   · 指标卡四角画了 8 段 HUD 括线 —— 和氛围晕、扫描线、色差边
+     抢注意力，一屏五个装饰装置。现在只留左侧一条强调线。
+   · 玻璃底比页面底还暗 —— 半透明面板叠在更暗的底上读不出玻璃。
+     现在面板整体比 --paper 亮，靠明度差读玻璃，而不是靠模糊。
+
+   层叠说明：本文件在 styles.css 的 @import 链末位（hacker.css 之后），
+   但仍在 styles.css 主体规则之前。因此所有选择器统一加前缀
+   `html:root[data-theme="dark"]`，比 styles.css 裸选择器高两级、
+   比 `html[data-theme="dark"] X` 高一级；仅当更早的层用了
+   !important（.rail 背景）时才镜像 !important。
+   只改颜色/背景/边框/阴影/模糊，不动布局尺寸。
+   新增伪元素：无（故障色差全部由 box-shadow 实现）。
+   ============================================================ */
+
+/* ============================================================
+   1. 玻璃基底 —— 统一模糊参数与内高光
+   ============================================================ */
+
+html:root[data-theme="dark"] .rail,
+html:root[data-theme="dark"] .ops-top,
+html:root[data-theme="dark"] .ops-tabs,
+html:root[data-theme="dark"] .ops-status,
+html:root[data-theme="dark"] .card,
+html:root[data-theme="dark"] .home-panel,
+html:root[data-theme="dark"] .dash-panel,
+html:root[data-theme="dark"] .hm,
+html:root[data-theme="dark"] .lx-card,
+html:root[data-theme="dark"] .dlg,
+html:root[data-theme="dark"] .ctx,
+html:root[data-theme="dark"] .palette,
+html:root[data-theme="dark"] .toast {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+
+/* 玻璃上沿的一道内高光：让"玻璃有厚度"，而非一块半透明色块 */
+html:root[data-theme="dark"] .home-panel,
+html:root[data-theme="dark"] .dash-panel,
+html:root[data-theme="dark"] .card {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    0 14px 34px rgba(0, 0, 0, 0.34);
+}
+
+/* ── 让氛围层真的照到玻璃上 ──
+   这是毛玻璃一直"读不出来"的真正原因，不是模糊参数不对：
+   氛围层（.ink-scape，position:fixed）被三层不透明底挡死了 ——
+   .ops-body.content 和 .home 都是不透明的 var(--paper)，
+   .home-metrics 更是不透明的 var(--surface)。玻璃后面什么都没有，
+   backdrop-filter 只能糊出一块纯色板，看起来就是"灰方块"。
+   实测氛围到手只剩 0.8 × 0.22 × 0.17 ≈ 3%，肉眼不可见。
+
+   把中间这几层打通，只保留最底下的 .ops 作为不透明基色，
+   氛围就能透上来被玻璃折射。数据区（表格/终端）依旧不透明。 */
+html:root[data-theme="dark"] .ops-main,
+html:root[data-theme="dark"] .ops-body.content,
+html:root[data-theme="dark"] .home,
+html:root[data-theme="dark"] .home-metrics,
+html:root[data-theme="dark"] .home-grid {
+  background: transparent;
+}
+
+/* 氛围抬到肉眼可辨、但仍远低于正文对比度的程度 */
+html:root[data-theme="dark"] .ops > .ink-scape {
+  opacity: 0.9;
+}
+html:root[data-theme="dark"] .ink-wash {
+  opacity: 0.55;
+}
+
+/* ============================================================
+   2. 外壳四件套 —— 侧栏 / 顶栏 / 标签栏 / 底栏
+   ============================================================ */
+
+/* 侧栏：原本是 !important 的不透明 #0b0e13，换成深色玻璃 */
+html:root[data-theme="dark"] .rail {
+  background: var(--glass-rail) !important;
+  border-right: 1px solid var(--glass-line) !important;
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.34);
+}
+html:root[data-theme="dark"] .rail-brand {
+  border-bottom: 1px solid var(--glass-line) !important;
+}
+/* ── 导航栏溢出修复（功能性问题，不是配色）──
+   真机上导航有 16 个模块，每个 min-height:48px，内容总高 1032px，
+   而视口只有 950px；.rail 是 overflow:hidden，于是底部的导航项
+   直接被切掉、点不到。
+   只调小尺寸是治标 —— 模块数量是会变的，再加一个又会溢出。
+   所以改成可滚动（VS Code 的活动栏也是这么处理的），
+   并把底部的「命令」入口吸底，滚动时不会被带走。 */
+html:root[data-theme="dark"] .rail {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  overscroll-behavior: contain;
+}
+html:root[data-theme="dark"] .rail::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+html:root[data-theme="dark"] .rail-foot {
+  border-top: 1px solid var(--glass-line);
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  /* 吸底元素必须有底，否则滚动时下面的导航项会从它背后透出来 */
+  background: #0b0e13;
+}
+
+/* 顶栏：ops-hard.css 里显式写了 backdrop-filter:none，这里收回 */
+html:root[data-theme="dark"] .ops-top {
+  background: var(--glass-chrome);
+  border-bottom: 1px solid var(--glass-line);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.36);
+}
+
+/* 顶栏内的胶囊：跟着玻璃走，去掉实心底 */
+html:root[data-theme="dark"] .ops-search {
+  background: rgba(255, 255, 255, 0.045) !important;
+  border: 1px solid var(--glass-line) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html:root[data-theme="dark"] .ops-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-line);
+}
+html:root[data-theme="dark"] .ops-target {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-line);
+}
+
+/* 标签栏 / 底栏：更薄的一层玻璃，弱化于顶栏 */
+html:root[data-theme="dark"] .ops-tabs {
+  background: var(--glass-chrome);
+  border-bottom: 1px solid var(--glass-line);
+}
+html:root[data-theme="dark"] .ops-status {
+  background: var(--glass-chrome);
+  border-top: 1px solid var(--glass-line);
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================================
+   3. 卡面 —— 玻璃底盘 + 左侧强调线
+   强调线只在悬停/激活时亮起，表示"这块接住了指针"。
+   不用四角括线：一屏几十张卡就是几百段碎线，纯噪音。
+   ============================================================ */
+
+html:root[data-theme="dark"] .hm {
+  background-color: var(--glass-panel);
+  border: 1px solid var(--glass-line);
+  border-radius: 9px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 2px 0 0 rgba(34, 211, 238, 0.4),
+    0 10px 26px rgba(0, 0, 0, 0.3);
+}
+
+/* 指标数字：0.5px 的色差不重合 —— 模拟显像管三色枪没对齐。
+   这是整套 UI 里唯一"静止状态下"的故障色：只落在数字上，不落在正文，
+   0.5px 的偏移在正常视距读作"这台机器在发光"，而不是"这字花了"。 */
+html:root[data-theme="dark"] .hm-n {
+  text-shadow:
+    0.5px 0 0 rgba(255, 45, 149, 0.5),
+    -0.5px 0 0 rgba(34, 211, 238, 0.4);
+}
+
+/* 开机失同步：卡片挂载时播一次，之后完全安静。
+   frontend-design 的原则是"非用户触发的动效只留一个有编排的瞬间"——
+   这就是那一个：四张卡依次错开 60ms 收敛，像仪表通电自检。
+
+   注意：这里只动 box-shadow，绝不动 opacity。
+   最初写的是 opacity 0 → 1，结果实测动画要等到 ~800ms（字体加载阻塞渲染）
+   才启动，而 fill-mode: both 会把卡片按在首帧的 opacity:0 上 ——
+   也就是"内容能不能看见"取决于动画有没有跑起来。
+   慢设备、动画被节流、或任何一次渲染延迟，卡片就是一片空白。
+   装饰性动效可以失败，内容不行。 */
+@keyframes card-boot {
+  0% {
+    box-shadow:
+      -4px 0 0 var(--glitch-m-soft), 4px 0 0 var(--glitch-c-soft),
+      inset 2px 0 0 var(--accent), 0 10px 26px rgba(0, 0, 0, 0.3);
+  }
+  35% {
+    box-shadow:
+      3px 0 0 var(--glitch-c-soft), -3px 0 0 var(--glitch-m-soft),
+      inset 2px 0 0 var(--accent), 0 10px 26px rgba(0, 0, 0, 0.3);
+  }
+  65% {
+    box-shadow:
+      -1px 0 0 var(--glitch-c-soft), 1px 0 0 var(--glitch-m-soft),
+      inset 2px 0 0 var(--accent), 0 10px 26px rgba(0, 0, 0, 0.3);
+  }
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.055),
+      inset 2px 0 0 rgba(34, 211, 238, 0.4),
+      0 10px 26px rgba(0, 0, 0, 0.3);
+  }
+}
+
+html:root[data-theme="dark"] .home-metrics .hm {
+  animation: card-boot 460ms steps(5, end) 1;
+}
+html:root[data-theme="dark"] .home-metrics .hm:nth-child(2) { animation-delay: 60ms; }
+html:root[data-theme="dark"] .home-metrics .hm:nth-child(3) { animation-delay: 120ms; }
+html:root[data-theme="dark"] .home-metrics .hm:nth-child(4) { animation-delay: 180ms; }
+
+/* 悬停：左线转青 + 1px 色差张开 + 玻璃上浮。整套 UI 的"故障色"
+   只在这一次交互里出现，其余时间安静。 */
+html:root[data-theme="dark"] .hm:hover:not(.static) {
+  background-color: var(--glass-raised);
+  border-color: var(--glass-line-hi);
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    -1px 0 0 var(--glitch-c-soft),
+    1px 0 0 var(--glitch-m-soft),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 16px 34px rgba(0, 0, 0, 0.42);
+}
+
+/* 面板：常规玻璃卡，靠内高光分层，不加强调线（不可点，不该有交互暗示） */
+html:root[data-theme="dark"] .home-panel,
+html:root[data-theme="dark"] .dash-panel,
+html:root[data-theme="dark"] .card {
+  background: var(--glass-panel);
+  border: 1px solid var(--glass-line);
+}
+
+html:root[data-theme="dark"] .home-phd,
+html:root[data-theme="dark"] .dash-panel .panel-hd {
+  border-bottom: 1px solid var(--glass-line);
+}
+
+/* 面板内的行：悬停时右侧透出一道青边，表示"这一行接住了指针" */
+html:root[data-theme="dark"] .home-row:hover,
+html:root[data-theme="dark"] .dash-panel .panel-row:hover {
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+/* ── 主按钮修复（原皮肤遗留 bug）──
+   hacker.css 里这两条特异度完全一样，都是 (0,3,2)：
+     :723  html:root[data-theme="dark"] button.primary        { background: var(--accent) }
+     :778  html:root[data-theme="dark"] .home-actions button  { background: var(--surface) }
+   同特异度下"后写的赢"，所以 778 盖掉了 723 —— 概览页的主按钮被降级成
+   --surface 底，但它的 color 仍是 --accent-ink（近黑）→ 深底深字，几乎不可见。
+   上一版配色里主按钮和容器按钮都是暗绿，差异小，所以一直没暴露。
+   这里补一条更具体的把它抢回来。 */
+html:root[data-theme="dark"] .home-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.2);
+}
+html:root[data-theme="dark"] .home-actions button.primary:hover:not(:disabled) {
+  background: #67e8f9;
+  border-color: #67e8f9;
+  color: var(--accent-ink);
+  box-shadow: 0 0 22px rgba(34, 211, 238, 0.38);
+}
+
+/* ============================================================
+   4. 浮层 —— 弹窗 / 右键菜单 / 命令面板 / 提示条
+   压在最上层，用更重的模糊 + 更强投影建立"离玻璃更远"的深度
+   ============================================================ */
+
+html:root[data-theme="dark"] .dlg,
+html:root[data-theme="dark"] .ctx,
+html:root[data-theme="dark"] .palette,
+html:root[data-theme="dark"] .toast {
+  background: var(--glass-raised);
+  border: 1px solid var(--glass-line-hi);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-sat));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    -1px 0 0 var(--glitch-c-soft),
+    1px 0 0 var(--glitch-m-soft),
+    0 22px 60px rgba(0, 0, 0, 0.6);
+}
+
+html:root[data-theme="dark"] .dlg-foot {
+  border-top: 1px solid var(--glass-line);
+}
+
+/* 遮罩：让下层玻璃失焦，浮层才有"被举起"的感觉 */
+html:root[data-theme="dark"] .mask,
+html:root[data-theme="dark"] .palette-mask {
+  background: rgba(6, 9, 14, 0.52);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+/* 命令面板选中项。
+   原来是"左 2px 青 + 右 2px 满不透明度品红"，想做青/品红对开。
+   但色差（chromatic aberration）是"同一个边缘错开"的现象 —— 两条边
+   一左一右根本读不出错位，只读成"这个框有两个颜色的边"。而且它跟
+   标签下划线、侧栏指示条一起，把"选中"这件事全交给了品红，
+   而 --glitch-m 的定义是"不承载语义"。这里改回全站统一的焦点语言：
+   青 + 左内边缘，跟 tbody tr.selected / .sess-item.active 一致。 */
+html:root[data-theme="dark"] .palette-item.active,
+html:root[data-theme="dark"] .palette-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ============================================================
+   5. 登录门 —— .lx-card 原本也是 backdrop-filter:none
+   ============================================================ */
+
+html:root[data-theme="dark"] .lx-card {
+  background: var(--glass-raised);
+  border: 1px solid var(--glass-line-hi);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-sat));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    -1px 0 0 var(--glitch-c-soft),
+    1px 0 0 var(--glitch-m-soft),
+    var(--shadow-float);
+}
+
+/* ============================================================
+   6. 故障色 —— 只给"正在发生变化"的东西
+   ============================================================ */
+
+/* 失同步：玻璃壳在事件瞬间短暂色散，随后稳定。
+   每个关键帧都带上基底投影，避免动画期间丢掉深度。 */
+@keyframes glass-desync {
+  0% {
+    box-shadow:
+      -1px 0 0 var(--glitch-c-soft), 1px 0 0 var(--glitch-m-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 14px 34px rgba(0, 0, 0, 0.34);
+  }
+  28% {
+    box-shadow:
+      -2px 0 0 var(--glitch-c-soft), 2px 0 0 var(--glitch-m-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 14px 34px rgba(0, 0, 0, 0.34);
+  }
+  52% {
+    box-shadow:
+      2px 0 0 var(--glitch-m-soft), -2px 0 0 var(--glitch-c-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 14px 34px rgba(0, 0, 0, 0.34);
+  }
+  100% {
+    box-shadow:
+      -1px 0 0 var(--glitch-c-soft), 1px 0 0 var(--glitch-m-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 14px 34px rgba(0, 0, 0, 0.34);
+  }
+}
+
+/* 激活的卡面（指标卡被点开时）播一次失同步 */
+html:root[data-theme="dark"] .hm:active:not(.static) {
+  animation: glass-desync var(--glitch-dur) steps(4, end) 1;
+}
+
+/* 实时通道：绿点呼吸，容器保持安静。以前这里整个芯片是绿的，
+   一屏只有一个"活"的信号，不该用掉整块填充色。 */
+html:root[data-theme="dark"] .conn-chip.is-live,
+html:root[data-theme="dark"] .hm-link.is-live {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--glass-line);
+}
+
+/* 选中行：行首一条青，不是每格都描边。
+   11 列各描一条青一条品红 = 22 条彩色竖线，那是噪点不是设计。 */
+html:root[data-theme="dark"] .sess-table tbody tr.selected td {
+  box-shadow: none;
+}
+html:root[data-theme="dark"] .sess-table tbody tr.selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+html:root[data-theme="dark"] .sess-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ── "我在哪"这三处（页签 / 侧栏 / 命令面板）统一用青 ──
+   原来这里是青→品红的渐变，配上命令面板那条品红内边，等于把"选中"
+   整个交给了品红。两个问题：
+     1. --glitch-m 的定义是"不承载语义，只表示显示正在响应"。可是
+        标签下划线和侧栏指示条是全站最重要的状态 —— 用 3px 宽的渐变
+        来编码它，品红那半段几乎占满，青的那半段看不见；
+     2. #ff2d95（品红）和 --danger #ff4d5e 是相邻色相，3px 宽、扫一眼
+        分不出来。之前就是因为"红色兼当选中色"会让操作员误读，
+        才把红从选中态里拿掉的 —— 品红又会把这个坑踩回来。
+   故障色本身不删，只是挪回它该在的地方：表面边缘的 1px 色差
+   （见上面 .dlg/.ctx/.palette 那组 box-shadow），以及空态标记。
+   用户要的是"故障色的卡面"，不是"故障色的导航"。 */
+html:root[data-theme="dark"] .ops-tab.active::after {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
+  opacity: 0.9;
+}
+
+html:root[data-theme="dark"] .rail .rail-item.active::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+
+/* ============================================================
+   7. 数据区 —— 明确回退为不透明，守住正文对比度
+   ============================================================ */
+
+html:root[data-theme="dark"] .sess-table-wrap,
+html:root[data-theme="dark"] .table-wrap,
+html:root[data-theme="dark"] .sess-list,
+html:root[data-theme="dark"] .term,
+html:root[data-theme="dark"] .term-out {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html:root[data-theme="dark"] .sess-table th {
+  background: var(--th-bg);
+}
+
+/* ============================================================
+   8. 降级 —— 无 backdrop-filter 支持时回到实心底，别变成半透明糊
+   ============================================================ */
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html:root[data-theme="dark"] .rail { background: #131821 !important; }
+  html:root[data-theme="dark"] .ops-top,
+  html:root[data-theme="dark"] .ops-tabs,
+  html:root[data-theme="dark"] .ops-status { background: var(--surface); }
+  html:root[data-theme="dark"] .home-panel,
+  html:root[data-theme="dark"] .dash-panel,
+  html:root[data-theme="dark"] .card,
+  html:root[data-theme="dark"] .hm { background-color: var(--surface-2); }
+  html:root[data-theme="dark"] .dlg,
+  html:root[data-theme="dark"] .ctx,
+  html:root[data-theme="dark"] .palette,
+  html:root[data-theme="dark"] .toast,
+  html:root[data-theme="dark"] .lx-card { background: var(--panel-elevated); }
+}
+
+/* ============================================================
+   9. 减少动态 —— 关掉失同步与上浮，保留静态色差边
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  html:root[data-theme="dark"] .hm:active:not(.static),
+  html:root[data-theme="dark"] .home-metrics .hm {
+    animation: none;
+  }
+  html:root[data-theme="dark"] .hm:hover:not(.static) {
+    box-shadow:
+      inset 2px 0 0 var(--accent),
+      -1px 0 0 var(--glitch-c-soft),
+      1px 0 0 var(--glitch-m-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+}

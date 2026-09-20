@@ -1,0 +1,8 @@
+extender_type: "service"
+extender_file: "topology.so"
+
+service_name: "topology"
+service_config: |
+  # 注册 <Teamserver.endpoint><api_route>/graph（GET 读 / POST 写）。
+  # 最终 URL ≈ https://<host>:<port>/api/topology/graph
+  api_route: "/topology"

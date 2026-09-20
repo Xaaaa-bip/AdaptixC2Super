@@ -1,0 +1,9 @@
+all: clean
+	@ echo "    * Building listener_gopher_tcp plugin"
+	@ mkdir dist
+	@ cp config.yaml ax_config.axs ./dist/
+	@ go build -buildmode=plugin -ldflags="-s -w" -o ./dist/listener_gopher_tcp.so pl_main.go pl_transport.go map.go pl_libp2p.go
+	@ echo "      done..."
+
+clean:
+	@ rm -rf dist

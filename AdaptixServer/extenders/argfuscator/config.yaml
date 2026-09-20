@@ -1,0 +1,12 @@
+extender_type: "service"
+extender_file: "argfuscator.so"
+
+service_name: "argfuscator"
+service_config: |
+  # 空 = 用 PATH 里的 pwsh；填绝对路径可钉死某个版本。
+  pwsh_path: ""
+  # 一次请求最多生成几个变体（每个变体 = 内存里一行 + 一次修饰器计算）。
+  max_variants: 5
+  # 单次 pwsh 调用的墙钟上限。实测冷启一次 1.4–3.5s（视命令复杂度），
+  # 60s 是给「操作员输了一条特别长的命令」留的余量，不是常态。
+  timeout_sec: 60

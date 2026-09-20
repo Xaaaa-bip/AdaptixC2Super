@@ -1,0 +1,25 @@
+extender_type: "service"
+extender_file: "vnc.so"
+ax_file: "ax_config.axs"
+
+service_name: "vnc"
+service_config: |
+  viewer_route: "/vnc/viewer"
+  stream_route: "/vnc/stream"
+  input_route: "/vnc/input"
+  api_route: "/vnc/api"
+  default_port: 40484
+  bind_host: "0.0.0.0"
+  agent_binary_name: "vnc_stream.exe"
+  stream_quality: 75
+  stream_interval_ms: 50
+  # 上游 /stream 的连接超时。0/缺省 ⇒ 10s。
+  stream_dial_timeout_sec: 10
+  # 上游 /stream 响应头读取超时。每个握手字节都要过一次 beacon 的 check-in，
+  # 所以必须 >= beacon 的 sleep。0/缺省 ⇒ 60s。
+  stream_header_timeout_sec: 60
+  # 「agent 侧 vnc_stream 还没起来」时的自愈窗口：观看端一连上就先被
+  # WSAECONNREFUSED 打断（beacon 上 vnc start 是任务，要 1~2 个 check-in
+  # 才能把 vnc_stream 跑起来），在此期间服务端会每 1s 重试一次，而不是
+  # 立刻 502 让前端显示「无画面」。0/缺省 ⇒ 45s。
+  stream_connect_retry_sec: 45

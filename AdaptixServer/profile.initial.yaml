@@ -1,0 +1,100 @@
+# =============================================================
+# AdaptixC2 1.5.5（二开版）初始运行配置
+# 启动：./adaptixserver -profile profile.initial.yaml [-debug] [-web]
+# 字段定义严格对应 AdaptixServer/core/profile/utils.go 结构体
+#
+# 使用前必做：
+#   1. 将全部 REPLACE_* 占位口令替换为强口令
+#   2. 确认 cwd 为 AdaptixServer/ 且 404page.html 位于 cwd
+#   3. extenders/ 下各插件需存在 config.yaml 与对应 .so
+# =============================================================
+
+Teamserver:
+  # 绑定地址。0.0.0.0=直接对外；建议 127.0.0.1 并由反向代理终结 TLS
+  interface: "0.0.0.0"
+  port: 8080
+  # 客户端连接路径前缀，登录 URL = https://host:port<endpoint>/login
+  endpoint: "/api"
+  password: "REPLACE_WITH_STRONG_PASS_2026!"
+  only_password: false            # false = 走 operators 逐人账号
+  operators:
+    admin: "REPLACE_ADMIN_PASS_2026!"
+    operator1: "REPLACE_OP1_PASS_2026!"
+  # manage_password: "REPLACE_MANAGE_PASS!"   # 可选：保护 AX 脚本安装/卸载接口
+  cert: "server.rsa.crt"
+  key: "server.rsa.key"
+  tls_autogen: true               # 证书缺失时自动生成自签名 PEM（在校验之前执行）
+  # tls_autogen_common_name: "cdn-gateway.your-domain.net"
+  # tls_autogen_organization: "Your Company Ltd"
+  # tls_autogen_dns_names: ["localhost"]
+  # tls_autogen_valid_days: 397
+  # tls_autogen_force: false
+  extenders:
+    - "extenders/beacon_listener_http/config.yaml"
+    - "extenders/beacon_listener_smb/config.yaml"
+    - "extenders/beacon_listener_tcp/config.yaml"
+    - "extenders/beacon_listener_dns/config.yaml"
+    - "extenders/beacon_listener_discord/config.yaml"
+    - "extenders/beacon_agent/config.yaml"
+    - "extenders/listener_kharon_http/config.yaml"
+    - "extenders/agent_kharon/config.yaml"
+    - "extenders/gopher_listener_tcp/config.yaml"
+    - "extenders/gopher_agent/config.yaml"
+    - "extenders/linux_listener_tcp/config.yaml"
+    - "extenders/linux_agent/config.yaml"
+    - "extenders/macos_agent/config.yaml"
+    - "extenders/hosting_service/config.yaml"
+    - "extenders/phishing_service/config.yaml"
+    - "extenders/webdelivery/config.yaml"
+    - "extenders/notifier/config.yaml"
+    - "extenders/vnc/config.yaml"
+  axscripts: []
+  # 如需 Extension-Kit（目录在仓库根，cwd=AdaptixServer 时用相对路径）：
+  # axscripts:
+  #   - "../Extension-Kit/extension-kit.axs"
+  access_token_live_hours: 12
+  refresh_token_live_hours: 168
+
+HttpServer:
+  # default_response_headers:
+  #   Server: "nginx"
+  # 仅作用于 POST /login 与 /refresh，按源 IP 滚动 1 分钟；0 = 关闭
+  # 二开：默认 0（关闭）。上游默认 5；按源 IP 计数 ⇒ NAT 后整个出口共用一个额度。
+  rate_limit:
+    login_requests_per_minute: 0
+  error:                          # 非法请求统一伪装的错误响应
+    status: 404
+    headers:
+      Content-Type: "text/html; charset=UTF-8"
+    page: "404page.html"
+  http:
+    max_header_bytes: 8192
+    read_header_timeout_sec: 30   # 防 slowloris；0=不限
+    read_timeout_sec: 0           # 长连接/大上传场景保持 0
+    write_timeout_sec: 0
+    idle_timeout_sec: 120
+    request_timeout_sec: 300
+    request_timeout_message: "504 Gateway Timeout"
+    disable_keep_alives: false
+    enable_http2: true
+    # trusted_proxies:            # 反代后使 X-Forwarded-For 参与限速取址
+    #   - "127.0.0.1"
+  tls:
+    min_version: "TLS1.2"
+    max_version: "TLS1.3"
+    prefer_server_cipher_suites: false
+    cipher_suites:
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+    client_auth: "none"           # none | request | require
+    # client_ca_file: "client-ca-chain.crt"   # request/require 必填且文件需存在
+
+Web:                              # 仅在 ./adaptixserver -web 时生效
+  interface: "0.0.0.0"
+  port: 8080                      # 与 Teamserver.port 相同 = 挂在同一 TLS 监听
+  path: "/"                       # 浏览器入口；不可与 endpoint 相同或互相嵌套
+  root: "web"                     # Web 控制台构建产物目录（相对 cwd）
+  spa: true
+  api_base: ""                    # 留空 = 同源 Teamserver.endpoint

@@ -1,0 +1,120 @@
+# Optional env overrides (applied after YAML): ADAPTIX_TEAMSERVER_PASSWORD[_FILE], ADAPTIX_TEAMSERVER_CERT,
+# ADAPTIX_TEAMSERVER_KEY, ADAPTIX_TEAMSERVER_INTERFACE, ADAPTIX_TEAMSERVER_MANAGE_PASSWORD. See main -help.
+
+Teamserver:
+  # Bind address. Use 127.0.0.1 and terminate TLS on a reverse proxy for a smaller exposure footprint.
+  interface: "0.0.0.0"
+  port: 8080
+  # Client "endpoint" is the URL path prefix; login URL = https://host:port<endpoint>/login (must match server).
+  endpoint: "/api"
+  # only_password=true：任意用户名 + 统一密码即可登录（多操作员聊天/协作）
+  password: "cnmd@qax666"
+  # true = only Teamserver.password is checked (any username). false = use operators: username -> password.
+  only_password: true
+  operators:
+    admin: "cnmd@qax666"
+  cert: "server.rsa.crt"
+  key: "server.rsa.key"
+  # Auto-create self-signed PEM if missing (random gateway-style CN + generic O/OU/C; no .example). Use your own domain:
+  tls_autogen: true
+  # tls_autogen_common_name: "api.yourcompany.com"
+  # tls_autogen_organization: "Your Company Ltd"
+  # tls_autogen_dns_names: ["cdn.yourcompany.com"]
+  # tls_autogen_force: false
+  # Or: ADAPTIX_TLS_AUTOGEN=1 ADAPTIX_TLS_AUTOGEN_CN=api.yourcompany.com ./AdaptixServer -profile profile.yaml
+  extenders:
+    - "extenders/beacon_listener_http/config.yaml"
+    - "extenders/beacon_listener_smb/config.yaml"
+    - "extenders/beacon_listener_tcp/config.yaml"
+    - "extenders/beacon_listener_ws/config.yaml"
+    - "extenders/beacon_listener_https_emu/config.yaml"
+    - "extenders/beacon_listener_dns/config.yaml"
+    - "extenders/beacon_listener_discord/config.yaml"
+    - "extenders/beacon_agent/config.yaml"
+    - "extenders/listener_kharon_http/config.yaml"
+    - "extenders/agent_kharon/config.yaml"
+    - "extenders/gopher_listener_tcp/config.yaml"
+    - "extenders/gopher_agent/config.yaml"
+    - "extenders/linux_listener_tcp/config.yaml"
+    - "extenders/linux_agent/config.yaml"
+    - "extenders/macos_agent/config.yaml"
+    - "extenders/hosting_service/config.yaml"
+    - "extenders/phishing_service/config.yaml"
+    - "extenders/webdelivery/config.yaml"
+    - "extenders/notifier/config.yaml"
+    - "extenders/vnc/config.yaml"
+    # 二开补入（上游 profile.yaml 未列）。beacon_listener_ws / beacon_listener_https_emu
+    # 已按同组插入上方 listener 段。arachne 为 enabled:false 的桥接骨架。
+    - "extenders/arachne_service/config.yaml"
+    - "extenders/argfuscator/config.yaml"
+    # 二开新增：拓扑图服务端持久化（ExtenderData KV + WS 广播，零核心 Go 改动）。
+    # ★ 加这一行必须**同时**给 central.profile 加 —— 跑的是哪份由 -profile 决定，
+    #   现网命令行是 `-profile central.profile`，只改本文件是彻底静默的。
+    - "extenders/topology/config.yaml"
+    # 二开新增：libp2p 中转控制面板（systemd unit 的遥控器，插件自己不拉进程）。
+    # ★ 同 topology：必须**两份都加** —— 只加本文件对 `-profile central.profile`
+    #   的现网实例完全无效（静默）。
+    - "extenders/relay/config.yaml"
+  axscripts:
+    - "Extension-Kit/extension-kit.axs"
+  # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.
+  access_token_live_hours: 12
+  refresh_token_live_hours: 168
+
+HttpServer:
+  # Optional: headers added to every HTTP response (e.g. Server). Omit sensitive product names.
+  # default_response_headers:
+  #   Server: "nginx"
+  # Per-IP limit for POST /login and /refresh (rolling 1-minute window). 0 = disabled.
+  # 二开：默认 0（关闭）。上游默认 5，实测在多人/反复登录的现场会把自己人也挡在门外
+  #       （按源 IP 计数，NAT 后整间办公室共用一个 IP），且失败只回 429，排查成本高。
+  rate_limit:
+    login_requests_per_minute: 0
+  error:
+    status: 404
+    headers:
+      Content-Type: "text/html; charset=UTF-8"
+    page: "404page.html"
+  http:
+    max_header_bytes: 8192
+    # Max time to read request headers (slowloris / stuck clients). 0 = no limit (not recommended on exposed hosts).
+    read_header_timeout_sec: 30
+    # Whole-request read/write timeouts on the TCP connection. 0 = unlimited; keep 0 if you rely on long-lived WebSocket or very large uploads.
+    read_timeout_sec: 0
+    write_timeout_sec: 0
+    # Close idle keep-alive connections after this many seconds. 0 = no idle limit.
+    idle_timeout_sec: 120
+    request_timeout_sec: 300
+    request_timeout_message: "504 Gateway Timeout"
+    disable_keep_alives: false
+    enable_http2: true
+    # When behind a reverse proxy, list CIDRs that may send X-Forwarded-For so rate limits use the real client IP.
+    # trusted_proxies:
+    #   - "127.0.0.1"
+    #   - "10.0.0.0/8"
+  tls:
+    min_version: "TLS1.2"
+    max_version: "TLS1.3"
+    prefer_server_cipher_suites: false
+    # Optional mTLS for HTTPS teamserver clients: none | request | require. PEM bundle for issuing CAs:
+    # client_auth: require
+    # client_ca_file: "client-ca-chain.crt"
+    # ECDHE-only (no TLS_RSA_*): forward secrecy for TLS 1.2. TLS 1.3 ignores this list.
+    cipher_suites:
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+
+# Integrated Web console (only when started with: ./adaptixserver -web)
+# Browser entry: https://<interface>:<port><path>
+Web:
+  interface: "0.0.0.0"
+  port: 8080
+  # Console entry path, e.g. "/" or "/cnmbzxc"
+  path: "/"
+  # vite build output directory (relative to process cwd; use dist/web when cwd=dist)
+  root: "web"
+  spa: true
+  # Login form default API base; empty = same-origin Teamserver.endpoint
+  api_base: ""

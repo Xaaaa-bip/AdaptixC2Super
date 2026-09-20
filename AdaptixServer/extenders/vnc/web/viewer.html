@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptix VNC Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif;
+       display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+           background: #16213e; border-bottom: 1px solid #0f3460; flex-shrink: 0; }
+#toolbar button { background: #0f3460; color: #e0e0e0; border: 1px solid #1a508b;
+    padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+#toolbar button:hover { background: #1a508b; }
+#toolbar button.active { background: #e94560; border-color: #e94560; }
+#toolbar select { background: #0f3460; color: #e0e0e0; border: 1px solid #1a508b;
+    padding: 6px 10px; border-radius: 4px; font-size: 13px; }
+#toolbar label { font-size: 12px; color: #a0a0a0; margin-left: 8px; }
+#toolbar input[type=range] { width: 100px; accent-color: #e94560; }
+#status { font-size: 12px; color: #a0a0a0; margin-left: auto; display: flex; align-items: center; gap: 8px; }
+#status .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+#status .dot.live { background: #4ecca3; }
+#status .dot.dead { background: #e94560; }
+#container { flex: 1; display: flex; justify-content: center; align-items: center;
+             background: #0a0a1a; position: relative; overflow: hidden; }
+#screen { max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; }
+#screen.waiting { opacity: 0.3; }
+#placeholder { position: absolute; color: #555; font-size: 18px; pointer-events: none; }
+#input-mode { font-size: 11px; padding: 2px 8px; border-radius: 3px; background: #0f3460; }
+#fps { color: #4ecca3; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+    <button id="btn-connect" onclick="connect()">Connect</button>
+    <button id="btn-disconnect" onclick="disconnect()" disabled>Disconnect</button>
+    <select id="screen-select" onchange="switchScreen(this.value)" disabled>
+        <option value="0">Screen 0</option>
+    </select>
+    <label>Quality:</label>
+    <input type="range" id="quality" min="10" max="95" value="75" onchange="setQuality(this.value)">
+    <span id="quality-val">75</span>
+    <label>Input:</label>
+    <select id="input-mode-sel" onchange="setInputMode(this.value)">
+        <option value="view">View Only</option>
+        <option value="control">Full Control</option>
+    </select>
+    <span id="input-mode">View</span>
+    <div id="status">
+        <span id="fps">-- fps</span>
+        <span class="dot dead" id="status-dot"></span>
+        <span id="status-text">Disconnected</span>
+    </div>
+</div>
+<div id="container">
+    <img id="screen" class="waiting" alt="VNC Stream" src="">
+    <div id="placeholder">Click Connect to start viewing</div>
+</div>
+
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const sessionId = urlParams.get('session') || '';
+const localPort = urlParams.get('local') || '';
+const proxyQuery = sessionId ? ('session=' + encodeURIComponent(sessionId)) : ('local=' + encodeURIComponent(localPort));
+const routeBase = window.location.pathname.replace(/\/viewer\/?$/, '');
+const streamUrl = routeBase + '/stream?' + proxyQuery;
+const inputUrl = routeBase + '/input?' + proxyQuery;
+
+let inputMode = 'view';
+let streamTimer = null;
+let frameCount = 0;
+let fpsTimer = null;
+let lastFrameTime = 0;
+
+function $(id) { return document.getElementById(id); }
+
+let abortController = null;
+
+function connect() {
+    const img = $('screen');
+    img.classList.remove('waiting');
+    $('placeholder').style.display = 'none';
+    $('btn-connect').disabled = true;
+    $('btn-disconnect').disabled = false;
+    $('screen-select').disabled = false;
+    setStatus('live', 'Connecting...');
+    frameCount = 0;
+    fpsTimer = setInterval(updateFps, 1000);
+    startMjpegStream();
+}
+
+function disconnect() {
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
+    }
+    const img = $('screen');
+    img.classList.add('waiting');
+    img.src = '';
+    $('btn-connect').disabled = false;
+    $('btn-disconnect').disabled = true;
+    $('screen-select').disabled = true;
+    $('placeholder').style.display = 'block';
+    setStatus('dead', 'Disconnected');
+    clearInterval(fpsTimer);
+    $('fps').textContent = '-- fps';
+}
+
+function startMjpegStream() {
+    // Use fetch + ReadableStream to manually parse MJPEG multipart stream.
+    // This works reliably over HTTP/2 where <img src="mjpeg"> may not.
+    abortController = new AbortController();
+    const url = streamUrl + '&t=' + Date.now();
+
+    fetch(url, { signal: abortController.signal })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Stream response: ' + response.status);
+            }
+            setStatus('live', 'Connected');
+            const reader = response.body.getReader();
+            let buffer = new Uint8Array(0);
+
+            function pump() {
+                return reader.read().then(({ done, value }) => {
+                    if (done) {
+                        setStatus('dead', 'Stream ended');
+                        scheduleReconnect();
+                        return;
+                    }
+
+                    // Append new data to buffer
+                    const newBuf = new Uint8Array(buffer.length + value.length);
+                    newBuf.set(buffer);
+                    newBuf.set(value, buffer.length);
+                    buffer = newBuf;
+
+                    // Extract JPEG frames from multipart stream
+                    extractFrames();
+                    return pump();
+                }).catch(err => {
+                    if (err.name === 'AbortError') return;
+                    console.error('Stream read error:', err);
+                    setStatus('dead', 'Stream error');
+                    scheduleReconnect();
+                });
+            }
+
+            function extractFrames() {
+                // Look for JPEG start (FF D8) and end (FF D9) markers
+                while (true) {
+                    const start = findJpegStart(buffer);
+                    if (start === -1) {
+                        // No JPEG start found; keep only last 2 bytes (might be partial marker)
+                        if (buffer.length > 4096) {
+                            buffer = buffer.slice(buffer.length - 2);
+                        }
+                        break;
+                    }
+                    const end = findJpegEnd(buffer, start + 2);
+                    if (end === -1) break; // Incomplete frame, wait for more data
+
+                    // Extract the JPEG frame
+                    const frame = buffer.slice(start, end + 2);
+                    buffer = buffer.slice(end + 2);
+
+                    // Display the frame
+                    displayFrame(frame);
+                }
+            }
+
+            return pump();
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            console.error('Stream fetch error:', err);
+            setStatus('dead', '连接失败：agent 流未就绪或隧道无响应');
+            $('placeholder').style.display = 'block';
+            $('placeholder').textContent = '连接失败。请确认已下发 vnc start，并等待 agent 上传/启动 vnc_stream 后再重试。';
+            scheduleReconnect();
+        });
+}
+
+function findJpegStart(buf) {
+    for (let i = 0; i < buf.length - 1; i++) {
+        if (buf[i] === 0xFF && buf[i + 1] === 0xD8) return i;
+    }
+    return -1;
+}
+
+function findJpegEnd(buf, offset) {
+    for (let i = offset; i < buf.length - 1; i++) {
+        if (buf[i] === 0xFF && buf[i + 1] === 0xD9) return i;
+    }
+    return -1;
+}
+
+function displayFrame(jpegData) {
+    const blob = new Blob([jpegData], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    const img = $('screen');
+    const oldSrc = img.src;
+    img.src = url;
+    if (oldSrc && oldSrc.startsWith('blob:')) {
+        URL.revokeObjectURL(oldSrc);
+    }
+    frameCount++;
+    lastFrameTime = Date.now();
+}
+
+function scheduleReconnect() {
+    if (!$('btn-disconnect').disabled) {
+        setTimeout(() => {
+            if (!$('btn-disconnect').disabled) {
+                setStatus('live', 'Reconnecting...');
+                startMjpegStream();
+            }
+        }, 2000);
+    }
+}
+
+// Auto-connect when opened from AdaptixWeb (?auto=1 or session/local present)
+(function autoConnectOnLoad() {
+    const auto = urlParams.get('auto') === '1' || !!sessionId || !!localPort;
+    if (!auto) return;
+    if (!sessionId && !localPort) {
+        setStatus('dead', '缺少 session/local 参数');
+        return;
+    }
+    // slight delay so layout settles inside iframe
+    setTimeout(function () {
+        try { connect(); } catch (e) { console.error(e); }
+    }, 300);
+})();
+
+function switchScreen(index) {
+    if (!sessionId) return;
+    fetch(routeBase + '/api/screen?session=' + sessionId + '&screen=' + index, { method: 'POST' })
+        .catch(e => console.error('Switch screen error:', e));
+}
+
+function setQuality(val) {
+    $('quality-val').textContent = val;
+    if (!sessionId) return;
+    fetch(routeBase + '/api/quality?session=' + sessionId + '&quality=' + val, { method: 'POST' })
+        .catch(e => console.error('Set quality error:', e));
+}
+
+function setInputMode(mode) {
+    inputMode = mode;
+    $('input-mode').textContent = mode === 'control' ? 'Control' : 'View';
+}
+
+function setStatus(state, text) {
+    const dot = $('status-dot');
+    dot.className = 'dot ' + state;
+    $('status-text').textContent = text;
+}
+
+function updateFps() {
+    $('fps').textContent = frameCount + ' fps';
+    frameCount = 0;
+}
+
+// Mouse event handlers
+$('screen').addEventListener('mousedown', function(e) {
+    if (inputMode !== 'control') return;
+    sendInput('mouse', { action: 'down', button: e.button, x: e.offsetX, y: e.offsetY,
+        width: this.naturalWidth, height: this.naturalHeight,
+        clientWidth: this.clientWidth, clientHeight: this.clientHeight });
+    e.preventDefault();
+});
+
+$('screen').addEventListener('mouseup', function(e) {
+    if (inputMode !== 'control') return;
+    sendInput('mouse', { action: 'up', button: e.button, x: e.offsetX, y: e.offsetY,
+        width: this.naturalWidth, height: this.naturalHeight,
+        clientWidth: this.clientWidth, clientHeight: this.clientHeight });
+    e.preventDefault();
+});
+
+$('screen').addEventListener('mousemove', function(e) {
+    if (inputMode !== 'control') return;
+    if (!(e.buttons & 1)) return; // only when button held
+    sendInput('mouse', { action: 'move', x: e.offsetX, y: e.offsetY,
+        width: this.naturalWidth, height: this.naturalHeight,
+        clientWidth: this.clientWidth, clientHeight: this.clientHeight });
+});
+
+$('screen').addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+// Scroll wheel
+$('screen').addEventListener('wheel', function(e) {
+    if (inputMode !== 'control') return;
+    sendInput('mouse', { action: 'wheel', delta: e.deltaY > 0 ? -120 : 120 });
+    e.preventDefault();
+}, { passive: false });
+
+// Keyboard event handlers
+document.addEventListener('keydown', function(e) {
+    if (inputMode !== 'control') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    sendInput('keyboard', { action: 'down', key: e.key, code: e.code, keyCode: e.keyCode,
+        ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey });
+    e.preventDefault();
+});
+
+document.addEventListener('keyup', function(e) {
+    if (inputMode !== 'control') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    sendInput('keyboard', { action: 'up', key: e.key, code: e.code, keyCode: e.keyCode,
+        ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey });
+    e.preventDefault();
+});
+
+function sendInput(type, data) {
+    fetch(inputUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: type, data: data })
+    }).catch(e => console.error('Input error:', e));
+}
+</script>
+</body>
+</html>

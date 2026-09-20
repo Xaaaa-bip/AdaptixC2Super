@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-density="comfortable">
+<head>
+<meta charset="UTF-8" />
+<title>Console Harness</title>
+<link rel="stylesheet" href="./theme.css" />
+<style>
+  /* 仅用于渲染台：把两个视图纵向排开，方便一次截全 */
+  html, body { height: auto !important; overflow: visible !important; }
+  body { margin: 0; }
+  .hx-frame { height: 900px; border-bottom: 4px solid #f0f; }
+  .hx-frame .ops { height: 900px; }
+  /* 登录页：.lx 在真身里是 100vh 的居中容器，渲染台给它一个固定视口 */
+  .hx-frame .lx { height: 900px; position: relative; overflow: hidden; }
+  .hx-label { position: absolute; z-index: 9999; font: 12px monospace; color: #f0f; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ 视图 1：概览 ═══════════ -->
+<div class="hx-frame">
+<div class="ops" data-theme="dark" data-density="comfortable">
+  <div class="ink-scape" aria-hidden>
+    <div class="ink-wash ink-wash-a"></div>
+    <div class="ink-wash ink-wash-b"></div>
+    <div class="ink-ridge"></div>
+    <div class="ink-mist"></div>
+  </div>
+
+  <nav class="rail" aria-label="主导航" data-rail="ink">
+    <button type="button" class="rail-brand"><span class="rail-mark" aria-hidden>{'_'}</span><span class="rail-brand-txt">4-T34M</span></button>
+    <div class="rail-section">
+      <button type="button" class="rail-item active"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10.5V20h4v-5h4v5h4v-9.5"/></svg></span><span class="rail-label">概览</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="12" rx="1.5"/><path d="M8 20h8M12 16.5V20"/></svg></span><span class="rail-label">主机</span><span class="rail-badge">7</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="2.5"/><path d="M6.2 6.2a8.2 8.2 0 0 1 0 11.6M17.8 6.2a8.2 8.2 0 0 0 0 11.6"/></svg></span><span class="rail-label">监听器</span><span class="rail-badge">3</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M13 3L5 13h6l-1 8 9-12h-6l0-6z"/></svg></span><span class="rail-label">载荷</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/></svg></span><span class="rail-label">任务</span></button>
+    </div>
+    <div class="rail-gap"></div>
+    <div class="rail-section muted-sec">
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="10" width="16" height="9" rx="1.5"/><path d="M8 10V8a4 4 0 0 1 8 0v2"/></svg></span><span class="rail-label">凭据</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/></svg></span><span class="rail-label">目标</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01" stroke-width="2.4"/></svg></span><span class="rail-label">日志</span></button>
+    </div>
+    <div class="rail-foot">
+      <button type="button" class="rail-item"><span class="rail-ico" aria-hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 8H6.5A2.5 2.5 0 1 1 9 5.5V8h6V5.5A2.5 2.5 0 1 1 17.5 8H16"/><path d="M8 16H6.5A2.5 2.5 0 1 0 9 18.5V16h6v2.5a2.5 2.5 0 1 0 2.5-2.5H16"/><path d="M9 8h6M9 16h6"/></svg></span><span class="rail-label">命令</span></button>
+    </div>
+  </nav>
+
+  <div class="ops-main">
+    <header class="ops-top">
+      <div class="ops-top-left"><div class="ops-title"><span class="ops-page">概览</span></div></div>
+      <div class="ops-top-center"><button type="button" class="ops-search"><span>搜索</span><kbd class="kbd">⌘K</kbd></button></div>
+      <div class="ops-top-right">
+        <div class="ops-pills">
+          <span class="ops-pill"><span class="signal">7</span><span class="dim">/12</span></span>
+          <span class="ops-pill dim">3 监听</span>
+          <span class="conn-chip is-live"><span class="conn-dot"></span><span class="conn-label"><span class="conn-title">实时</span><span class="conn-sub">WebSocket</span></span></span>
+        </div>
+        <span class="ops-user">admin</span>
+        <button type="button" class="ghost ico">↻</button>
+        <button type="button" class="ghost">退出</button>
+      </div>
+    </header>
+
+    <div class="ops-tabs">
+      <button type="button" class="ops-tab active">概览</button>
+      <button type="button" class="ops-tab">主机<span class="x">×</span></button>
+      <button type="button" class="ops-tab">监听器<span class="x">×</span></button>
+    </div>
+
+    <div class="ops-body content">
+      <div class="home">
+        <header class="home-head">
+          <div>
+            <h1 class="home-title">概览</h1>
+            <p class="home-desc">7 台主机在线，可直接进入会话。</p>
+          </div>
+          <div class="home-actions">
+            <button type="button" class="primary">主机</button>
+            <button type="button">一键投递</button>
+            <button type="button">生成载荷</button>
+            <button type="button">监听器</button>
+          </div>
+        </header>
+
+        <div class="home-metrics">
+          <button type="button" class="hm"><span class="hm-l">主机</span><span class="hm-n">12</span><span class="hm-s"><em>7</em> 在线</span></button>
+          <button type="button" class="hm"><span class="hm-l">监听</span><span class="hm-n">3</span><span class="hm-s">回调入口</span></button>
+          <button type="button" class="hm"><span class="hm-l">任务</span><span class="hm-n">148</span><span class="hm-s">4 进行中 · 下载 23</span></button>
+          <div class="hm static hm-link is-live"><span class="hm-l">通道</span><div class="hm-conn"><span class="conn-chip is-live"><span class="conn-dot"></span><span class="conn-label"><span class="conn-title">实时</span><span class="conn-sub">事件即时推送</span></span></span></div><span class="hm-s">事件即时推送</span></div>
+        </div>
+
+        <div class="home-grid">
+          <section class="home-panel wide">
+            <div class="home-phd"><h2>最近主机</h2><button type="button" class="ghost">查看全部</button></div>
+            <div class="home-rows">
+              <button type="button" class="home-row"><span class="sdot on"></span><div class="meta"><div class="name">DESKTOP-4F2K1</div><div class="sub mono">10.0.12.44 · CORP\li.wei</div></div><span class="time mono">12s</span></button>
+              <button type="button" class="home-row"><span class="sdot on"></span><div class="meta"><div class="name">srv-db-01</div><div class="sub mono">172.16.8.9 · root</div></div><span class="time mono">34s</span></button>
+              <button type="button" class="home-row"><span class="sdot off"></span><div class="meta"><div class="name">WIN-APP-07</div><div class="sub mono">192.168.30.12 · svc_app</div></div><span class="time mono">4h</span></button>
+            </div>
+          </section>
+          <section class="home-panel">
+            <div class="home-phd"><h2>监听器</h2><button type="button" class="ghost">管理</button></div>
+            <div class="home-rows">
+              <button type="button" class="home-row"><span class="pill">Running</span><div class="meta"><div class="name mono">https-cdn</div><div class="sub">0.0.0.0:443</div></div></button>
+              <button type="button" class="home-row"><span class="pill">Running</span><div class="meta"><div class="name mono">smb-pipe</div><div class="sub">0.0.0.0:445</div></div></button>
+            </div>
+          </section>
+          <section class="home-panel">
+            <div class="home-phd"><h2>动态</h2><button type="button" class="ghost">日志</button></div>
+            <div class="home-rows">
+              <button type="button" class="home-row"><span class="pill ok">完成</span><div class="meta"><div class="name mono">whoami /all</div><div class="sub mono">2m</div></div></button>
+              <button type="button" class="home-row"><span class="pill warn">执行</span><div class="meta"><div class="name mono">lsass.dmp</div><div class="sub mono">5m</div></div></button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <footer class="ops-status">
+      <span class="conn-chip is-live"><span class="conn-dot"></span><span class="conn-label"><span class="conn-title">实时</span><span class="conn-sub">WebSocket</span></span></span>
+      <span class="vsep"></span>
+      <span class="ops-status-counts">7 在线 · 3 监听 · 148 任务</span>
+      <span class="spacer"></span>
+      <span class="dim">⌘K 命令 · G H 主机 · ? 帮助</span>
+    </footer>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════ 视图 2：主机表 ═══════════ -->
+<div class="hx-frame">
+<div class="ops" data-theme="dark" data-density="comfortable">
+  <div class="ink-scape" aria-hidden>
+    <div class="ink-wash ink-wash-a"></div>
+    <div class="ink-wash ink-wash-b"></div>
+    <div class="ink-ridge"></div>
+    <div class="ink-mist"></div>
+  </div>
+  <nav class="rail" data-rail="ink">
+    <div class="rail-section">
+      <button type="button" class="rail-item"><span class="rail-ico">◈</span><span class="rail-label">概览</span></button>
+      <button type="button" class="rail-item active"><span class="rail-ico">▤</span><span class="rail-label">主机</span><span class="rail-badge">7</span></button>
+      <button type="button" class="rail-item"><span class="rail-ico">◎</span><span class="rail-label">监听器</span></button>
+    </div>
+    <div class="rail-gap"></div>
+  </nav>
+
+  <div class="ops-main">
+    <header class="ops-top">
+      <div class="ops-top-left"><div class="ops-title">
+        <span class="ops-page">主机</span>
+        <span class="ops-target"><span class="sdot on"></span><span class="mono">DESKTOP-4F2K1</span><span class="mono dim"> · 10.0.12.44</span></span>
+      </div></div>
+      <div class="ops-top-center"><button type="button" class="ops-search"><span>搜索</span><kbd class="kbd">⌘K</kbd></button></div>
+      <div class="ops-top-right"><div class="ops-pills"><span class="ops-pill"><span class="signal">7</span><span class="dim">/12</span></span></div><span class="ops-user">admin</span><button type="button" class="ghost">退出</button></div>
+    </header>
+    <div class="ops-tabs">
+      <button type="button" class="ops-tab">概览</button>
+      <button type="button" class="ops-tab active">主机<span class="x">×</span></button>
+    </div>
+
+    <div class="ops-body content with-term">
+      <div class="sess">
+        <aside class="sess-list">
+          <div class="sess-list-hd">
+            <div><div class="sess-k">主机</div><div class="sess-count"><span class="signal">7</span><span class="dim"> / 12</span></div></div>
+            <button type="button" class="ghost" style="height:28px">刷新</button>
+          </div>
+          <div class="sess-list-bd">
+            <button type="button" class="sess-g"><span>▾</span><span>在线</span><span class="n">7</span></button>
+            <button type="button" class="sess-item active"><span class="sdot on"></span><div class="meta"><div class="name">DESKTOP-4F2K1</div><div class="ip mono">10.0.12.44</div></div></button>
+            <button type="button" class="sess-item"><span class="sdot on"></span><div class="meta"><div class="name">srv-db-01</div><div class="ip mono">172.16.8.9</div></div></button>
+            <button type="button" class="sess-g"><span>▾</span><span>离线</span><span class="n">5</span></button>
+            <button type="button" class="sess-item"><span class="sdot off"></span><div class="meta"><div class="name">WIN-APP-07</div><div class="ip mono">192.168.30.12</div></div></button>
+          </div>
+        </aside>
+
+        <section class="sess-main">
+          <div class="sess-bar">
+            <input class="sess-search" type="search" placeholder="搜索主机 / IP / 用户 / 标签" />
+            <label class="sess-check"><input type="checkbox" />仅在线</label>
+            <div class="sess-actions">
+              <span class="sess-sel mono">DESKTOP-4F2K1</span>
+              <span class="sep"></span>
+              <button>文件</button><button>进程</button><button>PTY</button><button>VNC</button>
+              <button class="danger">删除</button>
+            </div>
+          </div>
+          <div class="sess-table-wrap">
+            <table class="sess-table">
+              <thead><tr>
+                <th style="width:56px">状态</th><th>主机</th><th>用户</th><th>内网</th><th>外网</th>
+                <th>归属地</th><th>进程</th><th>系统</th><th>监听</th><th>心跳</th><th>标签</th>
+              </tr></thead>
+              <tbody>
+                <tr class="selected"><td><span class="sdot on"></span></td><td>DESKTOP-4F2K1</td><td>li.wei</td><td class="mono">10.0.12.44</td><td class="mono">203.0.113.7</td><td>中国 广东</td><td class="mono">4821</td><td>Win11 23H2</td><td class="mono">https-cdn</td><td class="mono">12s</td><td><span class="pill">财务</span></td></tr>
+                <tr><td><span class="sdot on"></span></td><td>srv-db-01</td><td>root</td><td class="mono">172.16.8.9</td><td class="mono">203.0.113.31</td><td>中国 北京</td><td class="mono">1204</td><td>Ubuntu 22.04</td><td class="mono">smb-pipe</td><td class="mono">34s</td><td><span class="pill">核心</span></td></tr>
+                <tr><td><span class="sdot on"></span></td><td>WIN-DC-02</td><td>admin</td><td class="mono">10.0.0.5</td><td class="mono">203.0.113.88</td><td>中国 上海</td><td class="mono">903</td><td>Server 2019</td><td class="mono">https-cdn</td><td class="mono">1m</td><td><span class="pill">域控</span></td></tr>
+                <tr><td><span class="sdot off"></span></td><td>WIN-APP-07</td><td>svc_app</td><td class="mono">192.168.30.12</td><td class="mono">—</td><td>中国 浙江</td><td class="mono">—</td><td>Server 2016</td><td class="mono">—</td><td class="mono">4h</td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="term-resizer"></div>
+      <div class="term">
+        <div class="term-tabs"><span class="t active">DESKTOP-4F2K1 <span class="sdot on"></span></span></div>
+        <div class="term-out"><div class="term-line"><span class="dim">[12:04:11]</span> beacon checkin from 10.0.12.44</div><div class="term-line"><span class="ok">[+]</span> whoami /all → corp\li.wei</div></div>
+        <div class="term-in"><span class="term-prompt">&gt;</span> <input class="lx-input" placeholder="输入命令…" /></div>
+      </div>
+    </div>
+
+    <footer class="ops-status">
+      <span class="conn-chip is-live"><span class="conn-dot"></span><span class="conn-label"><span class="conn-title">实时</span><span class="conn-sub">WebSocket</span></span></span>
+      <span class="vsep"></span><span class="ops-status-counts">7 在线 · 3 监听 · 148 任务</span>
+    </footer>
+  </div>
+</div>
+</div>
+
+<!-- ===== 登录页 ===== -->
+<div class="hx-frame">
+  <div class="lx">
+    <div class="lx-ambient" aria-hidden></div>
+    <div class="ink-scape lx-scape" aria-hidden>
+      <div class="ink-wash ink-wash-a"></div>
+      <div class="ink-wash ink-wash-b"></div>
+      <div class="ink-ridge"></div>
+      <div class="ink-mist"></div>
+    </div>
+    <div class="lx-card">
+      <div class="lx-brand">
+        <div class="lx-mark" aria-hidden>_</div>
+        <div>
+          <div class="lx-name">4-T34M</div>
+          <div class="lx-sub">A-TEAM &middot; OPS CONSOLE</div>
+        </div>
+      </div>
+      <form class="lx-form">
+        <label class="lx-label">用户名</label>
+        <input class="lx-input" value="admin" readonly>
+        <label class="lx-label">密码</label>
+        <div class="lx-pass">
+          <input class="lx-input" type="password" value="hunter2hunter2" readonly>
+          <button type="button" class="lx-textbtn">显示</button>
+        </div>
+        <button type="button" class="lx-textbtn lx-adv">高级选项</button>
+        <div class="lx-advbox">
+          <input class="lx-input" value="https://154.198.162.34:38212" readonly>
+        </div>
+        <button class="lx-submit" type="submit">继续</button>
+        <div class="lx-err spacer"></div>
+      </form>
+      <div class="lx-foot">
+        <kbd>&#8984;</kbd><kbd>K</kbd>
+        <span>登录后可快速跳转</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

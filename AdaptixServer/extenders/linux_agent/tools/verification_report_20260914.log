@@ -1,0 +1,52 @@
+Gate 4 — 严格健壮性验证报告
+日期: 2026-09-14 (凌晨)
+服务器: root@154.198.162.34 ~/cc/run (adaptixserver + 5 listener)
+
+== 脚本化门禁结果 ==
+
+0a verify suite            PASS (85/85, 含 ARM64 段)
+0b 六传输 e2e 回归         PASS (5/5: TestHTTP/TestWS/TestHTTPS/TestWSS/gopher getuid 往返)
+0c matrix chain (Gate 3)   PASS (AXM_CHAIN_OK)
+gap1 重连风暴/退避         PASS (断服 30-40s: 重试间隔 3.5-4.2s 无洪泛; 重启后干净重连+roundtrip)
+gap2 轮换边界              PASS (AX_ROTATE_MS=3000: 17/17 间隔在 [1.2s, 9.0s] 窗内; 5000 时 6/6 在 [2,15]s)
+gap3 多 agent 并发         PASS (5/5 注册+往返, 响应无串线)
+gap4 加密边界              PASS (15B 小载荷 + 64KB 大输出 + 三连往返, 32B nogcm 路径)
+gap5 H2 周期图             PASS (18 连接事件, FFT peak/mean=1.86 < 5.0, 无主峰)
+gap6 H3/H4 熵              PASS (ChaCha20 合成密文 Shannon=7.9502, chi2=280.1, 不可区分)
+gap8 轮换内存              PASS (20 次轮换 VmRSS 456KB→456KB, growth=0)
+gap9 ARM64                 PASS (qemu-aarch64-static 15s 无崩溃, rc=124)
+gap12 JA4                  PASS (agent JA4.1 == t13d3112h2_e8f1e7e78f70_b26ce05bbdd6 == curl 基线)
+
+== 本阶段发现并修复的真 bug ==
+
+1. SIGPIPE 杀 agent: 零 libc 静态程序无 CRT 忽略 SIGPIPE, 服务器断连时写死 socket
+   直接杀死 agent (无任何错误路径)。修: _start_c 用 rt_sigaction(13, SIG_IGN)。
+   → 这是 gap1 的价值: 修复前杀服务器 15s agent 必死; 修复后断服存活+自动重连。
+2. ARM64 per-payload 生成链三个 bug (首次实跑暴露):
+   a. arch 大小写不匹配 ("ARM64" 不被 nativeCompiler 识别 → 产出 x64 ELF);
+   b. mbedtls AESCE 引用未定义符号 (aarch64 上 aes.o 引用 mbedtls_aesce_*,
+      vendor 无 aesce.c → 配置 #undef MBEDTLS_AESCE_C 走软件 AES);
+   c. explicit_bzero 为 glibc 符号 (-nostdlib 无 → mbedtls_glue.c 提供实现;
+      另加 -U_FORTIFY_SOURCE 消 __explicit_bzero_chk)。
+3. e2e/console 断言细节: ls 命令 axs 只收 path 参数 (-la 被拒 "path not found");
+   console 消息与 DB 任务记录的 a_text 不同源 (断言需匹配正确消息)。
+
+== 新增测试设施 ==
+
+tools/e2e.py (wait_registered_latest), tools/storm_sample.py,
+tools/reconnect_storm_test.sh, rotation_test.sh, multiagent_test.sh,
+crypto_edge_test.sh, periodogram_test.py, entropy_test.py, leak_test.sh,
+arm64_smoke_test.sh, LIVE_TEST_CHECKLIST.md, gate4.sh
+agent 测试旋钮: AX_ROTATE_MS / AX_TEST_LOG (timing.c, 扫 /proc/self/environ,
+生产无 env 时完全惰性); main.c connect/rotate/reconnect 事件接线。
+
+== 遗留手动清单 (LIVE_TEST_CHECKLIST.md) ==
+
+gap7  18 BOF 空/垃圾/超长参数韧性 — 未签收
+gap10 Phase 2 rootkit 对抗自检复验 — 未签收 (Phase 2 门已闸过)
+gap11 完整 operator 会话 60 分钟零掉线 — 未签收
+
+== 结论 ==
+脚本化门禁 12/12 全绿。手动清单 3 项待签收。按计划 Gate 4 要求
+"扩展版 verify + 新脚本测试 0 FAIL + JA4 干净 + 熵/周期图过 + 泄漏低于
+阈值 + 实测清单签收" —— 脚本部分全部达标, 手动部分见清单文件。

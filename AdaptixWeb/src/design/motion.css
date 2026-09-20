@@ -1,0 +1,58 @@
+/* 克制动效 — 山水太极 */
+
+.dot.on,
+.sdot.on {
+  background: var(--live) !important;
+  box-shadow: 0 0 0 3px var(--live-soft) !important;
+}
+
+.tree .sdot.on,
+.dash-panel .sdot.on,
+.term-tabs .sdot.on,
+.term-out .sdot.on,
+.sess-item .sdot.on,
+.home-row .sdot.on {
+  background: var(--live);
+  box-shadow: 0 0 0 3px var(--live-soft);
+}
+
+/* 避免对所有 button 做 scale（会晃表行/树项） */
+.rail-item:active,
+.ops-tab:active,
+button.primary:active:not(:disabled),
+.lx-submit:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.rail-item,
+.ops-tab,
+.ops-search,
+.sess-item,
+.home-row,
+button.primary,
+button.ghost,
+.lx-submit {
+  transition:
+    background-color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+    color 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.12s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.1s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  button:active:not(:disabled),
+  .rail-item:active,
+  .ops-tab:active {
+    transform: none;
+  }
+}

@@ -1,0 +1,8 @@
+# Response headers (Server, etc.) are set in the listener UI; avoid framework-specific values on real deployments.
+extender_type: "listener"
+extender_file: "listener_beacon_https_emu.so"
+ax_file: "ax_config.axs"
+
+listener_name: "BeaconHTTPS"
+listener_type: "external"
+protocol: "https"
