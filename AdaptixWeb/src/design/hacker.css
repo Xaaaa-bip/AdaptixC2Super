@@ -2777,7 +2777,7 @@ html:root[data-theme="dark"] .rail-mark::after { width: 5px; }
   50% { opacity: 0; }
 }
 
-/* ── 登录页品牌行：`> 4-T34M OPS CONSOLE▊` 整行逐字打出 ──────────────
+/* ── 登录页品牌行：`> Console▊` 整行逐字打出 ──────────────
    刻意**不叫** `.lx-mark`：本文件里有一组 `.lx-mark span{display:none
    !important}`（旧太极子元素留下的守卫），而本行要按 span 分段配色，
    套那个类会被整条藏掉。也刻意**不加框** —— 原来那圈深底 + 青边看着
@@ -2801,7 +2801,6 @@ html:root[data-theme="dark"] .rail-mark::after { width: 5px; }
   text-shadow: 0 0 8px rgba(34, 211, 238, .45);
 }
  .lx-brandline-prompt { margin-right: 4px; opacity: .72; }
- .lx-brandline-sub { color: var(--ink-3); text-shadow: none; }
 /* 光标挂在 typing 上，**不能**挂在 text 上：text 带 clip-path，
    会把子孙一起裁掉，光标整段消失。 */
  .lx-brandline-typing {

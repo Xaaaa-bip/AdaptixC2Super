@@ -57,21 +57,22 @@ export function Login() {
         <div className="ink-mist" />
       </div>
       <div className="lx-card">
-        {/* 品牌行：`> 4-T34M OPS CONSOLE▊` 整行由光标动画逐字打出
+        {/* 品牌行：`> Console▊` 整行由光标动画逐字打出
             （样式见 hacker.css 的 .lx-brandline*）。
             ★ 多一层 `.lx-brandline-typing` 是必需的：光标是它的 ::after，
             **不能**挂在做 clip-path 的 `.lx-brandline-text` 上 ——
             clip-path 会连子孙一起裁掉，光标会整段消失。
             ★ 刻意**不用** `.lx-mark`：hacker.css 里有一组针对 `.lx-mark span`
             的 `display:none !important`（旧太极子元素留下的守卫），而本行要按
-            span 分段配色，套那个类会被整条藏掉。 */}
+            span 分段配色，套那个类会被整条藏掉。
+            ★ 名字就是 `Console`，不再带任何前缀/后缀 —— 刻意留白的品牌字符串
+            容易被当成指纹（原来是 `4-T34M OPS CONSOLE`）。 */}
         <div className="lx-brand">
-          <div className="lx-brandline" role="img" aria-label="4-T34M OPS CONSOLE">
+          <div className="lx-brandline" role="img" aria-label="Console">
             <span className="lx-brandline-prompt">{'>'}</span>
             <span className="lx-brandline-typing">
               <span className="lx-brandline-text">
-                <span className="lx-brandline-name">4-T34M</span>{' '}
-                <span className="lx-brandline-sub">OPS CONSOLE</span>
+                <span className="lx-brandline-name">Console</span>
               </span>
             </span>
           </div>

@@ -535,9 +535,9 @@ export default function App() {
         <div className="ink-mist" />
       </div>
       <nav className="rail" aria-label="主导航" data-rail="ink">
-        <button type="button" className="rail-brand" onClick={() => go('dashboard')} title="4-T34M">
+        <button type="button" className="rail-brand" onClick={() => go('dashboard')} title="Console">
           <span className="rail-mark" aria-hidden>{'>_'}</span>
-          <span className="rail-brand-txt">4-T34M</span>
+          <span className="rail-brand-txt">Console</span>
         </button>
         <div className="rail-section">
           {primaryMenus.map((m) => (
