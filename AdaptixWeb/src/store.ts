@@ -16,7 +16,12 @@ export type StaticTabId =
   | 'dashboard' | 'sessions' | 'listeners' | 'tasks' | 'downloads' | 'logs'
   | 'generate' | 'delivery' | 'tunnels' | 'screens' | 'creds' | 'targets' | 'chat' | 'graph' | 'bofs'
   | 'argfuscator' | 'extkit' | 'relay'
-export type TabId = StaticTabId | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
+export type TabId =
+  | StaticTabId
+  | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
+  // 命令执行台（单机维度）。右键「执行命令」跳到这里 —— 弹窗挡着回显、留不下历史，
+  // 命令执行是"敲一条看一眼"的事，得给它一个能常驻的页签。
+  | `cmd:${string}`
 
 /**
  * ★ 这里曾经有 isBrowserConsoleNoise() / isBrowserCmdline()，按**命令拼写**与
@@ -54,12 +59,15 @@ export function isPtyTab(id: string | null | undefined): id is `pty:${string}` {
 export function isVncTab(id: string | null | undefined): id is `vnc:${string}` {
   return !!id && id.startsWith('vnc:')
 }
+export function isCmdTab(id: string | null | undefined) {
+  return !!id && id.startsWith('cmd:')
+}
 export function isInteractTab(id: string | null | undefined) {
   return isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id)
 }
 export function tabAgentId(id: string | null | undefined): string | null {
   if (!id) return null
-  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id)) {
+  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id) || isCmdTab(id)) {
     return id.slice(id.indexOf(':') + 1) || null
   }
   return null
@@ -68,6 +76,7 @@ export function filesTabId(agentId: string): TabId { return `files:${agentId}` }
 export function procsTabId(agentId: string): TabId { return `procs:${agentId}` }
 export function ptyTabId(agentId: string): TabId { return `pty:${agentId}` }
 export function vncTabId(agentId: string): TabId { return `vnc:${agentId}` }
+export function cmdTabId(agentId: string): TabId { return `cmd:${agentId}` }
 
 export type ToastItem = {
   id: string

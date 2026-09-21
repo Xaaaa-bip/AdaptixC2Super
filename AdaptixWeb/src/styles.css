@@ -1883,3 +1883,32 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
   font-size: 11.5px; color: var(--ink-3); align-self: center; margin-right: 2px;
 }
 .xkit-purposes { margin-bottom: 6px; }
+
+
+/* ═══ 命令执行台（cmd:<agentId> 页签）═══════════════════════════════════
+   右键「执行命令」跳到这里。输入在上、输出在下：命令执行是"敲一条看一眼"的节奏，
+   输入框被输出顶下去就没法用了。输出区复用 .term-out 的行色规则（.ln 的
+   local/info/ok/err/task），和「命令终端」页签保持同一套观感。 */
+.cmd-exec { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.cmd-exec > .toolbar { flex: 0 0 auto; }
+.cmd-exec-in {
+  position: relative;
+  display: flex; gap: 8px; align-items: center;
+  padding: 10px 12px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line-2);
+}
+.cmd-exec-in input {
+  flex: 1; min-width: 0; height: 34px; font-size: 12.5px;
+}
+.cmd-exec-out {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 10px 12px;
+  border: 0; border-radius: 0;
+  background: var(--panel);
+  color: var(--ink);
+}
+.cmd-exec-out .ln { font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; }
+.cmd-exec-out .ln.local { color: var(--ink-3); }
+.cmd-exec-out .ln.err   { color: var(--cinnabar); }
+.cmd-exec-out .empty { color: var(--ink-3); }

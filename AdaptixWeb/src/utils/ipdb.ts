@@ -79,8 +79,13 @@ async function ensureLoaded(): Promise<boolean> {
   if (tried) return false
   tried = true
   try {
-    const res = await fetch('/qqwry.ipdb', { cache: 'force-cache' })
-    if (!res.ok) throw new Error(`qqwry.ipdb HTTP ${res.status}`)
+    // ★ 必须走 Vite 的 base，不能用绝对 `/qqwry.ipdb`：
+    //   Web 挂在 profile 的 Web.path 下（现网是 `/bf21a14d8b0eb60f8b95ae0df61162b8/`），
+    //   绝对路径会打到站点根 → 根路径返回的是**诱饵 404 页** → 库里一个字节读不到，
+    //   表现就是主机列表「归属地」整列空白，而控制台只在 console.warn 里留一行，
+    //   界面上完全看不出是库没加载。BASE_URL 由构建时的 --base 决定，两种部署都对。
+    const res = await fetch(`${import.meta.env.BASE_URL}qqwry.ipdb`, { cache: 'force-cache' })
+    if (!res.ok) throw new Error(`qqwry.ipdb HTTP ${res.status} (${import.meta.env.BASE_URL}qqwry.ipdb)`)
     const buf = new Uint8Array(await res.arrayBuffer())
     if (buf.length < 8) throw new Error('ipdb too small')
     const metaLen = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]
