@@ -373,6 +373,9 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 		api_group.POST("/subscribe", connector.tcSubscribe)
 		api_group.POST("/otp/generate", connector.tcOTP_Generate)
 
+		// IP → 归属地（批量）。库在服务端，前端不再整份拉 qqwry.ipdb —— 见 tc_ipdb.go
+		api_group.POST("/ip/geo", connector.TcIpGeo)
+
 		api_group.GET("/listener/list", connector.TcListenerList)
 		api_group.POST("/listener/create", connector.TcListenerStart)
 		api_group.POST("/listener/edit", connector.TcListenerEdit)

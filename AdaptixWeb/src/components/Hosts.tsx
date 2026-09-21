@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore, cmdTabId } from '../store'
 import type { Agent } from '../api/types'
 import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline, isLinuxAgent } from '../utils'
-import { lookupIpGeoSync, preloadIpdb } from '../utils/ipdb'
+import { lookupIpGeoSync, preloadIpGeo } from '../utils/ipdb'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
@@ -199,9 +199,17 @@ export function Hosts() {
     return () => window.clearInterval(t)
   }, [])
 
+  // 归属地：把这一屏主机的**外网 IP** 批量丢给服务端查一次（库在服务端，见 utils/ipdb.ts）。
+  // 表是同步渲染的、查库是异步的，所以拿回新结果后 bump 一次 geoVer 触发重渲染。
+  // 依赖 tableList：新主机进来或筛选变化时自动补查。
+  const extIps = useMemo(
+    () => tableList.map((a) => String(a.a_external_ip || '').trim()).filter(Boolean),
+    [tableList],
+  )
   useEffect(() => {
-    preloadIpdb().then((ok) => { if (ok) setGeoVer((v) => v + 1) }).catch(() => {})
-  }, [])
+    if (!api || !extIps.length) return
+    preloadIpGeo(api, extIps).then((changed) => { if (changed) setGeoVer((v) => v + 1) }).catch(() => {})
+  }, [api, extIps])
 
   function pick(a: Agent) {
     selectAgent(a.a_id)

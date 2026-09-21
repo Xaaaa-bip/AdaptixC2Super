@@ -231,6 +231,14 @@ export class ApiClient {
     return this.post<BuildSchema>('/api/agent/build/schema', { agent, listener_type })
   }
 
+  /**
+   * IP → 归属地（批量）。库在**服务端**（dist/web/qqwry.ipdb），前端不再整份拉 36MB。
+   * 查不到的 IP 在 items 里是空串 —— 那是"这个 IP 不在库里"，不是错误。
+   */
+  ipGeo(ips: string[]) {
+    return this.post<{ ok: boolean; items?: Record<string, string>; message?: string }>('/api/ip/geo', { ips })
+  }
+
   /** WebDelivery 插件：一键上线配置（对齐 Qt DialogWebDelivery） */
   webDeliveryStatus() {
     return this.post<{
