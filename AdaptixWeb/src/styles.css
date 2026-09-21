@@ -1841,3 +1841,17 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 .gen-body { overflow: visible; padding: 0; }
 .gen-side { margin-top: 0; }
 .gen-main.card, .gen-side.card { width: 100%; }
+
+
+/* ═══ .field 里的说明元素必须显式占**控件列** ═══════════════════════════
+   .field 是两列栅格（100px 标签列 + 1fr 控件列）。说明元素（.hint / .field-hint）
+   如果直接挂在 .field 下而不指定列，会落进**标签列** —— 表现是说明被压成一列
+   竖排字。实测：监听器对话框的"流量模板"说明每行只剩 5~6 个字
+   （"Adaptix 自带 URI / JSON 回包…"），比它上面的标签还窄。
+   .field-flat 是单列块（复选框那种），那里面让它横跨整行。 */
+.field > .hint,
+.field > .field-hint,
+.field > .hint.muted-hint,
+.field > .warn-hint { grid-column: 2; }
+.field.field-flat > .hint,
+.field.field-flat > .field-hint { grid-column: 1 / -1; }
