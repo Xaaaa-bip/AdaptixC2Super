@@ -25,8 +25,8 @@ AdaptixWeb/.npm-cache/
 # Runtime state (operator DB, agents/tasks/consoles) — never commit
 AdaptixServer/data/
 
-# Web build output (vite) — produced by `npm run build`, copied to dist/web by make
-AdaptixWeb/dist/
+# NOTE: AdaptixWeb/dist/ is deliberately NOT ignored — the Makefile `web` target
+# only copies (no npm build), so this is its input, not an artifact.
 
 # Prebuilt objects copied in by src_beacon/Makefile from files/
 AdaptixServer/extenders/beacon_agent/src_beacon/objects_*/stub.*.bin
