@@ -52,6 +52,39 @@ const SOURCE_PROFILE = 1
 
 type AgentBlock = { agent: string; groups: CmdGroup[]; names: Set<string> }
 
+/**
+ * 用途分类 —— 套件名 → 用途。
+ *
+ * 服务端报上来的分组名是各套件 `.axs` 里 `ax.create_commands_group("AD-BOF", …)`
+ * 的**套件名**（AD-BOF / Creds-BOF / …），也就是"按目录分"。操作员找命令时想的是
+ * "我要提权 / 我要抓凭据"，而不是"哪个 kit 目录里有"——所以这里再套一层按用途归块。
+ *
+ * ★ 只做归类，不改服务端：套件名是稳定的（17 个），改动风险最低。
+ *   新增套件时**必须在这里补一条**，否则会落到「其他」——那块是刻意留的可见兜底，
+ *   不做静默归并。
+ */
+const PURPOSE_OF: Record<string, string> = {
+  'AD-BOF': '域渗透',
+  'ADCS-BOF': '域渗透',
+  'Kerbeus-BOF': '域渗透',
+  'SQL-BOF': '域渗透',
+  'LDAP-BOF': '域渗透',
+  'AD RelayInformer': '域渗透',
+  'Mimikatz': '凭据获取',
+  'Creds-BOF': '凭据获取',
+  'Elevation-BOF': '提权',
+  'Execution-BOF': '执行与注入',
+  'Injection-BOF': '执行与注入',
+  'LateralMovement-BOF': '横向移动',
+  'PostEx-BOF': '后渗透',
+  'SAL-BOF': '侦察与态势',
+  'SAR-BOF': '侦察与态势',
+  'Process-BOF': '侦察与态势',
+}
+/** 按攻击链顺序排，不是字母序 —— 操作员一般是顺着链子往下找 */
+const PURPOSE_ORDER = ['侦察与态势', '域渗透', '凭据获取', '提权', '执行与注入', '横向移动', '后渗透', '其他']
+const purposeOf = (kit: string) => PURPOSE_OF[kit] || '其他'
+
 /** 「必填且要填值」的参数——纯开关不算（它没值可填） */
 function requiredArgs(c: CmdDef): CmdArgDef[] {
   return (c.args || []).filter((a) => a.required && !(a.flag && !a.name))
@@ -114,6 +147,8 @@ export function ExtKit() {
   const [err, setErr] = useState('')
   const [agent, setAgent] = useState('')
   const [group, setGroup] = useState('')
+  // 用途筛选。与套件筛选是**与**关系：先按用途收窄，再按套件收窄。
+  const [purpose, setPurpose] = useState('')
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState('')
 
@@ -198,10 +233,29 @@ export function ExtKit() {
   }, [block, q])
 
   const activeGroup = block?.groups.find((g) => g.group_name === group) || null
-  const shownGroups = activeGroup ? [activeGroup] : (block?.groups || [])
+  const shownGroups = (activeGroup ? [activeGroup] : (block?.groups || []))
+    .filter((g) => !purpose || purposeOf(g.group_name) === purpose)
   const visible = activeGroup
     ? searched.filter((c) => activeGroup.commands.some((x) => x.name === c.name))
     : searched
+
+  // 当前 agent 下、按用途归好的块（空的用途不出现）
+  const byPurpose = useMemo(() => {
+    const m = new Map<string, CmdGroup[]>()
+    for (const g of shownGroups) {
+      const p = purposeOf(g.group_name)
+      if (!m.has(p)) m.set(p, [])
+      m.get(p)!.push(g)
+    }
+    return PURPOSE_ORDER.filter((p) => m.has(p)).map((p) => [p, m.get(p)!] as [string, CmdGroup[]])
+  }, [shownGroups])
+
+  // 当前 agent 实际用到的用途（用于筛选条，避免列出这个 agent 根本没有的类别）
+  const purposesHere = useMemo(() => {
+    const s = new Set<string>()
+    for (const g of block?.groups || []) s.add(purposeOf(g.group_name))
+    return PURPOSE_ORDER.filter((p) => s.has(p))
+  }, [block])
 
   const totalCmds = block ? block.names.size : 0
 
@@ -305,22 +359,52 @@ export function ExtKit() {
         </PageTips>
       </div>
 
+      {/* 用途筛选：操作员找命令时想的是"我要提权 / 我要抓凭据"，
+          而不是"哪个 kit 目录里有"。上面那排是套件，这排是用途。 */}
+      {!!(block && purposesHere.length > 1) && (
+        <div className="xkit-groups xkit-purposes">
+          <span className="xkit-purposes-k">用途</span>
+          <button type="button" className={`xkit-chip ${purpose === '' ? 'on' : ''}`} onClick={() => setPurpose('')}>
+            全部
+          </button>
+          {purposesHere.map((p) => {
+            const n = (block!.groups || [])
+              .filter((g) => purposeOf(g.group_name) === p)
+              .reduce((a, g) => a + g.commands.length, 0)
+            return (
+              <button
+                key={p}
+                type="button"
+                className={`xkit-chip ${purpose === p ? 'on' : ''}`}
+                onClick={() => setPurpose(purpose === p ? '' : p)}
+                title={`按用途归类的套件：${(block!.groups || []).filter((g) => purposeOf(g.group_name) === p).map((g) => g.group_name).join(' / ')}`}
+              >
+                {p} <span className="dim">{n}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {!!(block && block.groups.length) && (
         <div className="xkit-groups">
+          <span className="xkit-purposes-k">套件</span>
           <button type="button" className={`xkit-chip ${group === '' ? 'on' : ''}`} onClick={() => setGroup('')}>
             全部 <span className="dim">{totalCmds}</span>
           </button>
-          {block!.groups.map((g) => (
-            <button
-              key={g.group_name}
-              type="button"
-              className={`xkit-chip ${group === g.group_name ? 'on' : ''}`}
-              onClick={() => setGroup(group === g.group_name ? '' : g.group_name)}
-              title={g.group_description || g.group_name}
-            >
-              {g.group_name} <span className="dim">{g.commands.length}</span>
-            </button>
-          ))}
+          {block!.groups
+            .filter((g) => !purpose || purposeOf(g.group_name) === purpose)
+            .map((g) => (
+              <button
+                key={g.group_name}
+                type="button"
+                className={`xkit-chip ${group === g.group_name ? 'on' : ''}`}
+                onClick={() => setGroup(group === g.group_name ? '' : g.group_name)}
+                title={g.group_description || g.group_name}
+              >
+                {g.group_name} <span className="dim">{g.commands.length}</span>
+              </button>
+            ))}
         </div>
       )}
 
@@ -344,10 +428,20 @@ export function ExtKit() {
       )}
 
       <div className="xkit-wrap">
-        {shownGroups.map((g) => {
-          const cmds = visible.filter((v) => g.commands.some((c) => c.name === v.name))
-          if (!cmds.length) return null
+        {byPurpose.map(([p, gs]) => {
+          const secs = gs
+            .map((g) => ({ g, cmds: visible.filter((v) => g.commands.some((c) => c.name === v.name)) }))
+            .filter((x) => x.cmds.length)
+          if (!secs.length) return null
           return (
+            <section key={p} className="xkit-purpose">
+              {/* 用途块头：右侧列出归到这一类的套件名，一眼能看出"这一类里都有哪些 kit" */}
+              <div className="xkit-purpose-head">
+                <span className="xkit-purpose-name">{p}</span>
+                <span className="xkit-group-n">{secs.reduce((a, x) => a + x.cmds.length, 0)}</span>
+                <span className="xkit-group-desc">{secs.map((x) => x.g.group_name).join(' · ')}</span>
+              </div>
+              {secs.map(({ g, cmds }) => (
             <section key={g.group_name} className="xkit-group">
               <div className="xkit-group-head">
                 <span className="xkit-group-name">{g.group_name}</span>
@@ -420,6 +514,8 @@ export function ExtKit() {
                   )
                 })}
               </div>
+            </section>
+              ))}
             </section>
           )
         })}

@@ -1855,3 +1855,21 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 .field > .warn-hint { grid-column: 2; }
 .field.field-flat > .hint,
 .field.field-flat > .field-hint { grid-column: 1 / -1; }
+
+
+/* ═══ 扩展命令页：用途层 ═══════════════════════════════════════════════
+   服务端报的是**套件名**（AD-BOF / Creds-BOF …，等于按目录分）。这里在套件之上
+   再套一层"用途"（侦察与态势 / 域渗透 / 凭据获取 / 提权 / 执行与注入 / 横向移动 /
+   后渗透），因为操作员找命令时想的是"我要提权"，不是"哪个 kit 目录里有它"。
+   归类表在 ExtKit.tsx 的 PURPOSE_OF，套件名对不上的一律落「其他」（可见兜底）。 */
+.xkit-purpose { margin-bottom: 20px; }
+.xkit-purpose-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 6px 0 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.xkit-purpose-name { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: .4px; }
+.xkit-purposes-k {
+  font-size: 11.5px; color: var(--ink-3); align-self: center; margin-right: 2px;
+}
+.xkit-purposes { margin-bottom: 6px; }
