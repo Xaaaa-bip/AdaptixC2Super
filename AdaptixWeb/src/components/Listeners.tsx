@@ -221,6 +221,9 @@ export function Listeners() {
     if (!tpl) return
     setTplId(id)
     setForm((f) => ({ ...f, config: applyTrafficTemplate(f.config, f.type, tpl) }))
+    // 套完直接切到「错误页」—— 模板换掉的八个键里，错误页是唯一一眼能看出
+    // 「现在长得像哪家」的一个（URI/UA/头 都只是一行文本，看不出效果）。
+    setTab('error')
   }
 
   /**
@@ -1012,15 +1015,45 @@ export function Listeners() {
                   {tab === 'headers' && renderHeaders()}
                   {tab === 'error' && (
                     <div className="field field-top"><label>错误页内容</label>
-                      <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
-                        onChange={(e) => setCfg('page-error', e.target.value)} />
+                      {/* 左边改、右边即时渲染。★ sandbox="" 是**全封锁**：不给脚本、
+                          不给同源、不给表单 —— 这段 HTML 来自操作员粘贴的诱饵页，
+                          渲染它是为了看长相，绝不能让它有任何执行能力。 */}
+                      <div className="page-preview-wrap">
+                        <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
+                          onChange={(e) => setCfg('page-error', e.target.value)} />
+                        <div className="page-preview">
+                          <div className="page-preview-k">预览</div>
+                          <iframe
+                            title="错误页预览"
+                            sandbox=""
+                            srcDoc={form.config['page-error'] || '<p style="font:13px sans-serif;color:#888;padding:12px">（空）</p>'}
+                          />
+                        </div>
+                      </div>
+                      <div className="field-hint">
+                        探针 / 扫描器打到非预期路径时看到的就是这一页；套用流量模板会自动切到本标签，改完右侧即时渲染。
+                      </div>
                     </div>
                   )}
                   {tab === 'payload' && (
                     <div className="field field-top"><label>载荷页内容</label>
-                      <textarea rows={10} className="mono" value={form.config['page-payload'] || ''}
-                        onChange={(e) => setCfg('page-payload', e.target.value)} />
-                      <div className="field-hint">使用占位符 <code>&lt;&lt;&lt;PAYLOAD_DATA&gt;&gt;&gt;</code></div>
+                      <div className="page-preview-wrap">
+                        <textarea rows={10} className="mono" value={form.config['page-payload'] || ''}
+                          onChange={(e) => setCfg('page-payload', e.target.value)} />
+                        <div className="page-preview">
+                          <div className="page-preview-k">预览</div>
+                          {/* 载荷页里的 <<<PAYLOAD_DATA>>> 是**占位符**，预览里不会替换成真数据 ——
+                              它只是个形状参考，别把预览当成真回包。 */}
+                          <iframe
+                            title="载荷页预览"
+                            sandbox=""
+                            srcDoc={form.config['page-payload'] || '<p style="font:13px sans-serif;color:#888;padding:12px">（空）</p>'}
+                          />
+                        </div>
+                      </div>
+                      <div className="field-hint">
+                        使用占位符 <code>&lt;&lt;&lt;PAYLOAD_DATA&gt;&gt;&gt;</code>；预览里保留原文（不替换成真数据），仅作形状参考。
+                      </div>
                     </div>
                   )}
                 </div>
