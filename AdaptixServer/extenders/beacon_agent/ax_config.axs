@@ -409,8 +409,12 @@ function GenerateUI(listeners_type)
     let sideloadingSelector = form.create_selector_file();
     sideloadingSelector.setVisible(false);
 
-    let checkIatHiding = form.create_check("IAT Hiding (no CRT, empty import table)");
-    checkIatHiding.setChecked(true);
+    // ★ 默认**关**。实测（2026-07-10 A/B 单变量）：gcc 编的 beacon，
+    //   iat_hiding=true（空 IAT + 无 CRT + PEB hash 解析）被 360 QVM 2.0 判 HEUR/QVM.9B7A；
+    //   同一个二进制改成 false（走正常 CRT + 静态 IAT）→ 干净。
+    //   只有"运行时 IAT 隐蔽性"比"静态免杀"更重要时才值得打开。
+    let checkIatHiding = form.create_check("IAT Hiding (no CRT, empty import table) —— ⚠ 360 QVM 2.0 会判 HEUR/QVM.9B7A，默认关");
+    checkIatHiding.setChecked(false);
     // if( !listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconDNS") ) {
     //     checkIatHiding.setVisible(false);
     // }

