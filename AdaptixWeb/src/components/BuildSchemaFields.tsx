@@ -189,9 +189,9 @@ function SelectRow({
     <div className="chip-row bs-chips">
       <button
         type="button"
-        className={cur === undefined ? 'primary' : ''}
+        className={`bs-default${cur === undefined ? ' primary' : ''}`}
         onClick={() => write(field.key, undefined)}
-        title="不指定，交给插件自己的默认值"
+        title="不指定：这个键不下发，交给插件自己的默认值（不是取第一个选项）"
       >
         默认
       </button>

@@ -131,3 +131,23 @@ html[data-density="compact"] {
   --header-h: 46px;
   --tabs-h: 32px;
 }
+
+
+/* ═══ 兼容层：dev 的 hacker/glass 引用的 20 个深色变量 → 太极令牌 ═══════
+   ★ 只换 tokens.css 是不够的：hacker.css / glass.css 里引用了一批只有
+   冷石墨那套 tokens 才有的变量（--glass-* / --glitch-* / --ambient-* / --term-* …）。
+   不补这些定义，那 500 多处 var() 全部解析成空值 —— 深色屏保会变成一片白。
+   这里把它们映射到太极令牌（或直接关掉特效），于是 dev 的**布局与结构规则原样保留**，
+   配色跟着宣纸/墨色走。 */
+:root {
+  --glass-blur: 0px; --glass-blur-lg: 0px; --glass-sat: 100%;
+  --glass-chrome: var(--surface); --glass-rail: var(--surface-2);
+  --glass-panel: var(--surface); --glass-raised: var(--panel-elevated);
+  --glass-line: var(--line); --glass-line-hi: var(--line-2);
+  --ambient-1: transparent; --ambient-2: transparent; --crt-line: transparent;
+  --glitch-c: transparent; --glitch-c-soft: transparent;
+  --glitch-m: transparent; --glitch-m-soft: transparent; --glitch-dur: 0s;
+  --accent-ink: var(--paper); --danger-ink: var(--paper);
+  --term-bg: #141414; --term-ink: #ecece8; --term-ink-dim: #8a8a8a;
+  --status-h: 32px; --toast-lane: calc(var(--status-h) + 12px);
+}
