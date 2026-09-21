@@ -1,0 +1,33 @@
+# Build / intermediate
+*.o
+*.obj
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.iobj
+*.ipdb
+!qqwry.ipdb
+**/Bin/
+**/[Oo]bj/
+**/build-*/
+
+# Build outputs
+/dist/
+AdaptixServer/adaptixserver
+AdaptixServer/adaptixserver.new
+AdaptixServer/build_error.log
+
+# Web / Node
+AdaptixWeb/node_modules/
+AdaptixWeb/.npm-cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
+
+# Local secrets (if any)
+.env
