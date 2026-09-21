@@ -19,9 +19,6 @@ export type StaticTabId =
 export type TabId =
   | StaticTabId
   | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
-  // 命令执行台（单机维度）。右键「执行命令」跳到这里 —— 弹窗挡着回显、留不下历史，
-  // 命令执行是"敲一条看一眼"的事，得给它一个能常驻的页签。
-  | `cmd:${string}`
 
 /**
  * ★ 这里曾经有 isBrowserConsoleNoise() / isBrowserCmdline()，按**命令拼写**与
@@ -59,24 +56,30 @@ export function isPtyTab(id: string | null | undefined): id is `pty:${string}` {
 export function isVncTab(id: string | null | undefined): id is `vnc:${string}` {
   return !!id && id.startsWith('vnc:')
 }
-export function isCmdTab(id: string | null | undefined) {
-  return !!id && id.startsWith('cmd:')
-}
 export function isInteractTab(id: string | null | undefined) {
   return isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id)
 }
 export function tabAgentId(id: string | null | undefined): string | null {
   if (!id) return null
-  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id) || isCmdTab(id)) {
-    return id.slice(id.indexOf(':') + 1) || null
+  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id)) {
+    // 多个终端会话用 `pty:<agentId>#<n>`，主机 id 是 `#` 前面那段
+    const rest = id.slice(id.indexOf(':') + 1).split('#')[0]
+    return rest || null
   }
   return null
 }
 export function filesTabId(agentId: string): TabId { return `files:${agentId}` }
 export function procsTabId(agentId: string): TabId { return `procs:${agentId}` }
-export function ptyTabId(agentId: string): TabId { return `pty:${agentId}` }
+/**
+ * 交互 PTY 页签 id。seq=0 是「该主机的常驻会话」（右键『交互 PTY』复用它），
+ * seq>0 是**额外新开的会话**（右键『执行命令』每次都新开一个，见 openPty）。
+ * ★ 一台主机能开多个终端是刚需（同时盯 shell / 日志 / 另一个 shell）；
+ *   原来 id 只有 `pty:<agentId>`，第二个开出来只是把第一个切到前台。
+ */
+export function ptyTabId(agentId: string, seq = 0): TabId {
+  return seq > 0 ? `pty:${agentId}#${seq}` : `pty:${agentId}`
+}
 export function vncTabId(agentId: string): TabId { return `vnc:${agentId}` }
-export function cmdTabId(agentId: string): TabId { return `cmd:${agentId}` }
 
 export type ToastItem = {
   id: string
@@ -142,7 +145,7 @@ type State = {
   setActiveUiTab: (id: TabId | null) => void
   openFilesBrowser: (agentId: string) => void
   openProcsBrowser: (agentId: string) => void
-  openPty: (agentId: string) => void
+  openPty: (agentId: string, opts?: { newSession?: boolean }) => void
   openVnc: (agentId: string) => void
   /** 打开交互型页签时加速心跳；同一主机多页签共享 refcount */
   acquireInteractBoost: (agentId: string) => Promise<void>
@@ -365,14 +368,21 @@ export const useStore = create<State>((set, get) => ({
     })
     if (already) get().acquireInteractBoost(agentId).catch(() => {})
   },
-  openPty: (agentId) => {
+  openPty: (agentId, opts) => {
     if (!agentId) return
     const agent = get().agents[agentId]
     if (!agent || !isAgentOnline(agent)) {
       get().pushToast('warn', '主机离线，无法打开交互 PTY')
       return
     }
-    const id = ptyTabId(agentId)
+    // 每次都新开的调用方（右键『执行命令』）要找一个没被占用的序号 ——
+    // 复用已有的那个 tab id 只会把旧会话切到前台，开不出第二个终端。
+    let id = ptyTabId(agentId)
+    if (opts?.newSession) {
+      let n = 1
+      while (get().uiTabs.includes(ptyTabId(agentId, n))) n++
+      id = ptyTabId(agentId, n)
+    }
     const already = get().uiTabs.includes(id)
     set((s) => {
       const tabs = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]

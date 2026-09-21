@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useStore, cmdTabId } from '../store'
+import { useStore } from '../store'
 import type { Agent } from '../api/types'
 import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline, isLinuxAgent } from '../utils'
 import { lookupIpGeoSync, preloadIpGeo } from '../utils/ipdb'
@@ -104,19 +104,12 @@ export function Hosts() {
   const removeSelected = useStore((s) => s.removeSelected)
   const refreshRest = useStore((s) => s.refreshRest)
   const openConsole = useStore((s) => s.openConsole)
-  /**
-   * 打开「命令执行」页签（`cmd:<agentId>`）。
-   * ★ 不用弹窗：弹窗挡着回显、关掉就丢历史，而命令执行是"敲一条看一眼"的事。
-   *   独立页签可以常驻，一边开着一边切去看别的页。
-   */
-  function openCmdTab(id: string) { openUiTab(cmdTabId(id)) }
   const openFilesBrowser = useStore((s) => s.openFilesBrowser)
   const openProcsBrowser = useStore((s) => s.openProcsBrowser)
   const openPty = useStore((s) => s.openPty)
   const openVnc = useStore((s) => s.openVnc)
   const clearConsole = useStore((s) => s.clearConsole)
   const setTab = useStore((s) => s.setTab)
-  const openUiTab = useStore((s) => s.openUiTab)
   const api = useStore((s) => s.api)
   const pushLog = useStore((s) => s.pushLog)
   const pushToast = useStore((s) => s.pushToast)
@@ -499,7 +492,9 @@ export function Hosts() {
         >
           <div className="ctx-hd mono">{agents[ctx.id]?.a_computer || ctx.id}</div>
           <button type="button" onClick={() => { openConsole(ctx.id); setCtx(null) }}>命令终端</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { openCmdTab(ctx.id); setCtx(null) }}>执行命令…</button>
+          {/* 全屏 PTY（xterm），**每次都新开一个会话** —— 一台主机同时开几个终端是刚需
+    （盯 shell / 跟日志 / 另一个 shell 各一个）。关掉就是关页签，随时可再开。 */}
+          <button type="button" disabled={!ctxOnline} onClick={() => { openPty(ctx.id, { newSession: true }); setCtx(null) }}>执行命令…</button>
           <button type="button" disabled={!ctxOnline} onClick={() => { tryPty(ctx.id); setCtx(null) }}>交互 PTY</button>
           <button type="button" disabled={!ctxOnline} onClick={() => { tryFiles(ctx.id); setCtx(null) }}>文件管理</button>
           <button type="button" disabled={!ctxOnline} onClick={() => { tryProcs(ctx.id); setCtx(null) }}>进程管理</button>
