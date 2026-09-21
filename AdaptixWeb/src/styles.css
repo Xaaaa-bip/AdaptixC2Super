@@ -1762,7 +1762,18 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 .chat-compose{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.08))}
 .chat-compose input{flex:1}
 .graph-page{display:flex;flex-direction:column;min-height:0;height:100%}
-.graph-wrap{flex:1;min-height:0;overflow:auto;padding:8px}
+/* ★★ 这里是**功能**，不是配色，所以不能只写在 hacker.css 的
+   `html:root[data-theme="dark"] .graph-wrap` 里（那边原来写着 position/overflow/padding）——
+   浅色（默认的宣纸阳面）下没有这一份，于是：
+     · .graph-wrap 不是定位元素，而 .graph-scroll / .graph-pop 都是
+       `position:absolute; inset:0` ⇒ 它们相对**更外层**的祖先定位，
+       滚动层铺满一大片并**盖在面板之上**，面板上所有点击都被画布接走。
+     · 实测（2026-09-21，Playwright）：点「添加设备」里的任一设备类型/「清空手工图」，
+       click 30 秒超时，报 `<rect fill="url(#ggrid)"> … intercepts pointer events`。
+       操作员看到的现象就是"拓扑能打开但点了没反应"。
+   滚动仍然交给 .graph-scroll（它自己是 absolute inset:0 + overflow:auto）——
+   见 hacker.css 那段注释：让 .graph-wrap 自己滚的话，图例会跟着画布滚出视口。 */
+.graph-wrap{position:relative;flex:1;min-height:0;overflow:hidden;padding:0}
 .graph-svg{width:100%;min-height:520px;color:var(--text,#1a1a1a)}
 .graph-edge line{stroke:currentColor;stroke-opacity:.35;stroke-width:1.5}
 .graph-edge-label{font-size:10px;fill:currentColor;opacity:.55}
