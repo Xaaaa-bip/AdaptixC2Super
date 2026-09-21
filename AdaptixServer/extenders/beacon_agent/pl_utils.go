@@ -247,12 +247,6 @@ func generateRandomICO() ([]byte, error) {
 
 const exePseudoSignPfxPass = "ax-pseudo-sign"
 
-func randomFakeSignDN() (cn, org string) {
-	cn = fmt.Sprintf("App-%08X%08X", rand.Uint32(), rand.Uint32())
-	org = fmt.Sprintf("Vendor-%08X", rand.Uint32())
-	return cn, org
-}
-
 func runCmdCombined(dir, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
@@ -280,7 +274,9 @@ func pseudoSignMissingTool() string {
 // applySelfSignedAuthenticode signs inExe with an ephemeral self-signed cert (random CN/O) and writes outExe.
 // Produces a real Authenticode blob that Windows shows as signed but the chain is untrusted (pseudo-signature).
 // Requires openssl and osslsigncode on the teamserver PATH.
-func applySelfSignedAuthenticode(inExe, outExe, workDir string) error {
+// subject 由调用方给（pl_main.go 的 microsoftSignSubject）—— 以前这里自己造
+// `CN=App-%08X / O=Vendor-%08X` 的乱码主体，和文件名、版本信息互相矛盾。
+func applySelfSignedAuthenticode(inExe, outExe, workDir string, subject string) error {
 	if _, err := exec.LookPath("openssl"); err != nil {
 		return errors.New("pseudo-sign requires openssl in PATH")
 	}
@@ -290,12 +286,10 @@ func applySelfSignedAuthenticode(inExe, outExe, workDir string) error {
 	keyPEM := filepath.Join(workDir, "ax_pseudo_key.pem")
 	certPEM := filepath.Join(workDir, "ax_pseudo_cert.pem")
 	pfxPath := filepath.Join(workDir, "ax_pseudo.pfx")
-	cn, org := randomFakeSignDN()
-	subj := "/CN=" + cn + "/O=" + org
 	if _, err := runCmdCombined(workDir, "openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", keyPEM); err != nil {
 		return err
 	}
-	if _, err := runCmdCombined(workDir, "openssl", "req", "-new", "-x509", "-key", keyPEM, "-sha256", "-days", "365", "-out", certPEM, "-subj", subj); err != nil {
+	if _, err := runCmdCombined(workDir, "openssl", "req", "-new", "-x509", "-key", keyPEM, "-sha256", "-days", "365", "-out", certPEM, "-subj", subject); err != nil {
 		return err
 	}
 	if _, err := runCmdCombined(workDir, "openssl", "pkcs12", "-export", "-out", pfxPath, "-inkey", keyPEM, "-in", certPEM, "-passout", "pass:"+exePseudoSignPfxPass); err != nil {
