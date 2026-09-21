@@ -50,12 +50,11 @@ SERVER_DEPENDENCIES=(
     nasm
     # beacon_agent / gopher_agent 生成 Windows **EXE / Service EXE** 载荷时，服务端会
     # fork openssl + osslsigncode 现场做一个随机自签名的 Authenticode 伪签名。
-    # ★ 这条**不是**可选优化：beacon_agent/pl_main.go:1259 对 Exe/Service Exe
-    #   **无条件**调用 applySelfSignedAuthenticode，缺工具时它 return err ⇒ **整个生成
-    #   失败**（控制台在「生成并下载」下方红字 `pseudo-sign requires osslsigncode in PATH`）。
-    #   而且 beacon 侧的 exe_pseudo_sign 开关是**惰性的**（pl_main.go:326 声明、
-    #   axs/webdelivery 都填了值，但没有任何地方读它；buildenv.mk:26 的
-    #   BEACON_PSEUDO_SIGN 同样只定义不使用）⇒ 关掉勾选框也绕不开。
+    # ★ 现在是**可关的**：beacon_agent/pl_main.go 的 effectiveExePseudoSign() 读
+    #   exe_pseudo_sign（三态：省略 = 跟随 buildenv.mk 的 BEACON_PSEUDO_SIGN，当前 true）。
+    #   关掉勾选框即整段跳过。缺工具时也**不再**让生成失败 —— pseudoSignMissingTool()
+    #   判到就降级为「不签名 + 记构建日志」（只有签名**执行失败**才终止，那可能已写出半份产物）。
+    #   注意别把这层降级当成"随便不装也行"：默认就是签的，装上才能拿到和 UI 默认一致的结果。
     #   osslsigncode 在 Ubuntu 的 universe 源里：没启用 universe 时这条会 report_fail
     #   （不致命），需手工 `apt-get install -y osslsigncode`。
     openssl

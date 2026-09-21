@@ -215,7 +215,9 @@ export function Generate() {
   // 强制归零是**改**行为，不是还原行为。
   useEffect(() => {
     setSchema(null)
-    setSv({ exe_pseudo_sign: true })
+    // 默认**不**勾选。改成 true 之前先看 buildenv.mk 的 BEACON_PSEUDO_SIGN 注释：
+    // 自签名实测 0/12 过，关掉 7/9。
+    setSv({ exe_pseudo_sign: false })
   }, [agent])
 
   useEffect(() => {
@@ -339,7 +341,10 @@ export function Generate() {
             sleep,
             jitter,
             iat_hiding: false,
-            exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+            // 与 buildenv.mk 的 BEACON_PSEUDO_SIGN 保持一致（默认不签名，见那里的实测记录）。
+            // ★ 这条分支只在**参数表拉取失败**时走；以前它硬编码 true，
+            //   等于"表没拉到就无视操作员的勾选"，是另一处签名开关失灵。
+            exe_pseudo_sign: false,
           }
         } else if (agent === 'kharon') {
           cfg = { ...cfg, sleep, jitter }

@@ -193,7 +193,15 @@ export function Term() {
     })
     setHistIdx(-1)
     setBusy(true)
-    try { selectAgent(agentId); await sendCommand(finalCmd) } finally { setBusy(false) }
+    try {
+      selectAgent(agentId)
+      await sendCommand(finalCmd)
+    } finally {
+      setBusy(false)
+      // ★ 输入框不再随 busy 禁用（见下面 <input> 的注释），这里的 focus() 才真正生效；
+      //   兜住"发完一条焦点被别处抢走"的情况。!agentId 时输入框是 disabled，跳过。
+      if (agentId) inputRef.current?.focus()
+    }
   }
 
   async function copyAll() {
@@ -310,9 +318,15 @@ export function Term() {
       )}
       <div className="term-in">
         <span className="ps1">{agent?.a_username || 'op'}@{agent?.a_computer || 'host'}:~$</span>
+        {/*
+          ★ 只保留 !agentId（没选主机时确实不能敲）。**不能**再带 busy：
+            disabled 的元素浏览器会立刻收回焦点，而 run() 要等 sendCommand 的
+            往返，表现就是"执行一条之后必须再点一下输入框才能敲第二条"。
+            连按回车不会重复下发 —— run() 开头就有 `if (... || busy) return`。
+        */}
         <input
           ref={inputRef}
-          disabled={!agentId || busy}
+          disabled={!agentId}
           value={cmd}
           placeholder={agentId
             ? (live

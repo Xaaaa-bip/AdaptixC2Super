@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, cmdTabId } from '../store'
 import type { Agent } from '../api/types'
 import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline, isLinuxAgent } from '../utils'
@@ -27,6 +27,10 @@ function CmdDlg({
   onSubmit: (cmd: string) => void | Promise<void>
 }) {
   const [cmd, setCmd] = useState('')
+  // ★ 这个 ref 以前**只被读、没被声明**（`inputRef.current?.focus()` 引用了它），
+  //   运行时是 `ReferenceError: inputRef is not defined` —— 发完命令输入框虽然清空了，
+  //   焦点却回不来，操作员得再点一下才能敲下一条。tsc 一直报 TS2304。
+  const inputRef = useRef<HTMLInputElement>(null)
   const comp = useCompletion({
     value: cmd,
     agent,
@@ -58,6 +62,7 @@ function CmdDlg({
         <div className="field">
           <label>命令行</label>
           <input
+            ref={inputRef}
             className="mono"
             autoFocus
             value={cmd}

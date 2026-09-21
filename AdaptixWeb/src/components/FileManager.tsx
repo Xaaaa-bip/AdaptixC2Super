@@ -749,10 +749,16 @@ export function FileManager({ agentId }: { agentId: string }) {
             </span>
           ))}
         </div>
+        {/*
+          ★ 这里**不能**加 disabled={busy}：disabled 的元素浏览器会立刻收回焦点，
+            而 load() 要等主机回显（可能好几秒），表现就是"敲路径回车跳转一次之后，
+            必须再用鼠标点一下输入框才能敲下一个路径"。
+            连按回车不会乱：load() 自己有 `const my = ++seq.current` 的序号防重入，
+            后发的赢、先发的作废（见 load 里的 `if (my !== seq.current) return`）。
+        */}
         <input
           className="fm-path"
           value={pathInput}
-          disabled={busy}
           onChange={(e) => setPathInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {

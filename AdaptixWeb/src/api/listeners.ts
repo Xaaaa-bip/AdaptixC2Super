@@ -338,7 +338,8 @@ export function defaultAgentConfig(agent: string, format: string, arch: string, 
       sleep: '5s',
       jitter: 0,
       iat_hiding: false,
-      exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+      // 默认不签名：自签名 Authenticode 实测会把产物推进查杀（0/12 过 vs 关闭时 7/9）。
+      exe_pseudo_sign: false,
     }
   }
   if (agent === 'kharon') {
