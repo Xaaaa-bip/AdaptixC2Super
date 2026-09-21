@@ -2199,13 +2199,27 @@ html:root[data-theme="dark"] .graph-svg {
   max-width: none;
 }
 
+/* ★★ 卡片底色必须**跟着主题走**，不能像原来那样写死深色。
+   .graph-label / .graph-sub / .graph-sid 填的是 `var(--ink*)` 或 currentColor
+   —— 浅色档下那些是**深色**。原来底色永久 #11151c（近黑）⇒ 深字压深底，
+   浅色下整张卡看不见字（用户报"浅色模式下整个都是黑的"）。
+   按本文件既有约定：base 写浅色档，深色档在下面用
+   `html:root[data-theme="dark"]` 覆盖。 */
  .graph-node-bg {
-  fill: #11151c;
-  stroke: rgba(34, 211, 238, 0.35);
+  fill: var(--panel-elevated, #ffffff);
+  stroke: var(--line);
   stroke-width: 1.2;
   transition: stroke 0.15s;
 }
  .graph-node.dead .graph-node-bg {
+  fill: var(--surface-2, #ecece8);
+  stroke: var(--cinnabar-soft, rgba(181, 74, 60, 0.35));
+}
+html:root[data-theme="dark"] .graph-node-bg {
+  fill: #11151c;
+  stroke: rgba(34, 211, 238, 0.35);
+}
+html:root[data-theme="dark"] .graph-node.dead .graph-node-bg {
   fill: #0e1117;
   stroke: rgba(255, 77, 94, 0.28);
 }
@@ -2367,14 +2381,23 @@ html:root[data-theme="dark"] .graph-edge-label {
 
 /* 手工设备卡片：形状沿用 agent 卡片，靠**颜色**和图标说明它不是一台有 beacon 的机器。
    已控 = 青（和交互色同族），未控 = 灰（中性，表示"还没打下来"）。 */
+/* 同上：base 浅色档，深色档在下面覆盖 —— 否则浅色下这两类卡片也是黑底黑字。 */
  .graph-node.graph-dev.ctrl .graph-node-bg {
+  fill: #eef4f5;
+  stroke: rgba(23, 122, 140, 0.55);
+}
+ .graph-node.graph-dev.unctrl .graph-node-bg {
+  fill: var(--surface, #fafaf8);
+  stroke: rgba(120, 130, 145, 0.5);
+  stroke-dasharray: 3 4;
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-node-bg {
   fill: #0c1a20;
   stroke: rgba(34, 211, 238, 0.72);
 }
- .graph-node.graph-dev.unctrl .graph-node-bg {
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-node-bg {
   fill: #12151b;
   stroke: rgba(148, 163, 184, 0.42);
-  stroke-dasharray: 3 4;
 }
  .graph-node.graph-dev.ctrl .graph-dot {
   fill: var(--accent);
