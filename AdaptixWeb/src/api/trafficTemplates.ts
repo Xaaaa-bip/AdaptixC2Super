@@ -1,6 +1,6 @@
 /** HTTP / WS 监听器流量模板。URI 需满足 beacon 校验：`/[A-Za-z0-9.=-]+(/...)*` */
 
-export type TrafficListenerType = 'BeaconHTTP' | 'BeaconWS'
+export type TrafficListenerType = 'BeaconHTTP' | 'BeaconWS' | 'BeaconHTTPS'
 
 export type TrafficPatch = {
   http_method?: string
@@ -117,7 +117,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'official',
     label: '官方默认',
     hint: 'Adaptix 自带 URI / JSON 回包',
-    types: ['BeaconHTTP', 'BeaconWS'],
+    types: ['BeaconHTTP', 'BeaconWS', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: ['/api/v1/status', '/updates/check.php', '/content.html'],
@@ -133,7 +133,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'o365',
     label: 'Office 365',
     hint: 'Outlook / EWS / ActiveSync',
-    types: ['BeaconHTTP'],
+    types: ['BeaconHTTP', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: [
@@ -157,7 +157,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'wupdate',
     label: 'Windows Update',
     hint: 'WU / 投递优化回连',
-    types: ['BeaconHTTP'],
+    types: ['BeaconHTTP', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: [
@@ -178,7 +178,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'chrome',
     label: 'Chrome 更新',
     hint: 'Google Omaha / CRX',
-    types: ['BeaconHTTP'],
+    types: ['BeaconHTTP', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: ['/service/update2/json', '/crx/blobs', '/download/chrome'],
@@ -194,7 +194,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'wework',
     label: '企业微信',
     hint: 'cgi-bin / wework 同步',
-    types: ['BeaconHTTP'],
+    types: ['BeaconHTTP', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: ['/cgi-bin/getinfo', '/cgi-bin/sync', '/wework/check'],
@@ -213,7 +213,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'aliyun',
     label: '阿里云 CDN',
     hint: 'OSS / CDN 刷新接口',
-    types: ['BeaconHTTP'],
+    types: ['BeaconHTTP', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: ['/oss/v1/object', '/cdn/refresh', '/cdn/describe'],
@@ -232,7 +232,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'nginx-api',
     label: 'Nginx API',
     hint: '常见 REST / 遥测 JSON',
-    types: ['BeaconHTTP', 'BeaconWS'],
+    types: ['BeaconHTTP', 'BeaconWS', 'BeaconHTTPS'],
     patch: {
       http_method: 'POST',
       uri: ['/api/v2/telemetry', '/api/v2/events', '/healthz'],
@@ -248,7 +248,7 @@ export const TRAFFIC_TEMPLATES: TrafficTemplate[] = [
     id: 'cdn-js',
     label: 'CDN 静态',
     hint: '伪装 JS 资源回包',
-    types: ['BeaconHTTP'],
+    types: ['BeaconHTTP', 'BeaconHTTPS'],
     patch: {
       http_method: 'GET',
       uri: ['/cdn/static/app.js', '/assets/js/main.min.js', '/static/chunks/vendor.js'],
@@ -315,8 +315,12 @@ export function applyTrafficTemplate(
     patch.http_method = 'GET'
     patch.protocol = 'ws'
     if (!patch.hb_header) patch.hb_header = 'Sec-WebSocket-Protocol'
-  } else if (type === 'BeaconHTTP') {
-    patch.protocol = 'http'
+  } else if (type === 'BeaconHTTP' || type === 'BeaconHTTPS') {
+    // ★ protocol 必须写对，且 HTTPS 不能写成 'http'：
+    //   linux_agent/pl_main.go 从监听器 l_data 读 protocol，`protocol == "https"` 才置
+    //   isHttpsEmu；写成 'http'（或留空）会被改判成 'ws'，agent 退回 WebSocket 升级模式，
+    //   而 https_emu 监听器只注册 POST/GET、永远不回 101 ⇒ 载荷上线即失联。
+    patch.protocol = type === 'BeaconHTTPS' ? 'https' : 'http'
   }
   return { ...cfg, ...patch }
 }

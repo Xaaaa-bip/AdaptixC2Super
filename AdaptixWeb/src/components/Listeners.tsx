@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { LISTENER_TYPES, defaultListenerConfig, randomEncryptKey } from '../api/listeners'
+import { applyTrafficTemplate, templatesFor } from '../api/trafficTemplates'
 import { convertCallbackAddrs, deriveCircuitAddrs, firstTcpPort, normalizeGopherConfig, splitLines } from '../lib/gopherListener'
 import { pickCallbackHost, dialableInterfaces } from '../lib/callbackHost'
 import { fileToB64 } from '../utils'
@@ -165,6 +166,10 @@ export function Listeners() {
     type: 'BeaconHTTP',
     config: defaultListenerConfig('BeaconHTTP', cbHost),
   }))
+  // 当前选中的流量模板 id（只影响这一栏的高亮，不进配置本身）。
+  // 编辑既有监听器时无从反推它当初套的是哪套 —— 一律回到 'official'，
+  // 硬猜一个会让操作员以为「这套是模板 X」而实际不是。
+  const [tplId, setTplId] = useState('official')
 
 
   const filtered = useMemo(() => {
@@ -187,6 +192,7 @@ export function Listeners() {
       type,
       config: defaultListenerConfig(type, cbHost),
     })
+    setTplId('official')
     setEditAgentAddr('')
     setProtoNote(null)
     setProfileName('')
@@ -196,6 +202,25 @@ export function Listeners() {
 
   function setCfg(key: string, value: any) {
     setForm((f) => ({ ...f, config: { ...f.config, [key]: value } }))
+  }
+
+  /**
+   * 套用一套流量模板。
+   *
+   * 模板只覆盖**传输外观**那八个键（方法 / URI / UA / 心跳头 / 请求头 / 响应头 /
+   * 错误页 / 页面模板），绑定地址、回连地址、加密密钥、SSL 一律不动 —— 覆盖它们
+   * 会把操作员刚填的回连地址冲掉，那是不可逆的静默丢失。
+   *
+   * protocol 由 applyTrafficTemplate 按监听器类型写死（http / ws / https）：
+   * ★ https 不能落成 http —— linux_agent/pl_main.go 从 l_data 读 protocol，
+   *   只有 `protocol == "https"` 才置 isHttpsEmu，写错会让 agent 退回 WebSocket
+   *   升级模式，而 https_emu 只注册 POST/GET、永不回 101（见 trafficTemplates.ts 注释）。
+   */
+  function applyTpl(id: string) {
+    const tpl = templatesFor(form.type).find((x) => x.id === id)
+    if (!tpl) return
+    setTplId(id)
+    setForm((f) => ({ ...f, config: applyTrafficTemplate(f.config, f.type, tpl) }))
   }
 
   /**
@@ -223,6 +248,7 @@ export function Listeners() {
   function openCreate(type = 'BeaconHTTP') {
     setEditMode(false)
     setForm({ name: suggestName(type), type, config: defaultListenerConfig(type, cbHost) })
+    setTplId('official')
     setEditAgentAddr('')
     setProtoNote(null)
     setProfileName('')
@@ -245,6 +271,7 @@ export function Listeners() {
       type,
       config: { ...base, ...cfg },
     })
+    setTplId('official')
     setEditAgentAddr(String(l.l_agent_addr || ''))
     setProtoNote(null)
     setProfileName('')
@@ -280,6 +307,34 @@ export function Listeners() {
             />
             <ServerAddrHint />
           </div>
+          {/* ── 流量模板 ────────────────────────────────────────────────
+              一键把**传输外观**的八个键换成某类真实业务的形态（方法 / URI / UA /
+              心跳头 / 请求头 / 响应头 / 错误页 / 页面模板），绑定地址、回连地址、
+              加密密钥、SSL 一律不碰 —— 覆盖它们会把刚填好的回连地址冲掉。
+              选中态只表示「最近套用的是哪套」，之后手动改字段不会取消选中，
+              所以别把它当"当前配置等于该模板"的证据。 */}
+          {templatesFor(t).length > 0 && (
+            <div className="field field-top"><label>流量模板</label>
+              <div className="chip-row traffic-tpls">
+                {templatesFor(t).map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    className={tplId === tpl.id ? 'primary' : ''}
+                    title={tpl.hint}
+                    onClick={() => applyTpl(tpl.id)}
+                  >
+                    {tpl.label}
+                  </button>
+                ))}
+              </div>
+              <div className="field-hint">
+                {templatesFor(t).find((x) => x.id === tplId)?.hint || ''}
+                {' · '}覆盖 方法/URI/UA/心跳头/请求头/响应头/诱饵页 八个键，其余字段不动；
+                套用后手动改字段不会取消选中
+              </div>
+            </div>
+          )}
           <div className="field"><label>请求方法</label>
             {/* BeaconHTTPS 只给 POST，对齐它自己的 ax_config.axs:24 `addItems(["POST"])`。
                 注意这个键在 https_emu 里是**惰性**的：pl_transport.go:185-186 无条件把
