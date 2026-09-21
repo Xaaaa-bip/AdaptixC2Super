@@ -92,9 +92,6 @@ COMMON_FLAGS := -I $(BEACON_DIR) \
                 -falign-jumps=1 \
                 -falign-labels=1 \
                 -fms-extensions \
-                -Wno-error=gnu-anonymous-struct \
-                -Wno-error=nested-anon-types \
-                -Wno-error=anonymous-struct \
                 -w \
                 $(SECURITY_FLAGS) \
                 $(OPTIMIZATION_FLAGS) \
