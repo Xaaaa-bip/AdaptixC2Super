@@ -335,6 +335,7 @@ func (tc *TsConnector) webHTTPHandler(ui *WebUI) http.HandlerFunc {
 		// Try real file under root (strip leading / for Open).
 		name := strings.TrimPrefix(clean, "/")
 		if name == "" || name == "." {
+			setWebCacheHeaders(w, "index.html")
 			http.ServeFile(w, r, filepath.Join(ui.Root, "index.html"))
 			return
 		}
@@ -344,6 +345,7 @@ func (tc *TsConnector) webHTTPHandler(ui *WebUI) http.HandlerFunc {
 			defer f.Close()
 			st, err := f.Stat()
 			if err == nil && !st.IsDir() {
+				setWebCacheHeaders(w, name)
 				http.ServeFile(w, r, filepath.Join(ui.Root, filepath.FromSlash(name)))
 				return
 			}
@@ -356,11 +358,31 @@ func (tc *TsConnector) webHTTPHandler(ui *WebUI) http.HandlerFunc {
 		}
 
 		if ui.Spa {
+			setWebCacheHeaders(w, "index.html")
 			http.ServeFile(w, r, filepath.Join(ui.Root, "index.html"))
 			return
 		}
 		http.NotFound(w, r)
 	}
+}
+
+// setWebCacheHeaders 给静态资源配缓存策略。
+//
+// ★ 这曾经是「新构建已经推上去了，操作员那边却还在跑旧 bundle」的根因：
+//   全部走 http.ServeFile、**没有任何 Cache-Control** ⇒ 浏览器只能按启发式规则缓存
+//   （约等于 Last-Modified 至今时长的 10%），于是服务端把资源名换成新的哈希，
+//   客户端手里那份被缓存的 index.html 还指着旧名字。
+//   实测症状：某个栏目/功能在服务端明明存在，操作员那边「压根没有这个栏目」。
+//
+//   · index.html 及其 SPA 兜底：`no-cache` —— 每次回源校验。命中就是 304，
+//     文件才 494 字节，开销可忽略；**绝不能**让它被启发式缓存。
+//   · assets/ 下的哈希文件名：内容一变名字就变 ⇒ 可以放心长缓存 + immutable。
+func setWebCacheHeaders(w http.ResponseWriter, name string) {
+	if strings.HasPrefix(filepath.ToSlash(name), "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache")
 }
 
 func (tc *TsConnector) serveWebConfig(w http.ResponseWriter, ui *WebUI) {
