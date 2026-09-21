@@ -1,0 +1,257 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adaptix-server:
+    name: AdaptixServer (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-24.04
+            artifact: AdaptixServer-linux-amd64
+            output: AdaptixServer
+            shell: bash
+          - name: macos
+            os: macos-14
+            artifact: AdaptixServer-macos
+            output: AdaptixServer
+            shell: bash
+          - name: windows-amd64
+            os: windows-latest
+            artifact: AdaptixServer-windows-amd64
+            output: AdaptixServer.exe
+            shell: bash
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+        working-directory: AdaptixServer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: AdaptixServer/go.mod
+          cache-dependency-path: |
+            AdaptixServer/go.sum
+            AdaptixServer/go.work.sum
+
+      - name: CGO deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libsqlite3-dev
+
+      - name: CGO deps (Windows — MinGW + SQLite)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-sqlite
+
+      - name: CGO deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkg-config sqlite
+
+      - name: Go build (Linux / macOS)
+        if: runner.os != 'Windows'
+        env:
+          CGO_ENABLED: "1"
+        run: go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
+
+      - name: Go build (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: "1"
+        shell: pwsh
+        run: |
+          $env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;" + $env:Path
+          go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: AdaptixServer/${{ matrix.output }}
+
+  adaptix-extenders:
+    name: Extenders (plugins + cross-compile beacons)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: AdaptixServer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: AdaptixServer/go.mod
+          cache-dependency-path: |
+            AdaptixServer/go.sum
+            AdaptixServer/go.work.sum
+
+      - name: Install Go CGO + Clang/MinGW/NASM (beacon toolchains)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libsqlite3-dev \
+            clang \
+            nasm \
+            mingw-w64
+
+      - name: Build listener / service plugins (Go)
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          set -eux
+          for d in \
+            extenders/beacon_listener_http \
+            extenders/beacon_listener_smb \
+            extenders/beacon_listener_tcp \
+            extenders/beacon_listener_dns \
+            extenders/beacon_listener_ws \
+            extenders/beacon_listener_discord \
+            extenders/gopher_listener_tcp \
+            extenders/linux_listener_tcp \
+            extenders/listener_kharon_http \
+            extenders/webdelivery \
+            extenders/notifier \
+            extenders/vnc \
+            extenders/hosting_service \
+            extenders/phishing_service
+          do
+            echo "===== make $d ====="
+            make -C "$d" all
+          done
+
+      - name: Build agents (Go plugin + beacon / gopher)
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          set -eux
+          for d in \
+            extenders/beacon_agent \
+            extenders/linux_agent \
+            extenders/macos_agent \
+            extenders/gopher_agent \
+            extenders/agent_kharon
+          do
+            echo "===== make $d ====="
+            make -C "$d" all
+          done
+
+      - name: Upload extender outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: extenders-dist
+          if-no-files-found: warn
+          path: |
+            AdaptixServer/extenders/beacon_listener_http/dist
+            AdaptixServer/extenders/beacon_listener_smb/dist
+            AdaptixServer/extenders/beacon_listener_tcp/dist
+            AdaptixServer/extenders/beacon_listener_dns/dist
+            AdaptixServer/extenders/beacon_listener_ws/dist
+            AdaptixServer/extenders/beacon_listener_discord/dist
+            AdaptixServer/extenders/gopher_listener_tcp/dist
+            AdaptixServer/extenders/linux_listener_tcp/dist
+            AdaptixServer/extenders/listener_kharon_http/dist
+            AdaptixServer/extenders/webdelivery/dist
+            AdaptixServer/extenders/notifier/dist
+            AdaptixServer/extenders/vnc/dist
+            AdaptixServer/extenders/hosting_service/dist
+            AdaptixServer/extenders/phishing_service/dist
+            AdaptixServer/extenders/beacon_agent/dist
+            AdaptixServer/extenders/linux_agent/dist
+            AdaptixServer/extenders/macos_agent/dist
+            AdaptixServer/extenders/gopher_agent/dist
+            AdaptixServer/extenders/agent_kharon/dist
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [adaptix-server, adaptix-extenders]
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/master' ||
+       startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package release zips
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          if [ ! -d artifacts ] || [ -z "$(ls -A artifacts)" ]; then
+            echo "No artifacts to publish"
+            exit 1
+          fi
+          for dir in artifacts/*; do
+            [ -d "$dir" ] || continue
+            name="$(basename "$dir")"
+            (cd "$dir" && zip -r -q "../../dist-release/${name}.zip" .)
+            echo "packed ${name}.zip"
+          done
+          ls -lh dist-release
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            TITLE="${GITHUB_REF_NAME}"
+            PRE=()
+          else
+            TAG="latest"
+            TITLE="Latest (${GITHUB_SHA::7})"
+            PRE=(--prerelease --latest=false)
+          fi
+          NOTES="服务端构建产物（已移除 Qt AdaptixClient）。
+
+          - Commit: \`${GITHUB_SHA}\`
+          - Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          资源：AdaptixServer-linux-amd64.zip / AdaptixServer-macos.zip / AdaptixServer-windows-amd64.zip / extenders-dist.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" "${PRE[@]}"
+            gh release upload "$TAG" dist-release/* --clobber
+          else
+            gh release create "$TAG" dist-release/* \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --target "$GITHUB_SHA" \
+              "${PRE[@]}"
+          fi

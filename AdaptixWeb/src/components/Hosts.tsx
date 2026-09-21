@@ -391,8 +391,25 @@ export function Hosts() {
         <div className="sess-table-wrap">
           {tableList.length === 0 ? (
             <div className="sess-empty big">
-              <div className="title">无匹配主机</div>
-              <div className="hint">调整搜索条件，或取消「仅在线」</div>
+              {Object.keys(agents).length === 0 ? (
+                <>
+                  <div className="title">还没有主机</div>
+                  <div className="hint">打开投递，复制一条命令到目标机器执行</div>
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{ marginTop: 12 }}
+                    onClick={() => { setTab('delivery'); openUiTab('delivery') }}
+                  >
+                    去投递
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="title">无匹配主机</div>
+                  <div className="hint">调整搜索条件，或取消「仅在线」</div>
+                </>
+              )}
             </div>
           ) : (
             <table className="sess-table">

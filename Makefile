@@ -1,4 +1,4 @@
-all: clean prepare server client extenders
+all: clean prepare server extenders
 
 DIST_DIR := dist
 
@@ -127,9 +127,6 @@ web: prepare
 		if [ -f "$(WEB_DIR)/public/qqwry.ipdb" ]; then \
 			cp -f "$(WEB_DIR)/public/qqwry.ipdb" $(DIST_DIR)/web/qqwry.ipdb; \
 			echo "[+] qqwry.ipdb from $(WEB_DIR)/public"; \
-		elif [ -f "client/qqwry.ipdb" ]; then \
-			cp -f "client/qqwry.ipdb" $(DIST_DIR)/web/qqwry.ipdb; \
-			echo "[+] qqwry.ipdb from client/"; \
 		else \
 			echo "[!] qqwry.ipdb not found (optional)"; \
 		fi; \
@@ -177,24 +174,6 @@ server-ext: clean server extenders web extension-kit
 
 
 
-### CLIENT ###
-
-client: prepare
-	@ echo "[*] Building AdaptixClient..."
-	@ cd AdaptixClient && cmake . > /dev/null 2>cmake_error.log || { echo "[ERROR] CMake failed:"; cat cmake_error.log >&2; exit 1; }
-	@ cd AdaptixClient && make --no-print-directory
-	@ mv ./AdaptixClient/AdaptixClient ./$(DIST_DIR)/
-	@ echo "[+] done"
-
-client-fast: prepare
-	@ echo "[*] Building AdaptixClient in $(NPROC) threads..."
-	@ cd AdaptixClient && cmake . > /dev/null 2>cmake_error.log || { echo "[ERROR] CMake failed:"; cat cmake_error.log >&2; exit 1; }
-	@ cd AdaptixClient && make --no-print-directory -j$(NPROC)
-	@ mv ./AdaptixClient/AdaptixClient ./$(DIST_DIR)/
-	@ echo "[+] done"
-
-
-
 ### DOCKER BUILD ###
 
 docker-build-server:
@@ -203,13 +182,6 @@ docker-build-server:
 	@ docker compose --profile build-server up --abort-on-container-exit
 	@ docker compose --profile build-server down
 	@ echo "[+] Server built via Docker"
-
-docker-build-client:
-	@ echo "[*] Building client via Docker..."
-	@ docker compose --profile build-client build
-	@ docker compose --profile build-client up --abort-on-container-exit
-	@ docker compose --profile build-client down
-	@ echo "[+] Client AppImage built via Docker"
 
 docker-build-extenders:
 	@ echo "[*] Building extenders via Docker..."
@@ -257,22 +229,19 @@ help:
 	@ echo "AdaptixC2 Build System"
 	@ echo ""
 	@ echo "Available targets:"
-	@ echo "  all              - Build everything (server, client, extenders)"
+	@ echo "  all              - Build server and extenders"
 	@ echo "  extenders        - Build only the extenders"
 	@ echo "  kharon-sync      - Copy agent_kharon + listener_kharon_http from KHRON_ROOT (default ../Kharon) into extenders + go work sync"
-	@ echo "  server-ext       - Build server + extenders + web + Extension-Kit (no Qt client)"
+	@ echo "  server-ext       - Build server + extenders + web + Extension-Kit"
 	@ echo "  server-ext-with-kharon - kharon-sync then server-ext (对齐 setup_kharon.sh 的拷贝步骤)"
 	@ echo "  server           - Build only the server"
 	@ echo "  web              - Copy Web static assets to dist/web (no npm; WEB_SRC=... optional)"
 	@ echo "  extension-kit    - Copy Extension-Kit to dist/ (default ./Extension-Kit)"
-	@ echo "  client-fast      - Build only the client in multithread mode (fast build)"
-	@ echo "  client           - Build only the client"
 	@ echo "  clean            - Remove dist directory"
 	@ echo "  clean-all        - Remove all build artifacts"
 	@ echo ""
 	@ echo "Docker commands:"
 	@ echo "  docker-build-server     - Build server via Docker Compose"
-	@ echo "  docker-build-client     - Build client AppImage via Docker Compose"
 	@ echo "  docker-build-extenders  - Build extenders via Docker Compose"
 	@ echo "  docker-build-server-ext - Build server and extenders via Docker Compose"
 	@ echo "  docker-build-all        - Build server and extenders via Docker Compose (alias)"
@@ -287,4 +256,4 @@ help:
 	@ echo ""
 	@ echo "Platform: $(UNAME_S) [$(NPROC) proc]"
 
-.PHONY: all extenders kharon-sync server-ext server-ext-with-kharon server web extension-kit client clean clean-all docker-build-server docker-build-extenders docker-build-server-ext docker-build-all docker-up docker-down docker-logs docker-restart docker-clean docker-clean-all help prepare
+.PHONY: all extenders kharon-sync server-ext server-ext-with-kharon server web extension-kit clean clean-all docker-build-server docker-build-extenders docker-build-server-ext docker-build-all docker-up docker-down docker-logs docker-restart docker-clean docker-clean-all help prepare

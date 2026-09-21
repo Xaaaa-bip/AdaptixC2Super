@@ -814,12 +814,13 @@ export function Listeners() {
   return (
     <div className="page">
       <div className="toolbar">
-        <button className="primary" onClick={() => openCreate('BeaconHTTP')}>+ 新建监听器</button>
+        <button className="primary" onClick={() => openCreate('BeaconHTTP')}>+ Windows HTTP</button>
+        <button onClick={() => openCreate('BeaconWS')}>+ Linux WS</button>
         <input type="search" placeholder="搜索名称 / 类型 / 端口" value={q} onChange={(e) => setQ(e.target.value)} />
         <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
         <div className="stats">
           <span>{filtered.length} / {list.length}</span>
-          <span className="dim">{LISTENER_TYPES.length} 种类型</span>
+          <span className="dim">Windows 用 HTTP · Linux 用 WS</span>
         </div>
         <PageTips id="listeners">
           <p>按「新建监听器」选择类型并填写表单；状态列可启停/暂停/恢复。</p>
@@ -834,8 +835,8 @@ export function Listeners() {
           <EmptyState
             icon="◉"
             title="暂无监听器"
-            hint="对齐 Qt/AXS：HTTP · WS · TCP · SMB · DNS · Discord · Linux · Gopher · Kharon"
-            action={<button className="primary" onClick={() => openCreate()}>+ 新建监听器</button>}
+            hint="Windows 上线建 HTTP，Linux 上线建 WS"
+            action={<button className="primary" onClick={() => openCreate()}>+ Windows HTTP</button>}
           />
         ) : (
           <table>
@@ -912,10 +913,8 @@ export function Listeners() {
               <div>
                 <h2>{editMode ? '编辑监听器' : '新建监听器'}</h2>
                 <div className="dim" style={{ fontSize: 12 }}>
-                  字段对齐 <code>ax_config.axs · ListenerUI</code>
-                  {typeDef ? ` · ${typeDef.label} · Agent: ${typeDef.agentHint}` : ''}
+                  {typeDef ? `${typeDef.label} · ${typeDef.agentHint}` : '选择类型'}
                   {editMode ? ' · 名称/类型创建后不可改' : ''}
-                  
                 </div>
               </div>
               <button className="ghost" disabled={busy} onClick={() => setShow(false)}>关闭</button>
@@ -939,7 +938,7 @@ export function Listeners() {
                     onClick={() => !editMode && setType(t.type)}
                   >
                     <b>{t.label}</b>
-                    <span className="sub">{t.kind} · {t.protocol}</span>
+                    <span className="sub">{t.agentHint}</span>
                   </button>
                 ))}
               </div>
