@@ -100,7 +100,18 @@
   color: #f2f2f0 !important;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   min-height: 0;
-  overflow: hidden;
+  /* ★★ 这里原来是 `overflow: hidden` —— 而侧栏内容（18 个模块 × min-height:48px
+     + 品牌 + 底部入口）总高约 1196px，常见窗口高只有 900px ⇒ 底部三项
+     「聊天 / 中转 / 日志」**被永久裁掉，滚都滚不到**，操作员看到的现象是
+     「压根没有这个栏目」。
+     ★ 这条修复**曾经只写在 glass.css 的 `html:root[data-theme="dark"]` 里**，
+       于是只有**阴面**能用 —— glass.css 那段注释自己都写着"功能性问题，不是配色"。
+       浅色（默认的宣纸阳面）下没有覆盖，坑就还在。功能性的东西不要挂在主题作用域里。
+     改可滚动（VS Code 活动栏也是这么做的：模块数量会变，只调小尺寸是治标）。 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;      /* Firefox：细滚动条会挤掉 56px 里的内容 */
+  overscroll-behavior: contain;
 }
 
 .rail-brand {
@@ -1662,3 +1673,30 @@ html:root[data-theme="dark"] .axf-badge {
 html:root[data-theme="dark"] .wd-warn {
   margin-top: 6px;
 }
+
+/* ── 侧栏滚动配套（同属"导航栏溢出修复"，与配色无关，见上面 .rail 那段）──
+   ① 隐藏 webkit 滚动条：56px 宽的侧栏容不下一条 15px 的滚动条，
+      内容会被挤变形。滚动本身仍然可用（滚轮 / 触控板 / 键盘）。
+   ② 底部「命令 / 帮助」吸底：滚动时不被带走，否则滚下去之后它们跟着上移，
+      想按还得先滚回来。吸底元素**必须有底色**，否则下面的导航项会从它背后透出来。 */
+.rail::-webkit-scrollbar { width: 0; height: 0; }
+.rail-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: #141414; /* 与 .rail 的底色一致 */
+}
+
+/* ③ 滚动条**要看得见**。56~76px 宽的侧栏放不下标准滚动条（15px），但完全隐藏
+      也有代价：操作员不知道这里能滚，"看不到某个栏目"会再次发生（这次就是这么来的）。
+      折中成 6px 细条 + 低对比轨道：占位可忽略，又给了"下面还有"的视觉线索。
+      ★ 这条对所有主题生效 —— 深色那份原本在 glass.css 里把滚动条宽度设成 0，
+        属于同一批"功能性规则挂在主题作用域里"的问题，一并收拢到这里。 */
+.rail { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.2) transparent; }
+.rail::-webkit-scrollbar { width: 6px; height: 0; }
+.rail::-webkit-scrollbar-track { background: transparent; }
+.rail::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+.rail::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }

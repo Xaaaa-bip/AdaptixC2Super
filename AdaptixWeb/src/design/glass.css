@@ -97,30 +97,19 @@ html:root[data-theme="dark"] .rail {
 html:root[data-theme="dark"] .rail-brand {
   border-bottom: 1px solid var(--glass-line) !important;
 }
-/* ── 导航栏溢出修复（功能性问题，不是配色）──
-   真机上导航有 16 个模块，每个 min-height:48px，内容总高 1032px，
-   而视口只有 950px；.rail 是 overflow:hidden，于是底部的导航项
-   直接被切掉、点不到。
-   只调小尺寸是治标 —— 模块数量是会变的，再加一个又会溢出。
-   所以改成可滚动（VS Code 的活动栏也是这么处理的），
-   并把底部的「命令」入口吸底，滚动时不会被带走。 */
-html:root[data-theme="dark"] .rail {
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none; /* Firefox */
-  overscroll-behavior: contain;
-}
-html:root[data-theme="dark"] .rail::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
+/* ── 导航栏溢出修复已挪到 design/ops-hard.css ──
+   overflow / 滚动条 / .rail-foot 吸底 这些是**功能**，不是配色，
+   ★ 而它们原来只写在这里的 `[data-theme="dark"]` 作用域里 ——
+     于是**只有阴面能滚**：浅色（默认的宣纸阳面）下 .rail 仍是
+     ops-hard.css 的 overflow:hidden，底部的「聊天 / 中转 / 日志」
+     被永久裁掉、滚都滚不到。
+     实测（2026-09-21）：1440×900 窗口下「中转」的 top=954，
+     视口只有 900 ⇒ 操作员看到的现象是"压根没有这个栏目"，
+     hard refresh / 换构建都没用，因为跟构建无关。
+   这里只保留阴面的**配色**。 */
 html:root[data-theme="dark"] .rail-foot {
   border-top: 1px solid var(--glass-line);
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  /* 吸底元素必须有底，否则滚动时下面的导航项会从它背后透出来 */
-  background: #0b0e13;
+  background: var(--glass-rail); /* 吸底元素必须有底色，否则导航项会从背后透出来 */
 }
 
 /* 顶栏：ops-hard.css 里显式写了 backdrop-filter:none，这里收回 */
