@@ -727,7 +727,7 @@ function BuildSchema(listener_type)
             // 只暴露 Exe / Stager。Service Exe / DLL / Shellcode / Hex C 在 pl_main.go 里
             // 仍有构建分支，但不在本产品线对外提供的产出形态里 —— 与其留着让操作员选了
             // 生成出不打算用的东西，不如从源头收掉（Qt 的 GenerateUI 同步改）。
-            { key: "format", label: "输出格式", type: "select", options: ["Exe", "Stager"], group: "基础", hint: "Stager 需在下面「Stager 下载端点」组填地址与端口" },
+            { key: "format", label: "输出格式", type: "select", options: ["Exe", "Stager"], group: "基础", hint: "Exe = 直接产出 EXE；Stager = 小加载器 + 服务端托管 payload，选中后下面会多出「Stager 下载端点」组" },
             { key: "sleep", label: "Sleep", type: "text", group: "基础", hint: "支持 h/m/s；beacon 的解析器（pl_utils.go:414）不补单位，裸数字会被当成 0" },
             { key: "jitter", label: "Jitter %", type: "number", min: 0, max: 100, group: "基础" },
             // -- 进程与签名 ---------------------------------------------------

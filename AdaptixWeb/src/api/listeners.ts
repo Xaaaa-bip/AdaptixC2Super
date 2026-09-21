@@ -265,7 +265,9 @@ export const AGENT_PROFILES: AgentProfile[] = [
     formats: ['Stager', 'Exe'],
     arches: ['x64', 'x86'],
     listeners: ['BeaconHTTP', 'BeaconWS', 'BeaconTCP', 'BeaconSMB', 'BeaconDNS'],
-    defaultFormat: 'Stager',
+    // 默认 Exe：Stager 是"小加载器 + 服务端托管 payload"的两段式，多一次回连、
+    // 有 24h TTL，日常一键上线不该默认走它。要 Stager 的操作员自己点。
+    defaultFormat: 'Exe',
     defaultSleep: '5s',
   },
   {
