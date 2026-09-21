@@ -1,4 +1,10 @@
-SOURCES := $(filter-out beacon/config.cpp, $(wildcard beacon/*.cpp))
+# test_x86_peb.cpp 是 32 位 PEB 访问的**独立诊断程序**（自带 main 与用法注释，
+# 按它自己的说明用 `clang++ -target i686-w64-mingw32 test_x86_peb.cpp -o test_x86.exe`
+# 单独编）。它躺在 beacon/ 下会被这条 wildcard 收进**两种架构**的载荷编译，而里面的
+# `movl %%fs:0x30` 在 x64 下是非法指令 ⇒ objects_http/test_x86_peb.x64.o 编译失败，
+# 整个 extenders 构建挂掉（CI 实测 2026-09-21）。所以必须是 filter-out，
+# 而不是给它加 `#ifdef` 守卫 —— 它本来就不该进载荷。
+SOURCES := $(filter-out beacon/config.cpp beacon/test_x86_peb.cpp, $(wildcard beacon/*.cpp))
 
 # Clang cross to MinGW (Kharon-style fingerprint); do not use -masm=intel globally — breaks Win headers + Clang.
 CXX_X64 := clang++ -target x86_64-w64-mingw32
