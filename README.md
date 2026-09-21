@@ -1,10 +1,90 @@
-# AdaptixC2 v1.5.5
+# AdaptixC2 v1.6
 
 ## 分支说明
 | 分支 | 说明 |
 |------|------|
-| `main` | 最新代码（**v1.5.5**） |
+| `main` | 最新代码（**v1.6**）。已并入 `dev` 与全部 `cursor/*` 分支 |
+| `dev` | 原并行开发线（Linux eBPF agent / libp2p 传输 / 参数混淆），**内容已全量并入 `main`**，保留作归档 |
 | `1.3` | v1.3 原始备份 |
+
+## v1.6 更新内容
+
+本版把长期并行开发的 `dev` 分支（Linux eBPF agent、libp2p 传输、参数混淆等）并入 `main`，
+并合并了 `cursor/*` 系列分支（提权修复、Mimikatz 扩展、Web 投递等）。**仓库现在只保留源码**。
+
+### 新增 / 重写的 Extender
+
+| 插件 | 能力 |
+|------|------|
+| `linux_agent`（重写） | Linux agent，内置 **eBPF** 模块（`bpf/{hide,knock,tc_rewrite,redact,bpf_filter}.c` + CO-RE 头）、mbedTLS 会话加密、**运行期 BOF 编译**（`pl_bofs_api.go` 把 `.c` 编成 `.o`）、JA4 指纹工具 |
+| `gopher_listener_tcp` / `gopher_agent` | 新增 **libp2p** 传输：可经 relay 中转隐藏 C2 真实地址（`l2p_relays` / `l2p_addrs`，**multiaddr 格式**，不是 host:port），配套独立中转进程 `axrelay`（默认 4446） |
+| `beacon_listener_https_emu` | HTTPS 仿真监听器 |
+| `argfuscator` | PowerShell 命令行参数混淆（内置 Invoke-ArgFuscator），需服务端有 `pwsh` |
+| `topology` | 拓扑图服务端持久化（走 ExtenderData KV + WS 广播，零核心 Go 改动） |
+| `relay` | `axrelay` 进程的 Web 控制面（systemd unit 的遥控器，插件自身**不**拉进程，避免两个进程抢端口） |
+| `arachne_service` | 桥接骨架，默认 `enabled: false` |
+
+### 生成参数开关修复：`pe_header_mod`
+
+`ax_config.axs` 的 GenerateUI 与 Web 的 `BuildSchema()` 一直在往生成配置里写 `pe_header_mod`，
+但服务端**没有任何地方读它** —— L4 PE 头改写（Rich header + 校验和 + 时间戳随机化）实际是无条件执行，
+控制台的勾选框是**惰性的**（和此前的 `exe_pseudo_sign` 是同一个坑，那个已修）。
+
+现补上 `effectivePeHeaderMod()`：**控制台显式勾选优先，未设置时回落到 `buildenv.mk` 的
+`BEACON_PE_HEADER_MOD`**（当前 `:= true`）。Web 侧 `BuildSchema()` 同步补了该字段，
+Qt 侧 `GenerateUI` 早已在传该键。
+
+### 仓库只保留源码
+
+- **停止跟踪运行期状态** `AdaptixServer/data/`（操作员库 + Agents / Tasks / Consoles 三张表）。
+  服务端启动时会自建（建表语句全是 `CREATE TABLE IF NOT EXISTS`），全新克隆不受影响
+- **停止跟踪** `beacon_agent/src_beacon/objects_*/stub.*.bin`（`src_beacon/Makefile` 每次从 `files/` 复制过去）
+- **删除无用文件**：`vnc/agent/native.zip`（全库零引用）、`linux_agent/src_agent/mbtls3.tar.gz`
+  （mbedtls 源码 215 个文件已在库）、两个 0 字节的误建文件 `mbedtls/-DARCH_X86_64`
+- 恢复根 `.gitignore`（`dev` 分支删掉了它），并补上 `node_modules` / `.npm-cache` / 各构建产物
+
+> ⚠️ **`AdaptixWeb/dist/` 必须留在仓库里** —— `make web` 只 copy、不跑 npm，它是**构建输入**而不是产物。
+> 删掉它 `make web`（以及 `make server-ext`）会直接 `exit 1`。
+
+> 保留不动的预编译件：`vnc/agent/native/windows/winvnc.exe` + `vnchooks.dll`（UltraVNC 1640 提取物，本仓无源码）、
+> `beacon_agent/src_beacon/files/stub.{x64,x86}.bin`（无生成规则的构建输入）、
+> `vnc/agent/vnc_stream.exe` 与 `vnc_stream_linux`（有源码可重编，但 `vnc_stream.exe` 运行期要上传到目标机）。
+
+### 构建
+
+- `make extenders` 由 `mv` 改为 **`cp -a`**：不再把插件自身的 `dist/` 搬走
+- `make server` 改用 **`GOWORK=off`**（`go.work` 现已包含 linux_agent 等大量模块，工作区模式会拖慢且易冲突）
+- 新增 `build_deploy.sh`（一键构建 + `[1/3][2/3][3/3]` 自检 + 可选 `--up` 部署）与 `build_run_remove.sh`
+  （构建 / 落地 / 启停 / 删除生命周期；含"活进程 mmap 着 `.so` 时 `cp` 原地覆盖会打崩长跑实例"的规避）
+- 新增 `scripts/systemd/`（`adaptixserver.service`、`axrelay.service`、`axstart.sh`）与
+  `tools/{gen,check}_build_schema.py`
+- `-profile` 指向哪个文件由部署方决定。若现网实例用的是别的文件名，**只改 `profile.yaml` 对它是静默无效的**
+
+### CI / Release
+
+- 构建产物**直接发布到 GitHub Release**，不再经 `actions/upload-artifact`。
+  原因：产物存储配额与 Release 资源是两套账，产物默认留 90 天，堆到 1 GB 后每次上传都报
+  `Failed to CreateArtifact: Artifact storage quota has been hit`（编译本身一直是过的，红的只是上传那一步）
+- 编译覆盖补全到 **19 个 listener / service 插件 + 5 个 agent**：新增的
+  `beacon_listener_https_emu`、`argfuscator`、`relay`、`topology`、`arachne_service` 此前**从未被 CI 编译过**
+- 资产名（原始二进制，不再套 zip）：
+  `AdaptixServer-linux-amd64`、`AdaptixServer-macos`、`AdaptixServer-windows-amd64.exe`、`extenders-dist.zip`
+
+### 合并的 `cursor/*` 分支
+
+- `fix-elevation`：getsystem 静默失败、printspoofer token、rev2self
+- `mimikatz-extension`：Extension-Kit 新增内存加载官方 Mimikatz（No-Consolation）+ Cobalt Strike 命令别名
+- `remove-qt-client` / `enable-ci-windows-extenders` / `fix-web-delivery`：随 `main` 先行并入
+- `payload-generate-options` / `delivery-full-layout`：Web 侧改动与 `dev` 的 `BuildSchema()` 通用渲染是两套实现，
+  **只移植了 `pe_header_mod` 开关与 `ConnectorWS.cpp` 的 Makefile 去重**，其余取 `dev` 版
+
+### 已知待办
+
+- Cursor 侧的 `AdaptixWeb/src/api/trafficTemplates.ts`（监听器 HTTP/WS 流量模板）**已入库但未接线**
+- Web 会话列表折叠持久化、主题切换等 Cursor 侧会话 UI 改动未并入
+- `linux_agent` 的 eBPF 对象不在 `make all` 流程内，需用 `tools/build_bpf.sh` 单独生成
+
+---
 
 ## v1.5.5 更新内容
 
@@ -187,10 +267,13 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 ## 目录结构
 
 - `AdaptixServer/`：服务端源码与默认配置
-- `AdaptixWeb/`：Web 控制台源码（构建产物可放 `AdaptixWeb/dist` 供 `make web` 拷贝）
+- `AdaptixWeb/`：Web 控制台源码。**`AdaptixWeb/dist/` 需保留在仓库**——`make web` 只 copy 不跑 npm
 - `Extension-Kit/`：BOF / axscript 扩展（`make server-ext` 拷到 `dist/Extension-Kit`）
-- `.github/workflows/build.yml`：GitHub Actions 服务端与 extenders 构建，成功后自动发布到 Releases
-- `scripts/`：辅助脚本
+- `.github/workflows/build.yml`：GitHub Actions 构建，产物**直接发布到 Release**
+- `build_deploy.sh`：一键构建 + 自检 + 可选部署（`--up`）
+- `build_run_remove.sh`：构建 / 落地 / 启停 / 删除的生命周期脚本
+- `scripts/systemd/`：`adaptixserver.service`、`axrelay.service`、`axstart.sh`
+- `tools/`：`gen_build_schema.py` / `check_build_schema.py`
 - `Makefile`：`server` / `extenders` / `web` / `extension-kit` / `server-ext`
 
 ## GitHub Actions 一键构建
@@ -206,36 +289,47 @@ Adaptix 是一个用于授权安全测试与红队演练的 C2 框架。
 3. 提交 Pull Request 到 `main` 或 `master`（只构建，不发 Release）
 4. 在 GitHub Actions 页面手动点击 `workflow_dispatch`
 
-一次工作流会生成：
+一次工作流会构建并**直接发布**到 [Releases](https://github.com/Xaaaa-bip/AdaptixC2/releases)：
 
-- `AdaptixServer-linux-amd64`
-- `AdaptixServer-macos`
-- `AdaptixServer-windows-amd64`
-- `extenders-dist`（Linux 交叉编译的 listener / agent / service 插件）
+| 资产 | 说明 |
+|------|------|
+| `AdaptixServer-linux-amd64` | Linux 服务端二进制（原始文件，非 zip） |
+| `AdaptixServer-macos` | macOS 服务端二进制 |
+| `AdaptixServer-windows-amd64.exe` | Windows 服务端二进制 |
+| `extenders-dist.zip` | Linux 交叉编译的 listener / agent / service 插件，内部布局 `AdaptixServer/extenders/<plugin>/dist/...` |
 
-构建成功后会自动把上述产物打成 zip 发到 [Releases](https://github.com/Xaaaa-bip/AdaptixC2/releases)：
+发布目标：
 
 - 推送 `v*` 标签 → 创建对应版本的正式 Release
 - 推送到 `main` / `master` → 更新名为 `latest` 的预发布（滚动覆盖）
+- Pull Request → **只构建，不发布**
+
+> 构建产物**不再**经过 `actions/upload-artifact`。那是另一套存储配额（默认留 90 天），
+> 堆满之后每次上传都会失败，而编译本身并没有问题。Release 资源不占该配额。
 
 操作员界面使用集成 Web 控制台，不再构建 Qt 桌面客户端。
 
 ## 默认启用的 Extenders
 
-- Beacon HTTP / SMB / TCP / DNS / WS Listener
+- Beacon HTTP / SMB / TCP / DNS / WS / **HTTPS（仿真）** Listener
 - Beacon Agent
-- Gopher TCP Listener / Gopher Agent
-- Linux TCP Listener / Linux Agent
+- Gopher TCP Listener / Gopher Agent（含 **libp2p** 传输与 relay 中转）
+- Linux TCP Listener / Linux Agent（**eBPF**）
 - macOS Agent
 - Discord Listener
-- Kharon HTTP Listener（默认未启用）
+- **ArgFuscator**（PowerShell 参数混淆，需 `pwsh`）
+- **Topology**（拓扑图持久化）、**Relay**（`axrelay` 控制面）
 - VNC 远程桌面
+- Kharon HTTP Listener（默认未启用）
+- Arachne（`enabled: false` 的桥接骨架）
 
 说明：
 
 - `agent_kharon` 默认未启用
 - `listener_kharon_http` 默认未启用
 - 原因是这两个模块在默认仓库布局下更容易出现配置文件或额外依赖问题，不适合作为“开箱即用”的默认项
+- libp2p 传输需要独立进程 `axrelay`（systemd unit 见 `scripts/systemd/axrelay.service`），
+  它**不会**由 teamserver 拉起；`relay` 插件只做控制面，不 fork 进程
 
 ## 本地编译环境要求
 
@@ -330,10 +424,10 @@ https://127.0.0.1:8843/api/login
 
 ### GitHub Actions 产物
 
-下载对应 artifact 后，目录中会包含：
+从 [Releases](https://github.com/Xaaaa-bip/AdaptixC2/releases) 下载：
 
-- `AdaptixServer` / `AdaptixServer.exe`
-- `extenders-dist`（Linux 构建）
+- `AdaptixServer-linux-amd64` / `AdaptixServer-macos` / `AdaptixServer-windows-amd64.exe` —— 服务端二进制
+- `extenders-dist.zip` —— Linux 构建的插件，解压后是 `AdaptixServer/extenders/<plugin>/dist/`
 
 Linux / macOS 产物可配合默认 `profile.yaml` 运行。Windows 包适合验证服务端基础启动；Go plugin 在 Windows 上不可用，需在 Linux 上加载 extenders。
 
@@ -389,8 +483,16 @@ Linux / macOS 产物可配合默认 `profile.yaml` 运行。Windows 包适合验
 
 ## 提交说明
 
-如需向上游贡献修改，请优先提交到：
+- 本 `main` 已并入 `dev`（原并行开发线）与全部 `cursor/*` 分支，日常开发直接提交到 `main`
+- `dev` 保留作归档，不再单独演进
+- 如需**向上游**（`Adaptix-Framework/AdaptixC2`）贡献修改，上游可能不会直接接收本 fork 的重构，
+  建议只挑独立的小改动单独提交
 
-- `dev`
+## 变更记录
 
-否则上游可能不会直接接收你的变更。
+- v1.6 —— 并入 `dev`（Linux eBPF agent、libp2p 传输、ArgFuscator、Topology、Relay、HTTPS 仿真监听器）
+  与 `cursor/*`（提权修复、Mimikatz 扩展）；接通 `pe_header_mod` 开关；仓库只保留源码；
+  CI 产物改为直接发布到 Release
+- v1.5.5 —— Web 缺资源白屏修复、GopherTCP `callback_addresses` 兼容、移除 Qt 客户端
+- v1.5 —— Web 产品化、一键 VPS 构建、Extension-Kit 布局收敛
+- v1.4 —— WS Beacon、伪签名、Linux WS Agent、对抗模块
