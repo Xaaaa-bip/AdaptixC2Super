@@ -182,9 +182,25 @@ export function Generate() {
 
   const selectedListener = compatible.find((l) => l.l_name === listener)
   // 表是按 (agent, listener 注册名) 取的 —— 服务端就是按这两个键预计算并缓存的。
-  // 没选监听器就是空串：那时服务端查不到缓存返回 {}，界面退回内置表单并提示
-  // "请先选择监听器"，比拿一个猜的 listener 渲染出错位的字段强。
+  // 这里是**真正选中的**监听器类型（没选就是空串），只用于下发判定与提示。
+  // 取表另用下面的 schemaType —— 那一个不能为空串，见其注释。
   const listenerType = selectedListener?.l_reg_name || ''
+  /**
+   * 取「插件声明的参数表」用的监听器类型。
+   *
+   * ★ 没选监听器时**不能留空**：服务端按 (agent, listener_type) 预计算并缓存这张表，
+   *   查不到就返回 {}，前端 normalize 判 null，整个参数区退回内置表单 —— 操作员一进来
+   *   看到的参数比插件实际支持的少一大截（IAT 隐藏 / 图标伪装 / 自签名 / PE 头 /
+   *   代理轮换 / DNS / Stager 端点全不见），会以为功能被砍了。
+   *   实际上这只是"还没选监听器"，不是"没有这些参数"。
+   *
+   *   兜底取本 agent 声明的第一个监听器类型：字段面是完整的，只有 show_if 的结论
+   *   按那个类型算 —— 比一片空白强，也比猜一个好（不是猜，是 profile 里写死的）。
+   *
+   *   下发不受影响：没选监听器时「生成并下载」本来就是禁用的，真生成时 listenerType 非空，
+   *   两者相等。
+   */
+  const schemaType = listenerType || profile.listeners[0] || ''
 
   // 换 agent：上一个插件的表不能继续用（字段完全不同，会渲染出一屏发不出去的控件），
   // 操作员在它上面填的值也一样。换监听器则**不清**——字段列表其实一样，只有 show_if
@@ -204,7 +220,7 @@ export function Generate() {
 
   useEffect(() => {
     let stale = false
-    loadBuildSchema(api, agent, listenerType)
+    loadBuildSchema(api, agent, schemaType)
       .then((s) => {
         if (!stale) setSchema(s)
       })
@@ -213,12 +229,12 @@ export function Generate() {
         setSchema(null)
         // 失败退回内置界面是对的（宁可给操作员一个能用的表单），但**必须留痕** ——
         // 否则"这个 agent 没迁移"和"后端挂了"在界面上长得一模一样。
-        pushLog('warn', `生成参数表拉取失败（${agent}/${listenerType || '-'}）：${e?.message || e}`)
+        pushLog('warn', `生成参数表拉取失败（${agent}/${schemaType || '-'}）：${e?.message || e}`)
       })
     return () => {
       stale = true
     }
-  }, [api, agent, listenerType, pushLog])
+  }, [api, agent, schemaType, pushLog])
 
   const showSleep = agent === 'beacon' || agent === 'kharon'
   const isStager = format === 'Stager'
@@ -312,7 +328,7 @@ export function Generate() {
         // ★ 只收集**当前可见**的键：show_if 收起 = 这个组合不适用 = 不发。
         //   否则在 HTTP 监听器上填的代理，切到 TCP 之后会照样发出去 —— 插件不报错，
         //   只是把一个它用不上的代理配置编进载荷。值仍留在 sv 里，切回去还在。
-        for (const f of visibleFields(schema, format, listenerType)) {
+        for (const f of visibleFields(schema, format, schemaType)) {
           const v = readKey(f.key)
           if (v !== undefined) cfg[f.key] = v
         }
@@ -489,7 +505,7 @@ export function Generate() {
                 <BuildSchemaFields
                   schema={schema}
                   format={format}
-                  listenerType={listenerType}
+                  listenerType={schemaType}
                   read={readKey}
                   write={writeKey}
                 />

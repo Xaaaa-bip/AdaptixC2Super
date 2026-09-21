@@ -2284,7 +2284,7 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 .home-actions button{min-width:auto}
 
 /* ═══════════════════════════════════════════════════════════════════════
-   兼容层 —— dev 版新增页面（BOF / 参数混淆 / 扩展命令 / 中转 / 拓扑 / 会话）
+   兼容层 —— dev 版新增页面（BOF / 参数混淆 / 扩展命令 / 中转 / 拓扑 / 会话 / 载荷参数表）
    引用的变量在太极·宣纸这套令牌里没有同名项，这里统一映射过去。
    ★ 只在 :root 定义、值用 var() 引用令牌 —— 阴面（深色）切换时能一起跟着变。
    ═══════════════════════════════════════════════════════════════════════ */
@@ -2325,11 +2325,11 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 }
 
 /* ── dev 专有组件的规则 ────────────────────────────────────────────────
-   从黑客皮肤里**整条**搬来（含选择器）：凡选择器里出现的类名在太极版 CSS 中
-   一个都没定义过的，就原样保留（`.bof-*` `.xkit-*` `.axf-*` `.graph-*` `.bs-*`
-   `.cs-*` `.wd-*` `.page-tips*` `.sess-*` `.pty-*` `.traffic-tpls` `.page-preview*` …）。
-   重定义既有类（`.card` `.field` `.dlg` 等）的黑客风规则**不会**被搬过来 ——
-   那些一律以太极版为准。配色由上面那层变量决定，所以这些组件会跟着宣纸/墨色走。
+   判据：**选择器里含任意一个 dev 专有类**就整条搬回（允许与既有类混写，例如
+   `.bs-body .field > .hint{grid-column:2}` —— 只按"类名不能重合"过滤会把这类
+   混血规则全丢掉，后果是新页面布局直接塌掉，实测过一次）。
+   重定义既有类（`.card` `.field` `.dlg` 等）的黑客风规则不含任何新类，一律不搬 ——
+   那些以太极版为准。配色由上面那层变量决定，所以这些组件跟着宣纸/墨色走。
    ═══════════════════════════════════════════════════════════════════ */
 /* 娴侀噺妯℃澘閭ｄ竴鎺掞細10 涓� chip 鎸ゅ湪涓�璧凤紝鏀舵垚鑳跺泭褰㈠ソ鐐归�� */
 .traffic-tpls { margin-bottom: 4px; }
@@ -2368,6 +2368,13 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
   border: 0;
   background: #fff;
 }
+/* 鈹�鈹� 鎻掍欢澹版槑鐨勭敓鎴愬弬鏁拌〃锛坈omponents/BuildSchemaFields.tsx锛� 鈹�鈹�
+   鍏ㄦ槸**鏂扮被鍚�**锛屼竴鏉℃棦鏈夐�夋嫨鍣ㄩ兘娌¤�嗙洊锛�.gen-params 鐨勬爡鏍�/闂磋窛銆�.field 鐨勪袱鍒�
+   甯冨眬銆�.chip-row / .check-inline / .hint 鐨勮�傛劅涓�涓�瀛楄妭娌″姩锛屾墍浠ユ湭杩佺Щ鐨� agent
+   璧板師 JSX 鏃跺拰鏀瑰姩鍓嶉�愬儚绱犱竴鑷淬�傚埆鎶婅繖浜涜�勫垯骞惰繘涓婇潰鐨� .gen-* 閲� 鈥斺��
+   hacker.css 閲岄偅浜� `html:root[data-theme="dark"] .gen-*` 鐗瑰紓搴︽洿楂橈紝
+   涓�鏃﹀叡鐢ㄩ�夋嫨鍣�锛屾敼杩欓噷灏辩瓑浜庡湪璺熷彟涓�涓�鏂囦欢鎶㈠悓涓�浠藉０鏄庛�� */
+.bs-group { min-width: 0; }
 .bs-head {
   display: flex; align-items: center; gap: 6px; width: 100%;
   height: auto; padding: 0; border: 0; background: none; text-align: left;
@@ -2379,10 +2386,160 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 /* 鏀惰捣鏉ユ椂涔熸姤涓�鏁帮紝鍚﹀垯銆岃繖缁勯噷鏈夋病鏈夋垜瑕佺殑涓滆タ銆嶅彧鑳介潬鐐瑰紑璇� */
 .bs-count { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-3); }
 .bs-body { display: grid; }
+/* 鎻愮ず妗嗚窡鐫�瀹冩弿杩扮殑閭ｄ釜鎺т欢璧帮紝鍒�椋樺湪瀛楁�典腑闂淬��
+   鈽� 涓ゆ潯閮�**鍙�鍦� .bs-body 閲�**鏀剁揣锛氬嚭浜嗚繖涓�瀹瑰櫒锛堟湭杩佺Щ鐨� agent 璧板師 JSX锛�
+     涓�鍒囩収鏃э紝鍥為��鐣岄潰浠嶇劧鍜屾敼鍔ㄥ墠閫愬儚绱犱竴鑷淬��
+   1) 宸﹁竟缂樺�归綈鎺т欢銆俿tyles.css:316 鐨� `.field > .hint{grid-column:1/-1}` 璁╁畠浠�
+      鏍囩�惧垪璧凤紙瀹炴祴 x=83锛夛紝鑰屾帶浠跺湪 x=193 鈥斺�� 涓�闂寸┖鐫�涓�鏁翠釜鏍囩�惧垪锛岃�昏捣鏉ュ儚鍙﹁捣涓�鏍忋��
+      鏀规垚鍙�鍗犵�� 2 鍒楋紝瀹藉害涔熷氨姝ｅソ绛変簬杈撳叆妗嗐�傛帓闄� .field-flat锛堝�嶉�夋�嗛偅绉嶅崟鍒楀潡锛�
+      涓嶆槸鏍呮牸锛実rid-column 瀵瑰畠鏃犳晥锛屽啓浜嗕篃娌＄敤銆�
+   2) 涓婁笅鐣欑櫧 18px 鈫� 6px銆�18 = .field 鐨� row-gap 10 + .hint 鐨� margin 8锛�
+      涓嬮潰閭� 18 = margin 8 + .field 鐨� margin-bottom 10銆傛墍浠ヨ�岄棿璺濆拰 margin 涓�璧锋敹銆�
+      鐢� :has() 鍙�瀵�**甯︽彁绀烘��**鐨勫瓧娈靛姩鎵嬶紝娌℃彁绀烘�嗙殑瀛楁�甸棿璺濅粛鏄�鍘熸潵鐨� 10px 鈥斺��
+      鍚﹀垯鏁村紶琛ㄤ細鎸ゆ垚涓�鐗囷紝閭ｆ槸鍙︿竴涓�鏋佺��銆� */
+.bs-body .field { row-gap: 2px; margin-bottom: 2px; }
+.bs-body .field:not(:has(> .hint)) { margin-bottom: 10px; }
+.bs-body .field > .hint { margin: 4px 0; }
+.bs-body .field:not(.field-flat) > .hint { grid-column: 2; }
 .bs-chips button { height: 26px; font-size: 12px; }
 .bs-file-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bs-file-row input[type="file"] { min-width: 0; flex: 1 1 160px; }
 .bs-file-meta { font-size: 11.5px; word-break: break-all; }
+/* ============================================================
+   AdaptixWeb 鈥� 浠�琛ㄧ毊鑲わ細鍐风煶澧ㄥ簳 + 闈掕壊寮鸿皟 + 绾㈣壊浠呭嵄闄� + 缁夸粎鐘舵�佺偣
+   ------------------------------------------------------------
+   閰嶈壊鍏ㄩ儴鏉ヨ嚜 tokens.css锛屾湰鏂囦欢鍙�璐熻矗"鎶婇�滆壊鏀惧埌鍝�涓�閮ㄤ欢涓�"銆�
+   涓夋潯绾�寰嬶紙鐮村潖瀹冧滑鐣岄潰灏变細閲嶆柊鍙樼硦锛夛細
+     1. 闈� = 娲荤殑涓滆タ锛堝疄鏃� / 鍙�浜や簰 / 鐒︾偣锛夈�備笉瑕佹嬁瀹冨綋瑁呴グ銆�
+     2. 绾� = 鍗遍櫓锛屽彧姝や竴鑱屻�傞�変腑鎬併�佸己璋冩�佷竴寰嬩笉鐢ㄧ孩銆�
+     3. 缁� = 鐘舵�佺偣涓撶敤銆傜豢鏄�"鏈哄櫒鍦ㄦ姤鐘舵��"锛屼笉鏄�"杩欎釜鍏冪礌琚�楂樹寒浜�"锛�
+        鎵�浠ユ案杩滀笉鍋氬～鍏呫�佷笉鍋氳竟妗嗐�佷笉鍋氭�ｆ枃鑹层��
+   缁堢��缁匡紙--term-ink / --term-ink-dim锛夊彧鍦� .term-out / .term-in 鍐呴儴鏈夋晥锛�
+   鍊熷埌澶栧３涓婁細鍙樻垚"鑾�鍚嶅叾濡欑殑缁�"銆�
+   ------------------------------------------------------------
+   灞傚彔璇存槑锛堥噸瑕侊級锛�
+   @import 浼氳��鍐呰仈鍒� styles.css 椤堕儴锛屽洜姝ゆ湰鏂囦欢鍦ㄦ瀯寤轰骇鐗╀腑浣嶄簬
+   tokens.css 鈫� motion.css 鈫� ops-hard.css 涔嬪悗锛屼絾鍦� styles.css 涓讳綋瑙勫垯
+   锛堝嵆 OPS DECK 閭ｆ�碉紝瑙� styles.css 1543+锛変箣鍓嶃�備篃灏辨槸璇达細鍙�闈犫�滄帓鍦ㄥ悗闈⑩��
+   骞朵笉鑳借耽涓嬩笌 styles.css 涓讳綋鍚岀壒寮傚害鐨勮�勫垯銆�
+   鎵�浠ユ湰鏂囦欢鎵�鏈夐�夋嫨鍣ㄧ粺涓�鍔犲墠缂� `html:root[data-theme="dark"]`
+   锛坉ata-theme 鎭掍负 dark锛岃�� utils.ts loadTheme锛夛細姣� styles.css 閲�
+   `html[data-theme="dark"] X` 楂樹竴涓�灞傜骇銆佹瘮瑁搁�夋嫨鍣ㄩ珮涓や釜灞傜骇锛�
+   鏃犻渶婊ョ敤 !important 鍗冲彲瑕嗙洊锛涗粎鍦ㄦ洿鏃╃殑灞傚凡瀵硅�ュ睘鎬х敤浜�
+   !important 鏃舵墠闀滃儚 !important锛坮ail / lx-input / ops-search /
+   sdot.on 绛夛級銆�
+   浠呮敼棰滆壊 / 鑳屾櫙 / 杈规�� / 闃村奖 / 杈夊厜 / 閫忔槑搴︼紱甯冨眬灏哄�镐竴寰嬩笉鍔ㄣ��
+   鏂板�炶�呴グ鎬т吉鍏冪礌鍙�鏈変袱涓�锛�.ops::after锛堝叏澹� CRT 鎵�鎻忕嚎 + 鏆楄�掞級銆�
+   .lx-card::after锛堢櫥褰曞崱鎵�鎻忕嚎 + 鏆楄�掞級銆�
+   ============================================================ */
+
+/* ============================================================
+   1. 鐜�澧冩皼鍥� 鈥斺�� 鍐疯壊鍗曡壊鐩告檿锛堜粎鎹㈣壊锛屼繚鐣欏師 keyframes锛�
+   ------------------------------------------------------------
+   涓婁竴鐗堣繖閲屾槸绾㈡檿 + 缁挎檿涓や釜浜掕ˉ鑹层�備簰琛ヨ壊鍙犲姞浼氫簰鐩告秷鑹诧紝
+   妯＄硦涔嬪悗鍑烘潵灏辨槸涓�鍥㈡祽娴婄殑妫� 鈥斺�� 鏁撮〉鍙戦椃鐨勬牴鍥犲氨鍦ㄨ繖涓ゆ潯銆�
+   鐜板湪鍙�鐣欏悓渚у喎鑹茬浉锛堥潚 + 钃濓級锛屾繁娴呮湁鍒�浣嗕笉鎵撴灦銆�
+   ============================================================ */
+
+html:root[data-theme="dark"] .ops > .ink-scape {
+  opacity: .8;
+}
+/* 鐩戝惉鍣ㄦ搷浣滃垪銆�
+   鍘熸潵杩欐牸鐨勫竷灞�鍐欏湪 JSX 鐨� inline style 閲岋紙display:flex; gap:6; flexWrap:wrap锛夛紝
+   鐜板湪鎸�鍒拌繖閲岋紝椤轰究缁欏畠涓�涓�鍙�閫夋嫨鐨勭被鍚� 鈥斺�� 涓嬮潰閭ｆ潯 danger 瑙勫垯闇�瑕佷竴涓�浣滅敤鍩燂紝
+   涓嶈兘鍏ㄥ眬鏀� button.danger锛堝脊绐楅噷鐨勭‘璁ゆ寜閽�杩樿�佷繚鎸佸疄蹇冪孩锛夈�� */
+html:root[data-theme="dark"] .lst-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* 銆屽仠姝�銆嶄笉鍐嶅父椹诲疄蹇冪孩銆�
+   涓�琛屼竴涓�瀹炲績绾㈠潡锛�5 琛屽氨鏄� 5 鍧� 鈥斺�� 绾㈣壊浠�"杩欓噷鏈夊嵄闄�"閫�鍖栨垚
+   "琛ㄦ牸鍙崇��鐨勮�呴グ鏉�"锛岃窡涔嬪墠鎶婄�荤嚎鐐逛粠绾㈣壊鏀规帀鏄�鍚屼竴涓�閬撶悊锛�
+   閾烘弧鐨勭孩浼氳�╀汉瀵圭孩鑴辨晱锛岀湡鍑轰簨鏃堕偅涓�绾㈠弽鑰屾病浜虹湅銆�
+   杩欎竴椤电湡姝ｇ殑鍗遍櫓鍒嗙骇鏄� 鏆傚仠(鍙�鎭㈠��) < 鍋滄��(涓嶅彲閫�)锛屽彧鏈夊仠姝㈣�ュ甫绾�銆�
+   鍋氭硶娌跨敤鏈�鏂囦欢閲� .ctx .danger 宸茬粡鐢ㄨ繃鐨勶細榛樿�ゅ彧缁欑孩鎻忚竟 + 绾㈠瓧锛�
+   鎸囬拡绉讳笂鍘绘墠濉�瀹炪�傚嵄闄╃瓑绾ц繕鍦�锛屼絾涓嶅啀闈犱竴鏁村垪瀹炲績鍧楀枈銆� */
+html:root[data-theme="dark"] .lst-actions button.danger {
+  background: transparent;
+  border-color: rgba(255, 77, 94, .45);
+  color: var(--danger);
+}
+html:root[data-theme="dark"] .lst-actions button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+/* 琛ㄦ牸琛屽唴鐨勭牬鍧忔�ф搷浣滐細鍏ㄥ眬鍋滅敤瀹炲績绾�銆�
+   鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
+   涓婇潰閭ｆ潯 .lst-actions 瑙勫垯鍙�淇�浜嗙洃鍚�鍣ㄤ竴椤碉紝浣嗗悓涓�涓�姣涚梾鍦�
+   涓嬭浇(Downloads:142) / 闅ч亾(Tunnels:207) / 鎴�鍥�(Screenshots:132) /
+   鍑�鎹�(Credentials:79) / 鐩�鏍�(Targets:72) 閮藉湪 鈥斺�� 涓�琛屼竴涓�瀹炲績绾㈠潡锛�
+   绾㈣壊浠�"杩欓噷鏈夊嵄闄�"閫�鍖栨垚"琛ㄦ牸鍙崇��鐨勮�呴グ鏉�"銆傚彧淇�涓�椤电瓑浜庤�╁悓涓�涓�
+   鎶辨�ㄥ湪鍙﹀�栧洓椤甸噸鏂板嚭鐜颁竴娆★紝鎵�浠ヨ繖閲屼慨鐨勬槸**涓嶅彉閲�**锛�
+   銆岃〃鏍艰�屽唴鐨勭牬鍧忔�ф搷浣滀笉璇ユ槸瀹炲績绾�銆嶃��
+
+   浣滅敤鍩熼�� tbody td 鏄�鏈変緷鎹�鐨勶紝涓嶆槸鍥剧渷浜嬶細
+   寮圭獥纭�璁ゆ寜閽�锛�.mask > .dlg锛夊拰鍙抽敭鑿滃崟锛�.ctx锛夊繀椤讳繚鎸佸疄蹇冪孩 鈥斺�� 瀹冧滑鏄�
+   銆岀‘璁よ繖涓�涓嶅彲閫嗗姩浣溿�嶇殑鏈�鍚庝竴閬撻椄锛岀孩鑹插湪閭ｉ噷鏄�鏈夋晥鐨勩�傚疄娴嬭繖鍑犱釜椤甸潰閲�
+   涓ょ被鎸夐挳鐨� DOM 浣嶇疆姝ｅソ鍒嗗緱寮�锛�**鎵�鏈�** .dlg/.ctx 鐨� danger 鎸夐挳閮芥覆鏌撳湪
+   </table> 涔嬪悗锛圖ownloads:163銆丠osts:421 绛夛級锛屼笉鍦ㄤ换浣� tbody 閲屻��
+   鎵�浠� tbody td 杩欎釜浣滅敤鍩熻兘绮剧‘鍛戒腑琛屽唴鎸夐挳銆佷笖纰颁笉鍒伴椄闂ㄦ寜閽�銆� */
+html:root[data-theme="dark"] .ops table tbody td button.danger {
+  background: transparent;
+  border-color: rgba(255, 77, 94, .45);
+  color: var(--danger);
+}
+/* 浠诲姟鐘舵�佺殑涓ょ�嶅父鎬併��
+   done    鈥斺�� 浠诲姟瀹屾垚銆傝繖鏄�缁濆ぇ澶氭暟琛岀殑鐘舵�侊紙瀹炴祴涓�灞� 47 琛屽叏鏄�瀹冿級銆�
+              甯告�佷笉涓婅壊锛氫竴鏃︾粰甯告�佷竴涓�棰滆壊锛岄�滆壊灏变笉鍐嶆槸淇″彿锛�
+              闇�瑕佽烦鍑烘潵鐨勯偅涓�琛屽弽鑰岀湅涓嶈�佷簡銆�
+   running 鈥斺�� 鎵ц�屼腑銆傞潚 = 娲荤殑/杩涜�屼腑锛岃窡鍏ㄧ珯"鐒︾偣/瀹炴椂"鐢ㄥ悓涓�涓�鑹诧紱
+              鍘熸潵鐢ㄧ殑鏄� .tag.warn锛堢惀鐝�锛夛紝鍙�"姝ｅ湪璺�"涓嶆槸璀﹀憡锛�
+              鐞ョ弨璇ョ暀缁欑湡姝ｇ殑寮傚父銆� */
+html:root[data-theme="dark"] .tag.done {
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+html:root[data-theme="dark"] .tag.running {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+/* 鐢熸垚椤甸�勮�� / 鐩戝惉鍣ㄩ�変腑鎬� */
+html:root[data-theme="dark"] .gen-preset,
+html:root[data-theme="dark"] .gen-count {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* 銆�2. 鐩戝惉鍣ㄣ�嶆爣棰樺彸渚х殑璁℃暟锛氭樉绀� N / 鍏� M銆�
+   margin-left:auto 鎶婅�℃暟鎺ㄥ埌鏍囬�樿�屽彸绔�锛堝拰 .toolbar .stats 鍚屼竴濂楄�绘硶锛夛紝
+   瀹冨洖绛旂殑鏄�"鎴戞槸涓嶆槸婕忕湅浜嗗嚑涓�鐩戝惉鍣�" 鈥斺�� 杩欐�ｆ槸鍘熸潵琚�褰撴垚 bug 鎶ヤ笂鏉ョ殑閭ｄ釜鐤戦棶銆�
+   鐢� tabular-nums 鏄�鍥犱负杩欎釜鏁板瓧浼氶殢骞冲彴鍒囨崲璺冲姩锛岀瓑瀹芥暟瀛椾笉浼氳�╁彸杈圭殑璇存槑鏂囧瓧宸﹀彸鎶栥��
+   鈽� 2026-09-19锛氳繖鏉� auto 澶栬竟璺濆繀椤�**鍗曠嫭鎴愯�勫垯**锛岀粷涓嶈兘骞惰繘涓婇潰閭ｆ潯閫楀彿閫夋嫨鍣ㄣ��
+   瀹冨師鍏堝氨骞跺湪閲岄潰锛屼簬鏄� auto 澶栬竟璺濅篃钀藉埌浜� .gen-preset 涓婏紱鑰岄�勮�惧崱鐗囨槸鏍呮牸椤癸紝
+   `width:auto` 涓�鏃﹂厤涓� `margin-left:auto`锛屽氨涓嶅啀 stretch 鎴愭暣鍒楋紝鑰屾槸閫�鍖栦负
+   fit-content 骞惰��鎺ㄥ埌鍒楀熬 鈬� 鍐呭�规瘮鍒楃獎鐨勫崱鐗囪嚜宸辩缉灏忋�佸彸璐磋竟锛屾崲琛屽埌绗�浜岃�岀殑鍗＄墖
+   涔熶笉鍐嶄笌绗�涓�琛屽乏瀵归綈銆傛妸娴忚�堝櫒绐楀彛缂╃獎銆佸垪琚�鎾戝�芥椂鏈�鏄庢樉锛堟姤涓婃潵鐨勫氨鏄�杩欐潯锛夈��
+   鍗＄墖鍙�璇ョ户鎵夸笂闈㈤偅鏉＄殑瀛楀彿/棰滆壊锛屼笉璇ュ悆鍒拌繖鏉″�栬竟璺濄�� */
+html:root[data-theme="dark"] .gen-count {
+  margin-left: auto;
+}
+/* 鈹�鈹� .field 鐨�"鏍囩�惧湪涓娿�佹帶浠跺湪涓�"鍙樹綋 鈹�鈹�
+   `.field` 榛樿�ゆ槸 `grid-template-columns: 100px 1fr`锛堟爣绛惧湪宸︼級锛�
+   杩欏湪琛ㄥ崟閲屾病闂�棰橈細鎺т欢鏄�涓�妗嗭紝浠� x=110 閾哄埌鍙宠竟锛岀溂鐫涜�讳綔"鏍囩�� 鈫� 妗�"銆�
+   浣嗕袱绫讳笢瑗夸笉璇ヨ繖涔堟帓锛�
+     1. 澶嶉�夋�� 鈥斺�� 鎺т欢鏈�浣撳彧鏈� 14px锛屽嵈瑕佺珯鍦� x=110锛岃窡 x=0~60 鐨勬爣绛�
+        涓�闂寸┖涓�鏍硷紝璇昏捣鏉ユ槸鏂�鐨勶紱
+     2. 鍛戒护妗� 鈥斺�� 100px 鐨勬爣绛惧垪鍦ㄧ獎鏍忛噷绛変簬鐩存帴鐮嶆帀鍥涙垚瀹藉害銆�
+   鍔� .field-flat 璁╄繖涓ょ被鍥炲埌鍗曞垪銆� */
+html:root[data-theme="dark"] .field-flat {
+  display: block;
+}
 /* 鈹�鈹� 鎶曢�掑懡浠ゅ潡 鈹�鈹� */
 html:root[data-theme="dark"] .wd-block + .wd-block {
   margin-top: 10px;
@@ -2446,6 +2603,11 @@ html:root[data-theme="dark"] .page-tips-head {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
+}
+html:root[data-theme="dark"] .page-tips-head .ghost {
+  margin-left: auto;
+  color: var(--ink-3);
+  border: none;
 }
 html:root[data-theme="dark"] .page-tips-body {
   font-size: 12.5px;
@@ -2525,6 +2687,13 @@ html:root[data-theme="dark"] .bof-card-head {
 }
 html:root[data-theme="dark"] .bof-card-head > * {
   white-space: nowrap;
+}
+/* 鏂囦欢璺�寰勬槸澶撮儴鍞�涓�銆屽彲浠ユ斁寮冦�嶇殑淇℃伅锛氳�╁畠鍚冨墿浣欏�藉害骞剁渷鐣ワ紝
+   鑰屼笉鏄�鎶婃梺杈圭殑鐘舵�佸窘鏍囨尋鍙樺舰銆� */
+html:root[data-theme="dark"] .bof-card-head > .dim.mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 html:root[data-theme="dark"] .bof-name {
   font-family: var(--mono);
@@ -2615,6 +2784,14 @@ html:root[data-theme="dark"] .bof-base:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25);
+}
+/* 鈹�鈹� 淇�澶嶆壒娆� 2026-09-13 鈹�鈹� */
+
+/* BOF 椤靛彲婊氬姩锛�.page 涓� flex column锛宐of-wrap 闇�鍚冩帀鍓╀綑楂樺害锛� */
+html:root[data-theme="dark"] .bof-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 /* 鈹�鈹� BOF 瀹炴垬鐢ㄦ硶锛坣otes锛夆攢鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
    杩欏紶鍗′笂鐜板湪鏈変笁绉嶆枃瀛楋紝鑱岃矗蹇呴』涓�鐪煎垎寰楀紑锛�
@@ -2742,6 +2919,34 @@ html:root[data-theme="dark"] .bof-param label {
   white-space: normal;
   line-height: 1.35;
 }
+/* 鎿嶄綔鎻愮ず锛氬彸涓嬭�掓诞鍔ㄩ潰鏉匡紝閬垮厤琚�鍗＄墖 overflow 瑁佸壀銆�
+
+   鍙充笅瑙掓槸涓変釜涓滆タ鎶㈢殑浣嶇疆锛屽緱鎺掑ソ锛堣嚜涓嬭�屼笂锛夛細
+     .ops-status  搴曢儴鐘舵�佹爮锛屽崰 var(--status-h)
+     .toast-host  閫氱煡鍫嗘爤锛屽簳璺� var(--toast-lane)锛屽崟鏉″疄娴� ~41px 楂�
+     .page-tips   鏈�闈㈡澘
+   鍘熸潵杩欓噷鏄� bottom:20px 鈥斺�� 璺� toast 鍚屼竴涓�瑙掕惤锛屼簬鏄�棣栨�¤繘椤甸潰鏃�
+   锛堟彁绀洪潰鏉胯嚜鍔ㄥ睍寮� + 涓�鏉�"鍚屾�ュ畬鎴�"閫氱煡鍚屾椂鍑虹幇锛岃繖鏄�鏈�甯歌�佺殑寮�灞�锛�
+   toast 姝ｅソ鐩栦綇闈㈡澘鏈�鍚庝竴琛岀殑鍙冲崐鎴�锛涜�屼笖 20px 涔熷帇鍦ㄧ姸鎬佹爮涓娿��
+   鐜板湪鏁存潯鍙充笅瑙掔敱 tokens.css 鐨勪袱涓�鍙橀噺缁熶竴鍐冲畾锛�--status-h 瀹氬簳鏍忋��
+   --toast-lane 瀹氶�氱煡杞﹂亾锛屾湰闈㈡澘鍐嶅彔涓�鏉� toast 鐨勯珮搴︿笂鍘汇��
+   闈㈡澘鏄�甯搁┗鐨勩�乼oast 鏄�椋樿繃鐨勶紝甯搁┗鐨勭粰椋樿繃鐨勮�╀綅銆�
+
+   +52px = 涓�鏉� toast 瀹炴祴 41px + 8px 闂撮殭 + 涓�鐐逛綑閲忋�� */
+html:root[data-theme="dark"] .page-tips {
+  position: fixed;
+  bottom: calc(var(--toast-lane) + 52px);
+  right: 20px;
+  width: min(400px, calc(100vw - 40px));
+  max-height: min(55vh, calc(100vh - 120px));
+  overflow-y: auto;
+  z-index: 350;
+  margin: 0;
+  background: var(--panel-elevated);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-left: 3px solid var(--accent);
+  box-shadow: var(--shadow-float);
+}
 /* 涓绘満鍒楄〃鏍囩�惧垎缁勫ご */
 html:root[data-theme="dark"] .sess-tag-g {
   display: flex;
@@ -2754,11 +2959,41 @@ html:root[data-theme="dark"] .sess-tag-g {
   border-top: 1px dashed var(--line-2);
   margin-top: 2px;
 }
+html:root[data-theme="dark"] .sess-tag-g .n {
+  color: var(--ink-3);
+  font-size: 10px;
+}
+/* 婊氬姩浜ょ粰杩欎竴灞傦紝涓嶄氦缁� .graph-wrap銆�
+   .graph-legend 鏄� .graph-wrap 鐨勭粷瀵瑰畾浣嶅瓙鍏冪礌锛屽�傛灉璁� .graph-wrap 鑷�宸辨粴锛�
+   鍥句緥浼氳��鐢诲竷鍐呭�瑰甫鐫�婊氬嚭瑙嗗彛 鈥斺�� 452 鍙颁富鏈烘椂鐢诲竷绾� 2700px 楂橈紝
+   婊氬埌涓嬮潰灏卞啀涔熺湅涓嶅埌"鍝�绉嶉�滆壊鏄�鍦ㄧ嚎"浜嗐�� */
+html:root[data-theme="dark"] .graph-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  border-radius: inherit;
+}
 html:root[data-theme="dark"] .graph-node-bg {
   fill: #11151c;
   stroke: rgba(34, 211, 238, 0.35);
   stroke-width: 1.2;
   transition: stroke 0.15s;
+}
+html:root[data-theme="dark"] .graph-node.dead .graph-node-bg {
+  fill: #0e1117;
+  stroke: rgba(255, 77, 94, 0.28);
+}
+/* pivot 鐨勮櫄绾挎�嗐�傞�夋嫨鍣ㄥ師鏉ユ槸 `.graph-node.pivot .graph-node-bg` 鈥斺��
+   浣� TSX 鎶� pivot 绫诲姞鍦� <rect className="graph-node-bg pivot"> 涓婏紝
+   鑰� `.graph-node` 鏄�澶栧眰 <g>锛屽悗浠ｉ�夋嫨鍣ㄨ�佹眰 pivot 鍜� graph-node 鍚屽湪
+   绁栧厛閾句笂锛屼簬鏄�杩欐潯瑙勫垯浠庢潵娌℃湁鍖归厤杩囦换浣曞厓绱狅紝铏氱嚎妗嗕竴鐩存槸姝荤殑銆�
+   鏀规垚鐩存帴鍛戒腑 rect 鏈�韬�銆� */
+html:root[data-theme="dark"] .graph-node-bg.pivot {
+  stroke-dasharray: 5 3;
+}
+html:root[data-theme="dark"] .graph-node.hl .graph-node-bg {
+  stroke: var(--accent);
+  stroke-width: 1.6;
 }
 html:root[data-theme="dark"] .graph-listener {
   fill: var(--ink-3);
@@ -2817,6 +3052,10 @@ html:root[data-theme="dark"] .graph-edge-flow {
   stroke-dasharray: 6 14;
   animation: graph-flow 1.2s linear infinite;
 }
+html:root[data-theme="dark"] .graph-edge.hl .graph-edge-path {
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
 html:root[data-theme="dark"] .graph-legend {
   position: absolute;
   right: 14px;
@@ -2833,9 +3072,67 @@ html:root[data-theme="dark"] .graph-legend {
 }
 html:root[data-theme="dark"] .graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
 html:root[data-theme="dark"] .lgd { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+/* 鍥句緥鐨�"鍦ㄧ嚎"蹇呴』鍜岃妭鐐瑰渾鐐瑰悓鑹层��
+   鍦嗙偣鏄� `--live`锛�#34d399 缁匡級锛屽浘渚嬪師鏉ョ敾鐨勬槸 `--accent`锛�#22d3ee 闈掞級鈥斺��
+   鍥句緥瀛樺湪鐨勫敮涓�鐞嗙敱鏄�瑙ｉ噴棰滆壊锛岀粨鏋滃畠鑷�宸辫�寸殑鏄�鍙︿竴涓�棰滆壊銆�
+   椤哄甫锛氱豢鍦ㄦ湰鐣岄潰閲屾槸"鏈哄櫒鐘舵��"鐨勪笓灞炶��涔夛紙瑙� .tag.online锛夛紝
+   闈掓槸浜や簰/杩涜�屼腑璇�涔夛紝鎵�浠ヨ繖閲岃�ヨ窡鍦嗙偣璧拌�屼笉鏄�璺熷己璋冭壊璧般�� */
+html:root[data-theme="dark"] .lgd-live { background: var(--live); box-shadow: 0 0 6px rgba(52, 211, 153, 0.7); }
 html:root[data-theme="dark"] .lgd-dead { background: #7d3540; }
 html:root[data-theme="dark"] .lgd-pivot { border-radius: 2px; width: 14px; height: 3px; background: rgba(34, 211, 238, 0.5); }
+/* 鈹�鈹� 鎷撴墤椤碉細缂╂斁 / 鎵嬪伐璁惧�� / 鎵嬪伐杩炵嚎 鈹�鈹�
+   鏈�鑺傚叏閮ㄦ槸**鏂板��**瑙勫垯銆備笂闈� .graph-wrap / .graph-scroll / .graph-svg 涓夋潯
+   涓�涓�瀛楅兘娌″姩 鈥斺�� .graph-scroll 鐨� position:absolute;inset:0 鍜�
+   .graph-svg 鐨� width:auto 鏄�涓婁竴杞�鐗规剰璋冪殑锛堝墠鑰呰�╁浘渚嬩笉琚�婊氳蛋锛屽悗鑰呰��
+   娓叉煋灏哄�镐笌 viewBox 涓�涓�瀵瑰簲锛夛紝鏀瑰畠浠�浼氬悓鏃舵墦鐮村浘渚嬪畾浣嶅拰婊氬姩銆� */
+
+/* .graph-zoom 鍙�璐熻矗鎾戝嚭婊氬姩鑼冨洿锛堝�介珮 = 鍐呭�� 脳 缂╂斁锛夛紝鏈�韬�涓嶇敾涓滆タ銆�
+   cursor 鐢� `.graph-page .graph-scroll` 杩欎釜**鏂伴�夋嫨鍣�**缁欙紝鑰屼笉鏄�寰�涓婇潰
+   閭ｆ潯鏃㈡湁瑙勫垯閲屽�� 鈥斺�� 鍚岄�夋嫨鍣ㄨ拷鍔犲睘鎬т細璁�"杩欐潯瑙勫垯娌¤��鏀硅繃"杩欏彞璇濆彉鎴愬亣鐨勩�� */
+html:root[data-theme="dark"] .graph-page .graph-scroll { cursor: grab; }
+html:root[data-theme="dark"] .graph-page .graph-scroll.panning { cursor: grabbing; }
 html:root[data-theme="dark"] .graph-zoom { position: relative; }
+/* 鎵嬪伐璁惧�囧崱鐗囷細褰㈢姸娌跨敤 agent 鍗＄墖锛岄潬**棰滆壊**鍜屽浘鏍囪�存槑瀹冧笉鏄�涓�鍙版湁 beacon 鐨勬満鍣ㄣ��
+   宸叉帶 = 闈掞紙鍜屼氦浜掕壊鍚屾棌锛夛紝鏈�鎺� = 鐏帮紙涓�鎬э紝琛ㄧず"杩樻病鎵撲笅鏉�"锛夈�� */
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-node-bg {
+  fill: #0c1a20;
+  stroke: rgba(34, 211, 238, 0.72);
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-node-bg {
+  fill: #12151b;
+  stroke: rgba(148, 163, 184, 0.42);
+  stroke-dasharray: 3 4;
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-dot {
+  fill: var(--accent);
+  opacity: 1;
+  filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.8));
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-dot {
+  fill: #64748b;
+  filter: none !important;
+  opacity: 0.9;
+}
+/* 鍥炬爣鏄� stroke=currentColor 鐨勶紝鎵�浠�"缁� <g> 涓�涓�棰滆壊"灏卞�燂紝涓嶅繀閫愭潯鐢汇��
+   鈽� 杩欐潯涔熸槸璁惧�囧崱鐗囪兘涓�鐪煎垎杈ㄥ凡鎺�/鏈�鎺х殑涓�鍗婂師鍥狅紙鍙︿竴鍗婃槸鎻忚竟锛夈�� */
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-dev-ico { color: var(--accent); }
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-dev-ico { color: #8b98a9; }
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-label { fill: var(--ink-2); }
+html:root[data-theme="dark"] .graph-node.graph-dev .graph-dev-state {
+  fill: var(--ink-3);
+  font-size: 9.5px;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-dev-state { fill: rgba(34, 211, 238, 0.85); }
+/* 鎵嬪伐璁惧�囧崱鐗囦笂鐨勫湴鍧�琛岋紙IP:PORT锛岄潪蹇呴』锛涙病濉�灏变笉娓叉煋杩欎釜 <text>锛夈��
+   姣� .graph-sub 鍐嶆殫涓�妗ｃ�佸啀灏忓崐鍙� 鈥斺�� 瀹冩槸绗�涓夎�岋紝涓斿湴鍧�鏈�韬�鏈夊浐瀹氬舰鐘�
+   锛堢偣銆佸啋鍙枫�佹暟瀛楋級锛屽皬涓�鍙风収鏍蜂竴鐪艰�ゅ緱鍑猴紝涓嶅繀璺熻�惧�囧悕鎶㈡敞鎰忓姏銆� */
+html:root[data-theme="dark"] .graph-node.graph-dev .graph-dev-addr {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
 /* agent 鍗＄墖鍙充笂瑙掔殑銆岃�掕壊銆嶅浘鏍囷紙鏉ヨ嚜 a_tags锛夈�傚埆璺� PIVOT 鏍囩�炬墦鏋� 鈥斺��
    TSX 閲屾湁鍥炬爣鏃朵細鎶� PIVOT 寰�宸﹁�� 24px銆� */
 html:root[data-theme="dark"] .graph-role-ico { color: rgba(34, 211, 238, 0.8); pointer-events: none; }
@@ -2866,12 +3163,32 @@ html:root[data-theme="dark"] .lgd-manual {
   border-radius: 2px; width: 14px; height: 0;
   border-top: 2px dashed rgba(148, 163, 184, 0.85);
 }
+/* 銆屾坊鍔犺�惧�囥��/銆岃繛绾垮埌鈥︺�嶄袱涓�闈㈡澘銆傚畠浠�鏄� .graph-wrap 鐨勭粷瀵瑰畾浣嶅瓙鍏冪礌
+   锛堜笉鏄� .ctx 鐨勫浐瀹氬畾浣嶏級锛氶潰鏉胯�佽创鐫�鐢诲竷宸︿笂瑙掞紝璺熺潃绐楀彛璧帮紝
+   鑰� .graph-scroll 閲岀殑鍐呭�规粴鍔ㄦ椂瀹冧滑涓嶈�ュ姩銆� */
+html:root[data-theme="dark"] .graph-pop {
+  position: absolute;
+  z-index: 40;
+  left: 14px;
+  top: 14px;
+  width: 276px;
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  padding: 7px;
+  font-size: 12px;
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+}
 html:root[data-theme="dark"] .graph-pop .ctx-hd {
   font-size: 11px;
   color: var(--ink-3);
   padding: 4px 6px 6px;
   letter-spacing: 0.04em;
 }
+html:root[data-theme="dark"] .graph-pop .sep { height: 1px; background: var(--line-2); margin: 6px 4px; }
 html:root[data-theme="dark"] .graph-pop button {
   width: 100%;
   justify-content: flex-start;
@@ -2882,6 +3199,8 @@ html:root[data-theme="dark"] .graph-pop button {
   border-radius: 6px;
 }
 html:root[data-theme="dark"] .graph-pop button:hover { background: rgba(34, 211, 238, 0.1); color: var(--accent); }
+html:root[data-theme="dark"] .graph-pop button.danger { color: var(--danger); }
+html:root[data-theme="dark"] .graph-pop button.danger:hover { background: rgba(255, 77, 94, 0.12); color: var(--danger); }
 /* 14 绉嶈�惧�囩被鍨嬬殑閫夋嫨鏍笺��4 鍒� 脳 4 琛岋紝姣斾竴涓� 14 椤圭殑绔栨帓涓嬫媺鐭�涓�鍗娿�� */
 html:root[data-theme="dark"] .graph-kind-grid {
   display: grid;
@@ -2919,6 +3238,15 @@ html:root[data-theme="dark"] .graph-link-name {
 }
 /* 鍙抽敭鑿滃崟閲岀殑瑙掕壊/绫诲瀷鍒楄〃鏈�闀� 13 椤癸紝瓒呰繃瑙嗗彛楂樺害瑕佽兘婊氥�� */
 html:root[data-theme="dark"] .graph-ctx { max-height: 72vh; overflow: auto; }
+/* 鈹�鈹� 缁堢��鏃堕棿鎴� + Tab 琛ュ叏鍊欓�夋潯 鈹�鈹� */
+html:root[data-theme="dark"] .term-out .ln-time {
+  /* 杩欐槸缁堢��閲岀殑鏃堕棿鎴筹紝灞炰簬缁堢��鍐呭�� 鈥斺�� 淇濈暀缁堢��缁匡紝涓嶈�佹崲鎴愪腑鎬х伆 */
+  color: var(--term-ink-dim);
+  font-size: 10.5px;
+  margin-right: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
 /* 鈹�鈹� 鍛戒护琛ュ叏鍊欓�夊脊灞傦紙.cmd-suggest锛夆攢鈹�
    Term 涓庛�屾墽琛屽懡浠ゃ�嶅�硅瘽妗嗗叡鐢ㄤ竴涓�缁勪欢銆傚師鏉ユ槸 .term-suggest 鐨勬í鍚� chip 娴侊細
    鍊欓�変竴澶氬氨鎹㈣�屾垚涓�鍧�锛岃�屼笖**鍙�鏄剧ず鍚嶅瓧** 鈥斺�� 鏈嶅姟绔�鏄庢槑鎶� description /
@@ -2950,10 +3278,40 @@ html:root[data-theme="dark"] .cmd-suggest .cs-list {
   max-height: 240px;
   overflow-y: auto;
 }
+/* 鈽� 蹇呴』閲嶇疆鍏ㄥ眬 button锛坰tyles.css:20-32锛歨eight:30px / background:var(--surface)
+   / border:1px solid var(--line) / padding:0 12px / display:inline-flex锛夈��
+   灏戜簡杩欎竴娈碉紝姣忎竴琛屽�欓�夐兘浼氳��鎾戞垚涓�涓� 30px 楂樼殑甯︽�嗘寜閽�锛�
+   鏁翠釜鍒楄〃鐪嬭捣鏉ュ儚涓�鎺掓寜閽�鑰屼笉鏄�涓�涓�鍊欓�夊垪琛�锛圔ofs.tsx:840 璁拌繃鍚屼竴涓�鍧戯級銆� */
+html:root[data-theme="dark"] .cmd-suggest .cs-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-item:hover,
+html:root[data-theme="dark"] .cmd-suggest .cs-item.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
 html:root[data-theme="dark"] .cmd-suggest .cs-name {
   flex: 0 0 auto;
   font-weight: 700;
   color: var(--ink);
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-item.active .cs-name,
+html:root[data-theme="dark"] .cmd-suggest .cs-item:hover .cs-name {
+  color: var(--accent);
 }
 /* 璇存槑鐢� --ink-2 鑰屼笉鏄�鏇村急涓�绾э細瀹冭�寸殑鏄�杩欐潯鍛戒护**鏄�浠�涔�**锛屾槸鍐呭�逛笉鏄�瑁呴グ銆�
    涓�寰嬫埅鏂�涓嶆崲琛� 鈥斺�� 寮瑰眰楂樺害蹇呴』鍙�棰勬祴锛屽惁鍒欎細鎶婅緭鍏ユ�嗛《璧般�� */
@@ -3008,6 +3366,58 @@ html:root[data-theme="dark"] .cmd-suggest .cs-refresh:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+/* 鈽� 缁堢��閲岀殑寮瑰眰蹇呴』**鑴辩�绘枃妗ｆ祦**娴�鍦ㄨ緭鍏ヨ�屼笂鏂广��
+   杩欎笉鏄�瀹＄編鍙栬垗锛屾槸淇�涓�涓�鎶婂唴瀹规暣涓�鍚冩帀鐨勫竷灞�缂洪櫡銆�
+
+   `.term` 鏄� `grid-template-rows: 34px 1fr 34px`锛坰tyles.css:220锛夛紝鎸�**涓変釜**
+   瀛愰」鍐欐�荤殑锛氶〉绛� 鈫� 杈撳嚭鍖�(1fr) 鈫� 杈撳叆琛屻�傝ˉ鍏ㄥ脊灞傛槸鍚庢潵鍔犵殑**鍙�閫夌�� 4 涓�瀛愰」**锛�
+   鐣欏湪娴侀噷灏变細椤舵帀杈撳叆琛岄偅涓� 34px 鐨勫浐瀹氭牸瀛愶紝鎶婅緭鍏ヨ�屾尋杩涢殣寮忚�岋紝
+   鑷�宸卞啀琚� `.term` 鐨� `overflow: hidden` 瑁佹帀銆�
+
+   瀹炴祴锛�2026-09-19锛岀嚎涓� index-E4b2skgb锛夛細寮瑰眰琚�鍘嬪埌 28px銆乣.cs-list` 璁＄畻楂樺害 **0px**锛�
+   鑰� 60 鏉� `.cs-item`锛堝悇 25px锛夊叏閮藉湪 DOM 閲� 鈥斺�� 鐣岄潰涓婂氨鏄�
+   銆屾暡 `execute bof ` 鎸� Tab锛屽脊灞傚嚭鏉ヤ簡锛屼絾鍒楄〃鏄�绌虹殑銆嶃��
+   鏁版嵁閾捐矾锛�/api/bofs/exec 鐨� entries / note / capable锛夊綋鏃跺畬鍏ㄦ�ｅ父锛�
+   绾�绮规槸甯冨眬鎶婂唴瀹瑰悆浜嗭細鍊欓�夋湁 166 鏉′篃鐓ф牱鏄剧ず涓虹┖銆�
+
+   娴�璧锋潵涔嬪悗杈撳嚭鍖轰笌杈撳叆琛岄兘涓嶅姩锛堝疄娴� 211px / 34px 鎭掑畾锛夛紝缁堢��鎷栧�氶珮閮界ǔ銆� */
+html:root[data-theme="dark"] .term {
+  position: relative;                  /* 寮瑰眰鐨勫畾浣嶅弬鐓� */
+}
+html:root[data-theme="dark"] .term > .cmd-suggest {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 40px;                        /* 杈撳叆琛� 34px + 6px 闂磋窛 */
+  z-index: 6;                          /* 鐩栦綇杈撳嚭鍖猴紱椤电�捐�屾槸 static锛岃秺涓嶈繃瀹� */
+  margin: 0;
+  /* 涓婇檺璺熺潃缁堢��楂樺害璧帮細缁堢��琚�鎷栫煯鏃讹紝寮瑰眰涓嶈兘椤剁┛鍒伴〉绛炬爮澶栭潰鍘汇��
+     鍒楄〃鏈�韬�鍙︽湁 240px 涓婇檺锛堣�佷笂闈� .cs-list锛夛紝涓や釜鍙栧皬銆� */
+  max-height: calc(100% - 80px);       /* 椤电�� 34 + 杈撳叆 34 + 涓婁笅鍚� 6 */
+}
+/* 鈹�鈹� 鐧诲綍椤靛搧鐗岃�岋細`> 4-T34M OPS CONSOLE鈻奰 鏁磋�岄�愬瓧鎵撳嚭 鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
+   鍒绘剰**涓嶅彨** `.lx-mark`锛氭湰鏂囦欢閲屾湁涓�缁� `.lx-mark span{display:none
+   !important}`锛堟棫澶�鏋佸瓙鍏冪礌鐣欎笅鐨勫畧鍗�锛夛紝鑰屾湰琛岃�佹寜 span 鍒嗘�甸厤鑹诧紝
+   濂楅偅涓�绫讳細琚�鏁存潯钘忔帀銆備篃鍒绘剰**涓嶅姞妗�** 鈥斺�� 鍘熸潵閭ｅ湀娣卞簳 + 闈掕竟鐪嬬潃
+   璺熶笅闈㈢殑杈撳叆妗嗕竴涓�鏍枫��
+   閫愬瓧鏄剧幇鐢� clip-path 鍒囪嚜韬�鐩掑瓙锛�**涓嶇敤** width:0鈫扤ch锛歂ch 鎴愮珛鐨勫墠鎻�
+   鏄�绛夊�藉瓧浣撶湡鐨勭瓑瀹斤紝瀛椾綋娌″姞杞�/鍥為��鍒版瘮渚嬪瓧浣撴椂 Nch 鈮� 瀹為檯瀛楀�斤紝
+   浼氱暀涓�娈电┖闅欐垨鑰呭垏鎺夋渶鍚庝竴涓�瀛椼�俢lip-path 鎸夊厓绱犺嚜韬�瀹藉害鐨勭櫨鍒嗘瘮鍒囷紝
+   涓嶈祵瀛椾綋搴﹂噺銆�
+   鈽� 鏁磋�屽繀椤�**鍚屽瓧閲嶃�佸悓瀛楄窛**锛氱矖浣撶瓑瀹藉瓧浣撶殑瀛楀�芥湭蹇呯瓑浜庡父瑙勪綋锛�
+   涓�鏃︿笉绛夊�斤紝steps(18) 灏变笉钀藉湪瀛楄竟鐣屼笂锛屼細鍒囧湪瀛楃殑涓�闂淬�傚垎鑹插彲浠ワ紝
+   鍒嗗瓧閲嶄笉琛屻�� */
+html:root[data-theme="dark"] .lx-brandline {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1.2;
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(34, 211, 238, .45);
+}
 html:root[data-theme="dark"] .lx-brandline-prompt { margin-right: 4px; opacity: .72; }
 html:root[data-theme="dark"] .lx-brandline-sub { color: var(--ink-3); text-shadow: none; }
 /* 鍏夋爣鎸傚湪 typing 涓婏紝**涓嶈兘**鎸傚湪 text 涓婏細text 甯� clip-path锛�
@@ -3043,6 +3453,20 @@ html:root[data-theme="dark"] .lx-brandline-typing::after {
     lx-caret-ride 1.8s steps(18, end) .25s forwards,
     caret-blink 1.1s steps(1) 1.1s infinite;
 }
+/* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+   Extension-Kit 鍛戒护鎬昏�堬紙ExtKit.tsx / 瀵艰埅銆屾墿灞曞懡浠ゃ�岹 X锛�
+   ------------------------------------------------------------
+   杩欎竴椤垫槸**鍙�璇绘竻鍗�**锛氬垎缁� 鈫� 鍛戒护鍗� 鈫� 鍙傛暟琛� + 绀轰緥銆�
+   甯冨眬鍒绘剰涓嶇敤鍐欐�昏�屾暟鐨� grid 鈥斺�� 鍚屾棌宸茬粡韪╄繃涓夋�★紙瑙� ops-hard.css
+   鐨� .field 涓� .gen-preset 璁板綍锛夛細鍗＄墖閲岀殑鍙�閫夊瓙椤癸紙鎻忚堪/瀛愬懡浠�/鍙傛暟琛�/
+   绀轰緥锛夊湪鍐欐�昏建閬撻噷缂哄け鏃朵細闈欓粯濉屾垚 0 楂樻垨琚�鍘嬭繘閭诲垪銆傝繖閲屼竴寰嬬敤
+   flex column锛岀旱鍚戣嚜鐒跺爢鍙狅紝灏戝摢涓�椤归兘涓嶅奖鍝嶅叾瀹冮」銆�
+   鍞�涓�鐢� grid 鐨勬槸 .xkit-arg锛堜笁鍒楀浐瀹氾細寮�鍏� / 绫诲瀷 / 璇存槑锛夛紝涓夊垪閮藉繀缁欍��
+   鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
+html:root[data-theme="dark"] .xkit-title {
+  font-weight: 600;
+  letter-spacing: .01em;
+}
 html:root[data-theme="dark"] .xkit-chips {
   display: inline-flex;
   align-items: center;
@@ -3074,6 +3498,11 @@ html:root[data-theme="dark"] .xkit-chip:hover {
   color: var(--ink);
   border-color: var(--accent-2);
 }
+html:root[data-theme="dark"] .xkit-chip.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-2);
+}
 html:root[data-theme="dark"] .xkit-search {
   width: 200px;
   margin-right: 8px;
@@ -3087,6 +3516,18 @@ html:root[data-theme="dark"] .xkit-search {
 html:root[data-theme="dark"] .xkit-search:focus {
   outline: none;
   border-color: var(--accent-2);
+}
+/* 鎵╁睍鍛戒护椤靛彲婊氬姩锛堝悓 .bof-wrap锛�.page 鏄� flex column锛屽唴灞傝�佸悆鎺夊墿浣欓珮搴﹀苟鑷�宸辨粴锛�
+   鈽� 灏戜簡杩欎笁琛岀殑鍚庢灉涓嶆槸銆屾粴璧锋潵鍒�鎵�銆嶈�屾槸**鏁撮〉涓嶅彲杈�**锛歜ody 鏄� overflow:hidden锛�
+   .page 鏄� height:100%锛屽唴瀹瑰嵈鍙�浠ユ槸瀹冭嚜宸辩殑 6 鍊嶉珮锛堛�屽叏閮� 62銆嶅疄娴� 7463px / 1107px锛夛紝
+   浜庢槸婊氳疆銆佹粴鍔ㄦ潯銆侀敭鐩樺叏閮藉埌涓嶄簡涓嬪崐椤� 鈥斺�� 鐪嬬潃鍍忋�屽崱鐗囨病娓叉煋鍑烘潵銆嶃�� */
+html:root[data-theme="dark"] .xkit-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 html:root[data-theme="dark"] .xkit-group {
   border: 1px solid var(--line);
@@ -3173,6 +3614,11 @@ html:root[data-theme="dark"] .xkit-badge.hook {
   color: var(--warn);
   border-color: rgba(245, 165, 36, .35);
   background: var(--warn-soft);
+}
+html:root[data-theme="dark"] .xkit-badge.warn {
+  color: var(--danger);
+  border-color: rgba(255, 77, 94, .35);
+  background: var(--cinnabar-soft);
 }
 html:root[data-theme="dark"] .xkit-desc {
   font-size: 12px;
