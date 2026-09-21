@@ -35,10 +35,19 @@ function CmdDlg({
     fallbackBofs: FALLBACK_BOFS,
   })
 
-  function submit() {
+  async function submit() {
     const c = cmd.trim()
     if (!c) return
-    void onSubmit(c)
+    try {
+      await onSubmit(c)
+    } catch {
+      return // 失败时保留命令原文，方便改一下重试
+    }
+    // ★ 发完**清输入、留对话框**：主机页底部的 Terminal 已按需求去掉，右键
+    //   「执行命令」就是命令执行的入口，要能连跑多条。关不关由操作员点「关闭」
+    //   或按 Esc 决定 —— 跑一条就自动关，会逼着他每跑一条重新右键一次。
+    setCmd('')
+    inputRef.current?.focus()
   }
 
   return (
@@ -58,7 +67,7 @@ function CmdDlg({
               // 补全先过一道。它只在 Tab、弹层已开时的 ↑/↓、以及**已高亮**时的
               // 回车上返回 true —— 什么都不高亮时回车照旧提交，与改造前一致。
               if (comp.onKeyDown(e)) return
-              if (e.key === 'Enter') { e.preventDefault(); submit() }
+              if (e.key === 'Enter') { e.preventDefault(); void submit() }
               // 两级 Esc：弹层开着时上面那次已经消费掉了，再按一次才关对话框
               else if (e.key === 'Escape') { e.preventDefault(); onClose() }
             }}
@@ -237,9 +246,10 @@ export function Hosts() {
   async function submitCmd(id: string, c: string) {
     try {
       await api.commandRaw(id, c)
-      openConsole(id)
       pushToast('ok', '已下发')
-      setCmdDlg(null)
+      // ★ 不关对话框：主机页底部的 Terminal 已按需求去掉，右键「执行命令」就是
+      //   命令执行的入口。它要能连跑多条 —— 关不关由操作员点「关闭」决定，
+      //   跑一条就自动关会逼着他每跑一条就重新右键一次。
     } catch (err: any) {
       pushToast('err', err?.message || String(err))
     }

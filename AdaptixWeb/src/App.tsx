@@ -648,7 +648,7 @@ export default function App() {
           })}
         </div>
 
-        <div className={`ops-body content ${current === 'sessions' ? 'with-term' : ''}`}>
+        <div className="ops-body content">
           {current === 'dashboard' && <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />}
           {current === 'sessions' && <Hosts />}
           {current === 'listeners' && <Listeners />}
@@ -684,16 +684,6 @@ export default function App() {
               </div>
             )
           })}
-          {current === 'sessions' && (
-            <>
-              <div
-                className={`term-resizer ${dragging ? 'active' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); setDragging(true) }}
-                title="拖动调整终端高度"
-              />
-              <Term />
-            </>
-          )}
         </div>
 
         <footer className="ops-status">
