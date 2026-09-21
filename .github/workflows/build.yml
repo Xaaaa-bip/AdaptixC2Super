@@ -21,6 +21,11 @@ concurrency:
 #   "Failed to CreateArtifact: Artifact storage quota has been hit.
 #    Usage is recalculated every 6-12 hours."
 # 编译本身一直是过的，红的只是上传那一步。Release 资源不占这个配额，且天然可下载。
+#
+# ── Release 里放什么 ────────────────────────────────────────────────
+#   adaptixc2-<platform>.tar.gz   ★ 完整可部署包：解压即用，不用再自己拼目录
+#   AdaptixServer-<platform>      单独的服务端二进制（给已经有部署目录的人）
+# ★ 不再有 extenders-dist.zip —— 它的布局是错的（见下面"打包"那一步的注释）。
 jobs:
   prepare-release:
     name: Prepare GitHub Release
@@ -119,12 +124,13 @@ jobs:
         if: runner.os != 'Windows'
         env:
           CGO_ENABLED: "1"
-        # ★ 不能加 -trimpath：服务端是要被 extenders/*.so 用 plugin.Open 加载的宿主，
-        #   而各插件 Makefile 是 `go build -buildmode=plugin -ldflags="-s -w"`（不带它）。
-        #   -trimpath 会改掉 export data 里记录的文件路径 ⇒ 每个包的 content hash 变化 ⇒
-        #   插件加载时一律报 "plugin was built with a different version of package
-        #   internal/goarch"。2026-09-21 实测：带 -trimpath 的 CI 产物部署后 24 个插件
-        #   全部加载失败。（README FAQ「different version of package internal/goarch」同源。）
+        # ★★ 这条命令必须与下面 `adaptix-linux-package` 里用的**逐字一致**。
+        #   服务端是 `plugin.Open` 的宿主，插件是 `-buildmode=plugin` 编的 .so，
+        #   两边必须用同一套模块解析（工作区 go.work 开/关）、同一套 flags，
+        #   否则插件加载一律报 "plugin was built with a different version of
+        #   package github.com/Adaptix-Framework/axc2"。
+        # ★ 不能加 -trimpath：它会改掉 export data 里记录的文件路径 ⇒ 每个包的
+        #   content hash 变化 ⇒ 24 个插件全部加载失败（2026-09-21 实测）。
         run: go build -ldflags="-s -w" -o "${{ matrix.output }}" .
 
       - name: Go build (Windows)
@@ -148,15 +154,16 @@ jobs:
           cp "${{ matrix.output }}" "$RUNNER_TEMP/$ASSET"
           gh release upload "$TAG" "$RUNNER_TEMP/$ASSET" --clobber
 
-  adaptix-extenders:
-    name: Extenders (plugins + cross-compile beacons)
+  adaptix-linux-package:
+    name: Linux package (server + plugins + web + kit)
     needs: [prepare-release]
     if: always() && (needs.prepare-release.result == 'success' || github.event_name == 'pull_request')
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: AdaptixServer
-
+    env:
+      # ★ 前端构建的 base 必须与 profile.yaml 的 Web.path **逐字符一致**，
+      #   否则 index.html 里的绝对资源路径（/bf21…/assets/…）全 404 = 白屏。
+      #   改这里就要同时改 AdaptixServer/profile.yaml 的 Web.path。
+      VITE_BASE: /bf21a14d8b0eb60f8b95ae0df61162b8/
     steps:
       - uses: actions/checkout@v4
 
@@ -167,86 +174,131 @@ jobs:
             AdaptixServer/go.sum
             AdaptixServer/go.work.sum
 
-      - name: Install Go CGO + Clang/MinGW/NASM (beacon toolchains)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: AdaptixWeb/package-lock.json
+
+      - name: Install toolchains (Go CGO + Clang/MinGW/NASM for beacons)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            pkg-config \
-            libsqlite3-dev \
-            clang \
-            nasm \
-            mingw-w64
+            build-essential pkg-config libsqlite3-dev \
+            clang nasm mingw-w64
 
-      - name: Build listener / service plugins (Go)
+      # ── 1. 服务端（命令与 adaptix-server job 逐字一致，见那边的注释）──
+      - name: Build server (linux/amd64)
+        working-directory: AdaptixServer
+        env:
+          CGO_ENABLED: "1"
+        run: go build -ldflags="-s -w" -o adaptixserver .
+
+      # ── 2. 插件 ──
+      - name: Build extenders
+        working-directory: AdaptixServer
         env:
           CGO_ENABLED: "1"
         run: |
           set -eux
-          for d in \
-            extenders/beacon_listener_http \
-            extenders/beacon_listener_smb \
-            extenders/beacon_listener_tcp \
-            extenders/beacon_listener_dns \
-            extenders/beacon_listener_ws \
-            extenders/beacon_listener_discord \
-            extenders/beacon_listener_https_emu \
-            extenders/gopher_listener_tcp \
-            extenders/linux_listener_tcp \
-            extenders/listener_kharon_http \
-            extenders/webdelivery \
-            extenders/notifier \
-            extenders/vnc \
-            extenders/hosting_service \
-            extenders/phishing_service \
-            extenders/argfuscator \
-            extenders/relay \
-            extenders/topology \
-            extenders/arachne_service
-          do
+          # 与服务端同一个工作区、同一套 flags。目录是**动态枚举**的
+          # （有 Makefile 的都编），新加插件不用回来改这里。
+          for d in extenders/*/; do
+            [ -f "$d/Makefile" ] || continue
             echo "===== make $d ====="
             make -C "$d" all
           done
 
-      - name: Build agents (Go plugin + beacon / gopher)
-        env:
-          CGO_ENABLED: "1"
+      # ── 3. 前端：CI 里重编，不依赖仓库里 commit 的产物 ──
+      - name: Build web console
+        working-directory: AdaptixWeb
         run: |
           set -eux
-          for d in \
-            extenders/beacon_agent \
-            extenders/linux_agent \
-            extenders/macos_agent \
-            extenders/gopher_agent \
-            extenders/agent_kharon
-          do
-            echo "===== make $d ====="
-            make -C "$d" all
-          done
+          npm ci
+          VITE_BASE="$VITE_BASE" npm run build
+          test -f dist/index.html
+          grep -q "$VITE_BASE" dist/index.html
 
-      - name: Package extenders dist
+      # ── 4. 拼部署目录 ──
+      - name: Assemble dist/
         run: |
           set -euo pipefail
-          # 保持既有布局：zip 内顶层是 AdaptixServer/extenders/<plugin>/dist/...
-          STAGE="$RUNNER_TEMP/stage"
-          mkdir -p "$STAGE/AdaptixServer/extenders"
+          DIST=dist
+          rm -rf "$DIST"
+          mkdir -p "$DIST/extenders"
+
+          cp -f AdaptixServer/adaptixserver "$DIST/"
+          cp -f AdaptixServer/profile.yaml AdaptixServer/404page.html AdaptixServer/ssl_gen.sh "$DIST/"
+
+          # ★★ 插件必须**铺平**：`extenders/<p>/dist/` 的**内容**放到 `dist/extenders/<p>/`。
+          #   不能保留 dist/ 这一层 —— profile.yaml 写的是
+          #   `extenders/<p>/config.yaml`，而 config.yaml 就在 `<p>/dist/` 里。
+          #   老的那个 extenders-dist.zip 既没剥 dist/、外面还多套了一层
+          #   `AdaptixServer/`，所以别人解压后服务端一律找不到插件
+          #   （"插件不存在，无法正常加载"）。而且它只有插件，没有 profile.yaml /
+          #   web / Extension-Kit，根本凑不出一份能跑的目录。
           found=0
-          for d in extenders/*/dist; do
+          for d in AdaptixServer/extenders/*/dist; do
             [ -d "$d" ] || continue
-            plugin="$(basename "$(dirname "$d")")"
-            mkdir -p "$STAGE/AdaptixServer/extenders/$plugin"
-            cp -a "$d" "$STAGE/AdaptixServer/extenders/$plugin/dist"
+            p="$(basename "$(dirname "$d")")"
+            rm -rf "$DIST/extenders/$p"
+            mkdir -p "$DIST/extenders/$p"
+            cp -a "$d"/. "$DIST/extenders/$p"/
             found=$((found + 1))
           done
-          echo "packed $found plugin dist dirs"
-          [ "$found" -gt 0 ] || { echo "no dist dirs produced"; exit 1; }
-          (cd "$STAGE" && zip -r -q "$RUNNER_TEMP/extenders-dist.zip" AdaptixServer)
-          ls -lh "$RUNNER_TEMP/extenders-dist.zip"
+          echo "packed $found plugin dirs"
+          [ "$found" -gt 0 ] || { echo "[ERROR] 没有任何插件产物"; exit 1; }
 
-      - name: Publish extenders to Release
+          rm -rf "$DIST/web"; mkdir -p "$DIST/web"
+          cp -a AdaptixWeb/dist/. "$DIST/web"/
+
+          rm -rf "$DIST/Extension-Kit"
+          cp -a Extension-Kit "$DIST/Extension-Kit"
+          test -f "$DIST/Extension-Kit/extension-kit.axs"
+
+      # ── 5. 自检：逐个核对 profile.yaml 声明的插件在包里真的存在 ──
+      #    这道检查就是用来防"打包布局又错了"的 —— 布局一错，这里立刻红，
+      #    而不是等用户下载部署之后才报"插件不存在"。
+      - name: Verify package (profile entries must exist in the tarball)
+        run: |
+          set -euo pipefail
+          DIST=dist
+          miss=0
+          while read -r rel; do
+            [ -n "$rel" ] || continue
+            if [ ! -f "$DIST/$rel" ]; then
+              echo "  [MISSING] $rel"
+              miss=$((miss + 1))
+            fi
+          done < <(grep -oE '"extenders/[^"]+\.yaml"' "$DIST/profile.yaml" | tr -d '"')
+          if [ "$miss" -gt 0 ]; then
+            echo "[ERROR] profile.yaml 声明了插件但包里没有 —— 打包布局错了（共 $miss 个）"
+            exit 1
+          fi
+          # 前端自检：Web.path 与 VITE_BASE 必须一致，且 index.html 引用的资源都在包里。
+          # 不一致的表现是控制台白屏（绝对路径 /assets/… 全 404），
+          # 而且**只有在别人部署之后才会发现** —— 所以在这里拦住。
+          grep -q "path: \"$VITE_BASE\"" "$DIST/profile.yaml" || {
+            echo "[ERROR] profile.yaml 的 Web.path 与 VITE_BASE($VITE_BASE) 不一致 ⇒ 控制台会白屏"; exit 1; }
+          grep -q "$VITE_BASE" "$DIST/web/index.html" || {
+            echo "[ERROR] 前端没按 VITE_BASE($VITE_BASE) 构建"; exit 1; }
+          for f in $(grep -oE 'assets/[^"]+' "$DIST/web/index.html"); do
+            test -f "$DIST/web/$f" || { echo "[ERROR] 前端缺少资源: $f"; exit 1; }
+          done
+          echo "----- 包内容 -----"
+          find "$DIST" -maxdepth 2 -mindepth 1 | sort | head -50
+          echo "插件数: $(ls -1 "$DIST/extenders" | wc -l)"
+
+      - name: Publish linux package to Release
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare-release.outputs.tag }}
-        run: gh release upload "$TAG" "$RUNNER_TEMP/extenders-dist.zip" --clobber
+        run: |
+          set -euxo pipefail
+          tar czf "$RUNNER_TEMP/adaptixc2-linux-amd64.tar.gz" -C dist .
+          ls -lh "$RUNNER_TEMP/adaptixc2-linux-amd64.tar.gz"
+          gh release upload "$TAG" "$RUNNER_TEMP/adaptixc2-linux-amd64.tar.gz" --clobber
+          # 清掉布局错误的旧资产，免得有人继续下到坏的
+          gh release delete-asset "$TAG" extenders-dist.zip --yes || true

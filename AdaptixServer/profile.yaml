@@ -112,7 +112,12 @@ Web:
   interface: "0.0.0.0"
   port: 8080
   # Console entry path, e.g. "/" or "/cnmbzxc"
-  path: "/"
+  # ★★ 这里必须与前端构建时的 `VITE_BASE` **逐字符一致**：
+  #   index.html 里的资源是绝对路径（`/bf21…/assets/index-xxx.js`），
+  #   Web.path 指的是控制台挂在哪个前缀下 —— 不一致就是资源全 404（白屏）。
+  #   CI 打包时用 `VITE_BASE=/bf21a14d8b0eb60f8b95ae0df61162b8/` 构建，
+  #   所以这里也必须是同一个值；换成别的入口路径要**同时**改两处再重编前端。
+  path: "/bf21a14d8b0eb60f8b95ae0df61162b8/"
   # vite build output directory (relative to process cwd; use dist/web when cwd=dist)
   root: "web"
   spa: true
