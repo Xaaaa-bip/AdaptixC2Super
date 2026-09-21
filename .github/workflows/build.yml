@@ -300,5 +300,14 @@ jobs:
           tar czf "$RUNNER_TEMP/adaptixc2-linux-amd64.tar.gz" -C dist .
           ls -lh "$RUNNER_TEMP/adaptixc2-linux-amd64.tar.gz"
           gh release upload "$TAG" "$RUNNER_TEMP/adaptixc2-linux-amd64.tar.gz" --clobber
-          # 清掉布局错误的旧资产，免得有人继续下到坏的
-          gh release delete-asset "$TAG" extenders-dist.zip --yes || true
+
+          # 清掉历史遗留的 zip 资产，免得有人继续下到坏的：
+          #   extenders-dist.zip            —— 布局错误（缺 dist/ 那层的剥离）
+          #   三个 AdaptixServer-*.zip      —— 已被同名裸二进制取代
+          # `|| true` + 忽略报错 ⇒ **幂等**：第一次跑真删，之后每次都是 no-op。
+          for a in extenders-dist.zip \
+                   AdaptixServer-linux-amd64.zip \
+                   AdaptixServer-macos.zip \
+                   AdaptixServer-windows-amd64.zip; do
+            gh release delete-asset "$TAG" "$a" --yes 2>/dev/null && echo "removed stale asset: $a" || true
+          done
