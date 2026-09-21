@@ -22,6 +22,20 @@ AdaptixServer/build_error.log
 AdaptixWeb/node_modules/
 AdaptixWeb/.npm-cache/
 
+# Runtime state (operator DB, agents/tasks/consoles) — never commit
+AdaptixServer/data/
+
+# Web build output (vite) — produced by `npm run build`, copied to dist/web by make
+AdaptixWeb/dist/
+
+# Prebuilt objects copied in by src_beacon/Makefile from files/
+AdaptixServer/extenders/beacon_agent/src_beacon/objects_*/stub.*.bin
+
+# Stray prebuilt blobs
+AdaptixServer/extenders/agent_kharon/src_beacon/LLVMObf.so
+AdaptixServer/extenders/vnc/agent/native.zip
+*.tar.gz
+
 # IDE / OS
 .idea/
 .vscode/
