@@ -2341,6 +2341,9 @@ html:root[data-theme="dark"] .graph-edge-label {
   stroke-width: 4px;
   stroke-linejoin: round;
 }
+/* 图例浮在画布上。底色**必须**跟着主题走：原来写死 rgba(15,18,24,.75)（近黑），
+   而文字用 var(--ink-2) —— 浅色档下那是深灰，压在近黑药丸上实测对比度 2.12。
+   同批问题：.graph-node-bg、.ops-status-counts。 */
  .graph-legend {
   position: absolute;
   right: 14px;
@@ -2348,12 +2351,17 @@ html:root[data-theme="dark"] .graph-edge-label {
   display: flex;
   gap: 14px;
   align-items: center;
-  background: rgba(15, 18, 24, 0.75);
+  background: var(--panel-elevated, #ffffff);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 5px 14px;
   font-size: 11.5px;
   color: var(--ink-2);
+  box-shadow: 0 2px 10px rgba(20, 20, 20, 0.06);
+}
+html:root[data-theme="dark"] .graph-legend {
+  background: rgba(15, 18, 24, 0.75);
+  box-shadow: none;
 }
  .graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
  .lgd { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }

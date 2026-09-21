@@ -681,8 +681,15 @@ html[data-theme="dark"] .conn-chip.is-sync {
   font-size: 11px;
   font-weight: 600;
 }
+/* ★ 文字要跟着**底色**走，不是跟着主题走。
+   `.ops-status { background: #070b10 }` 是写死的深色（两档都是深色状态栏，
+   这是有意的），而这里原来写 `var(--ink-2)` —— 浅色档下那是 #4a4a4a 的深灰，
+   压在 #070b10 上实测**对比度只有 2.23**（深色档因为 --ink-2 是浅色所以没事）。
+   同批问题：图例 .graph-legend、拓扑卡片 .graph-node-bg。
+   深色档在 hacker.css 里有 `html:root[data-theme="dark"] .ops-status-counts`
+   覆盖成 --ink-2，所以下面这条只影响浅色档，深色档外观不变。 */
 .ops-status-counts {
-  color: var(--ink-2);
+  color: rgba(255, 255, 255, 0.55);
   font-variant-numeric: tabular-nums;
 }
 .ops-status .spacer { flex: 1; }
@@ -691,7 +698,8 @@ html[data-theme="dark"] .conn-chip.is-sync {
   height: 12px;
   background: var(--line);
 }
-.ops-status .ok { color: var(--ink); }
+/* 同上：状态栏底色写死深色，文字跟着它走 */
+.ops-status .ok { color: rgba(255, 255, 255, 0.88); }
 .ops-status .warn { color: var(--warn); }
 
 .carrier-bar { display: none !important; }

@@ -1774,7 +1774,13 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
    滚动仍然交给 .graph-scroll（它自己是 absolute inset:0 + overflow:auto）——
    见 hacker.css 那段注释：让 .graph-wrap 自己滚的话，图例会跟着画布滚出视口。 */
 .graph-wrap{position:relative;flex:1;min-height:0;overflow:hidden;padding:0}
-.graph-svg{width:100%;min-height:520px;color:var(--text,#1a1a1a)}
+/* ★ 同 .graph-wrap：尺寸规则也是**功能**，原来只在 hacker.css 的
+   `html:root[data-theme="dark"] .graph-svg` 里（display:block / width:auto /
+   height:auto / max-width:none）。浅色档留的是老的 `width:100%` —— 于是 SVG
+   被压成容器宽、viewBox 内容整体等比缩小，**图再大也不产生滚动**
+   （hacker.css 那段注释把这个坑写得很清楚，但只修了深色）。
+   现在两档一致：渲染尺寸 = viewBox 尺寸（1:1），装不下就真出滚动条。 */
+.graph-svg{display:block;width:auto;height:auto;max-width:none;color:var(--text,#1a1a1a)}
 .graph-edge line{stroke:currentColor;stroke-opacity:.35;stroke-width:1.5}
 .graph-edge-label{font-size:10px;fill:currentColor;opacity:.55}
 .graph-node circle{fill:var(--panel,#fff);stroke:currentColor;stroke-width:1.4}
