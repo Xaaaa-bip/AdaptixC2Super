@@ -15,9 +15,49 @@ concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 产物直接进 GitHub Release，不经 actions/upload-artifact。
+# 原因（实测）：upload-artifact 的存储配额与 Release 资源是两套账 —— 产物默认留 90 天，
+# 仓库堆到 55 个 / 1011 MB 之后，每次上传都报
+#   "Failed to CreateArtifact: Artifact storage quota has been hit.
+#    Usage is recalculated every 6-12 hours."
+# 编译本身一直是过的，红的只是上传那一步。Release 资源不占这个配额，且天然可下载。
 jobs:
+  prepare-release:
+    name: Prepare GitHub Release
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.rel.outputs.tag }}
+    steps:
+      - name: Create or reuse the release
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"; TITLE="${GITHUB_REF_NAME}"; PRE=()
+          else
+            TAG="latest"; TITLE="Latest (${GITHUB_SHA::7})"; PRE=(--prerelease --latest=false)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" "${PRE[@]}"
+          else
+            gh release create "$TAG" \
+              --title "$TITLE" \
+              --notes "构建产物由 workflow 直接发布。Commit: \`${GITHUB_SHA}\`" \
+              --target "$GITHUB_SHA" \
+              "${PRE[@]}"
+          fi
+
   adaptix-server:
     name: AdaptixServer (${{ matrix.name }})
+    needs: [prepare-release]
+    if: always() && (needs.prepare-release.result == 'success' || github.event_name == 'pull_request')
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +74,7 @@ jobs:
             shell: bash
           - name: windows-amd64
             os: windows-latest
-            artifact: AdaptixServer-windows-amd64
+            artifact: AdaptixServer-windows-amd64.exe
             output: AdaptixServer.exe
             shell: bash
 
@@ -90,18 +130,22 @@ jobs:
           $env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;" + $env:Path
           go build -trimpath -ldflags="-s -w" -o "${{ matrix.output }}" .
 
-      - name: Upload server binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          # 产物只是 publish-release 的转运件，真身在 GitHub Release。
-          # 默认 90 天会把配额堆爆（实测 55 个产物 / 1011 MB，
-          # 之后再传就报 "Artifact storage quota has been hit"）。
-          retention-days: 1
-          path: AdaptixServer/${{ matrix.output }}
+      - name: Publish server binary to Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+          ASSET: ${{ matrix.artifact }}
+        run: |
+          set -euxo pipefail
+          cp "${{ matrix.output }}" "$RUNNER_TEMP/$ASSET"
+          gh release upload "$TAG" "$RUNNER_TEMP/$ASSET" --clobber
 
   adaptix-extenders:
     name: Extenders (plugins + cross-compile beacons)
+    needs: [prepare-release]
+    if: always() && (needs.prepare-release.result == 'success' || github.event_name == 'pull_request')
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -174,99 +218,29 @@ jobs:
             make -C "$d" all
           done
 
-      - name: Upload extender outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: extenders-dist
-          if-no-files-found: warn
-          retention-days: 1
-          path: |
-            AdaptixServer/extenders/beacon_listener_http/dist
-            AdaptixServer/extenders/beacon_listener_smb/dist
-            AdaptixServer/extenders/beacon_listener_tcp/dist
-            AdaptixServer/extenders/beacon_listener_dns/dist
-            AdaptixServer/extenders/beacon_listener_ws/dist
-            AdaptixServer/extenders/beacon_listener_discord/dist
-            AdaptixServer/extenders/beacon_listener_https_emu/dist
-            AdaptixServer/extenders/gopher_listener_tcp/dist
-            AdaptixServer/extenders/linux_listener_tcp/dist
-            AdaptixServer/extenders/listener_kharon_http/dist
-            AdaptixServer/extenders/webdelivery/dist
-            AdaptixServer/extenders/notifier/dist
-            AdaptixServer/extenders/vnc/dist
-            AdaptixServer/extenders/hosting_service/dist
-            AdaptixServer/extenders/phishing_service/dist
-            AdaptixServer/extenders/argfuscator/dist
-            AdaptixServer/extenders/relay/dist
-            AdaptixServer/extenders/topology/dist
-            AdaptixServer/extenders/arachne_service/dist
-            AdaptixServer/extenders/beacon_agent/dist
-            AdaptixServer/extenders/linux_agent/dist
-            AdaptixServer/extenders/macos_agent/dist
-            AdaptixServer/extenders/gopher_agent/dist
-            AdaptixServer/extenders/agent_kharon/dist
-
-  publish-release:
-    name: Publish GitHub Release
-    needs: [adaptix-server, adaptix-extenders]
-    if: >-
-      github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' ||
-       github.ref == 'refs/heads/master' ||
-       startsWith(github.ref, 'refs/tags/'))
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Package release zips
+      - name: Package extenders dist
         run: |
           set -euo pipefail
-          mkdir -p dist-release
-          if [ ! -d artifacts ] || [ -z "$(ls -A artifacts)" ]; then
-            echo "No artifacts to publish"
-            exit 1
-          fi
-          for dir in artifacts/*; do
-            [ -d "$dir" ] || continue
-            name="$(basename "$dir")"
-            (cd "$dir" && zip -r -q "../../dist-release/${name}.zip" .)
-            echo "packed ${name}.zip"
+          # 保持既有布局：zip 内顶层是 AdaptixServer/extenders/<plugin>/dist/...
+          STAGE="$RUNNER_TEMP/stage"
+          mkdir -p "$STAGE/AdaptixServer/extenders"
+          found=0
+          for d in extenders/*/dist; do
+            [ -d "$d" ] || continue
+            plugin="$(basename "$(dirname "$d")")"
+            mkdir -p "$STAGE/AdaptixServer/extenders/$plugin"
+            cp -a "$d" "$STAGE/AdaptixServer/extenders/$plugin/dist"
+            found=$((found + 1))
           done
-          ls -lh dist-release
+          echo "packed $found plugin dist dirs"
+          [ "$found" -gt 0 ] || { echo "no dist dirs produced"; exit 1; }
+          (cd "$STAGE" && zip -r -q "$RUNNER_TEMP/extenders-dist.zip" AdaptixServer)
+          ls -lh "$RUNNER_TEMP/extenders-dist.zip"
 
-      - name: Create or update GitHub Release
+      - name: Publish extenders to Release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            TITLE="${GITHUB_REF_NAME}"
-            PRE=()
-          else
-            TAG="latest"
-            TITLE="Latest (${GITHUB_SHA::7})"
-            PRE=(--prerelease --latest=false)
-          fi
-          NOTES="服务端构建产物（已移除 Qt AdaptixClient）。
-
-          - Commit: \`${GITHUB_SHA}\`
-          - Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-
-          资源：AdaptixServer-linux-amd64.zip / AdaptixServer-macos.zip / AdaptixServer-windows-amd64.zip / extenders-dist.zip"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" "${PRE[@]}"
-            gh release upload "$TAG" dist-release/* --clobber
-          else
-            gh release create "$TAG" dist-release/* \
-              --title "$TITLE" \
-              --notes "$NOTES" \
-              --target "$GITHUB_SHA" \
-              "${PRE[@]}"
-          fi
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: gh release upload "$TAG" "$RUNNER_TEMP/extenders-dist.zip" --clobber
