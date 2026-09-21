@@ -1,0 +1,158 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useStore } from '../store'
+import { copyText, isAgentOnline, isLinuxAgent } from '../utils'
+import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
+import { useCompletion } from '../lib/useCompletion'
+import { CmdSuggest } from './CmdSuggest'
+
+/**
+ * 「命令执行」—— 一台主机的**全屏终端式**命令台（`cmd:<agentId>[#n]`）。
+ *
+ * ★ 长得像 PTY，但**不是 PTY**：底层走的是普通命令通道（store.sendCommand →
+ *   /api/agent/command/raw），不是交互式 shell。区别很实在：
+ *     · 命令通道：一条一条发，每条都是一个 Task，任何 agent 都支持；
+ *     · 交互 PTY：在目标机上起真 shell（agent 侧要有 pty 能力），双向流。
+ *   要交互 shell 用右键「交互 PTY」，那条路径没动。
+ *
+ * 为什么做成这个样子（用户要的 VShell 那种）：
+ *   ① **全屏**：终端占满整个工作区，不是弹窗、也不是挤在主机表下面的一条；
+ *   ② **底部提示符**：输入行钉在底部（像 shell 的 prompt），回显往上滚 ——
+ *      输入框放在顶上时，回显一多就得往上翻才能看见刚敲的那条；
+ *   ③ **可多开**：`cmd:<id>`、`cmd:<id>#1`、`cmd:<id>#2`… 一台主机能同时开几个
+ *      （跟 shell / 跟日志 / 另一个窗口各一个），每个自己开关；
+ *   ④ 终端配色：深色底 + 等宽字，与「命令终端」「交互 PTY」同一套观感。
+ */
+export function CmdExec({ agentId }: { agentId: string }) {
+  const agents = useStore((s) => s.agents)
+  const lines = useStore((s) => s.consoleLines) || []
+  const sendCommand = useStore((s) => s.sendCommand)
+  const selectAgent = useStore((s) => s.selectAgent)
+  const clearConsole = useStore((s) => s.clearConsole)
+  const pushToast = useStore((s) => s.pushToast)
+
+  const agent = agents[agentId]
+  const online = isAgentOnline(agent)
+  const linux = isLinuxAgent(agent)
+
+  const [cmd, setCmd] = useState('')
+  const [hist, setHist] = useState<string[]>([])
+  const [histIdx, setHistIdx] = useState(-1)
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const outRef = useRef<HTMLDivElement>(null)
+
+  const comp = useCompletion({
+    value: cmd,
+    agent,
+    onAccept: setCmd,
+    fallbackCommands: FALLBACK_COMMANDS,
+    fallbackBofs: FALLBACK_BOFS,
+  })
+
+  const mine = useMemo(() => lines.filter((l) => l.agentId === agentId), [lines, agentId])
+
+  // 新回显自动滚到底 —— 终端不跟着滚，就得手动往下拖才能看到刚跑那条的回报
+  useEffect(() => {
+    const el = outRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [mine.length])
+
+  useEffect(() => { inputRef.current?.focus() }, [agentId])
+
+  async function submit() {
+    const c = cmd.trim()
+    if (!c) return
+    if (!online) { pushToast('warn', '主机离线，命令无法执行'); return }
+    setHist((h) => (h[h.length - 1] === c ? h : [...h, c]).slice(-200))
+    setHistIdx(-1)
+    setBusy(true)
+    // 先把这条回显出来（本地行），再发出去 —— 否则敲完到有回显之间是空白的
+    try {
+      selectAgent(agentId)
+      await sendCommand(c)
+      setCmd('')          // 成功才清空；失败保留原文方便改
+    } catch (e: any) {
+      pushToast('err', e?.message || String(e))
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (comp.onKeyDown(e)) return
+    if (e.key === 'Enter') { e.preventDefault(); void submit(); return }
+    // ↑/↓ 翻本地历史（补全弹层开着时上面那行已经消费掉了）
+    if (e.key === 'ArrowUp' && hist.length) {
+      e.preventDefault()
+      const i = histIdx < 0 ? hist.length - 1 : Math.max(0, histIdx - 1)
+      setHistIdx(i); setCmd(hist[i])
+    } else if (e.key === 'ArrowDown' && histIdx >= 0) {
+      e.preventDefault()
+      const i = histIdx + 1
+      if (i >= hist.length) { setHistIdx(-1); setCmd('') } else { setHistIdx(i); setCmd(hist[i]) }
+    }
+  }
+
+  async function copyAll() {
+    const ok = await copyText(mine.map((l) => l.text).join('\n'))
+    pushToast(ok ? 'ok' : 'err', ok ? '回显已复制' : '复制失败')
+  }
+
+  return (
+    <div className="cmd-exec">
+      <div className="cmd-exec-hd">
+        <span className="cmd-exec-prompt">❯</span>
+        <span className="cmd-exec-title">命令执行</span>
+        <span className="dim mono" style={{ fontSize: 12 }}>
+          {String(agent?.a_computer || agentId)}
+          {agent?.a_username ? ` · ${agent.a_username}` : ''}
+        </span>
+        <span className={`sdot ${online ? 'on' : 'off'}`} title={online ? '在线' : '离线'} />
+        <span className="dim" style={{ fontSize: 12 }}>{online ? '在线' : '离线（命令可排队）'}</span>
+        <span style={{ flex: 1 }} />
+        <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>复制</button>
+        <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>清空</button>
+      </div>
+
+      {/* 终端主体：回显在上、提示符钉在底部（shell 的读法） */}
+      <div className="cmd-exec-body" ref={outRef} onClick={() => inputRef.current?.focus()}>
+        {mine.length === 0 ? (
+          <div className="cmd-exec-tip">
+            {online
+              ? `在上面敲一条命令 —— 共 ${linux ? 'linux_agent' : 'beacon'} 的命令集，↑↓ 翻历史，Tab 补全`
+              : '主机离线；命令可排队，上线后自动下发'}
+          </div>
+        ) : (
+          mine.map((l) => <div key={l.id} className={`ln ${l.kind}`}>{l.text}</div>)
+        )}
+      </div>
+
+      <div className="cmd-exec-in">
+        <span className="cmd-exec-caret">❯</span>
+        <input
+          ref={inputRef}
+          className="mono"
+          value={cmd}
+          placeholder={linux ? 'getuid / shell id …' : 'whoami /all …'}
+          onChange={(e) => { setCmd(e.target.value); setHistIdx(-1) }}
+          onKeyDown={onKeyDown}
+          disabled={busy}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        {comp.open && (
+          <CmdSuggest
+            items={comp.items}
+            index={comp.index}
+            degraded={comp.degraded}
+            notice={comp.notice}
+            onPick={comp.pick}
+            onHover={comp.hover}
+            onRefresh={comp.refresh}
+          />
+        )}
+      </div>
+    </div>
+  )
+}

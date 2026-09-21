@@ -19,6 +19,8 @@ export type StaticTabId =
 export type TabId =
   | StaticTabId
   | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
+  // 命令执行台（全屏终端式，走命令通道不是 PTY）。`#n` 是多开的会话序号。
+  | `cmd:${string}`
 
 /**
  * ★ 这里曾经有 isBrowserConsoleNoise() / isBrowserCmdline()，按**命令拼写**与
@@ -50,6 +52,9 @@ export function isFilesTab(id: string | null | undefined): id is `files:${string
 export function isProcsTab(id: string | null | undefined): id is `procs:${string}` {
   return !!id && id.startsWith('procs:')
 }
+export function isCmdTab(id: string | null | undefined) {
+  return !!id && id.startsWith('cmd:')
+}
 export function isPtyTab(id: string | null | undefined): id is `pty:${string}` {
   return !!id && id.startsWith('pty:')
 }
@@ -61,8 +66,8 @@ export function isInteractTab(id: string | null | undefined) {
 }
 export function tabAgentId(id: string | null | undefined): string | null {
   if (!id) return null
-  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id)) {
-    // 多个终端会话用 `pty:<agentId>#<n>`，主机 id 是 `#` 前面那段
+  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id) || isCmdTab(id)) {
+    // 多个终端/命令台会话用 `pty:<agentId>#<n>`、`cmd:<agentId>#<n>`，主机 id 是 `#` 前面那段
     const rest = id.slice(id.indexOf(':') + 1).split('#')[0]
     return rest || null
   }
@@ -76,6 +81,13 @@ export function procsTabId(agentId: string): TabId { return `procs:${agentId}` }
  * ★ 一台主机能开多个终端是刚需（同时盯 shell / 日志 / 另一个 shell）；
  *   原来 id 只有 `pty:<agentId>`，第二个开出来只是把第一个切到前台。
  */
+/**
+ * 命令执行台页签 id。seq=0 是第一个会话，seq>0 是额外新开的 —— 一台主机能同时开几个
+ * （跟 shell / 跟日志各一个），每个自己开关。★ 同 ptyTabId：id 不唯一就开不出第二个。
+ */
+export function cmdTabId(agentId: string, seq = 0): TabId {
+  return seq > 0 ? `cmd:${agentId}#${seq}` : `cmd:${agentId}`
+}
 export function ptyTabId(agentId: string, seq = 0): TabId {
   return seq > 0 ? `pty:${agentId}#${seq}` : `pty:${agentId}`
 }

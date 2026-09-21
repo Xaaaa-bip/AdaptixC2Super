@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Login } from './components/Login'
 import { Dashboard } from './components/Dashboard'
 import { Hosts } from './components/Hosts'
+import { CmdExec } from './components/CmdExec'
 import { Term } from './components/Term'
 import { Listeners } from './components/Listeners'
 import { Generate } from './components/Generate'
@@ -27,7 +28,7 @@ import { ToastHost } from './components/Toast'
 import { ConnStatus } from './components/StatusPill'
 import { CommandPalette } from './components/CommandPalette'
 import { ShortcutHelp } from './components/ui'
-import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, tabAgentId } from './store'
+import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, isCmdTab, tabAgentId } from './store'
 import {
   clamp, isAgentOnline, loadDensity, loadTermHeight, loadTheme,
   saveDensity, saveTermHeight, saveTheme, type Density,
@@ -673,6 +674,17 @@ export default function App() {
             const aid = tabAgentId(id)
             if (!aid) return null
             return <PtyTerm key={id} agentId={aid} active={current === id} />
+          })}
+          {/* 命令执行台：全屏终端式，一台主机可多开（cmd:<id>#n）。
+              与 VNC 一样 keep mounted —— 切走再切回来，草稿和滚动位置都还在。 */}
+          {(openTabs || []).filter(isCmdTab).map((id) => {
+            const aid = tabAgentId(id)
+            if (!aid) return null
+            return (
+              <div key={id} style={{ display: current === id ? 'contents' : 'none', height: '100%', minHeight: 0 }}>
+                <CmdExec agentId={aid} />
+              </div>
+            )
           })}
           {openVncTabs.map((id) => {
             const aid = tabAgentId(id)

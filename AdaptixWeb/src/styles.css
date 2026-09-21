@@ -1885,3 +1885,48 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 .xkit-purposes { margin-bottom: 6px; }
 
 
+/* ═══ 命令执行台（cmd:<agentId>[#n] 页签）═══════════════════════════════
+   全屏**终端式**观感（用户要的 VShell 那种），但底层走**命令通道**不是 PTY：
+   一条一条发、每条一个 Task，任何 agent 都支持；要交互 shell 走右键「交互 PTY」。
+   配色沿用项目里「墨池」终端那一套（--term-bg/#141414、#ecece8），与
+   「命令终端」「交互 PTY」同一观感，不另创一套皮肤。
+   输入行**钉在底部**（像 shell 的 prompt），回显往上滚 —— 输入框放顶上时，
+   回显一多就得往上翻才能看见刚敲的那条。 */
+.cmd-exec {
+  height: 100%; min-height: 0; display: flex; flex-direction: column;
+  background: #141414; color: #ecece8;
+}
+.cmd-exec-hd {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 12px;
+  background: #1c1c1c; border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.cmd-exec-prompt { color: #7a7a7a; font-family: var(--mono); }
+.cmd-exec-title { font-size: 13px; font-weight: 600; }
+.cmd-exec-hd .dim { color: #8a8a8a !important; }
+.cmd-exec-hd button { background: transparent; border-color: transparent; color: #b9b9b9; height: 26px; }
+.cmd-exec-hd button:hover:not(:disabled) { background: rgba(255,255,255,.08); color: #fff; }
+.cmd-exec-body {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 10px 14px; cursor: text;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+}
+.cmd-exec-body .ln { white-space: pre-wrap; word-break: break-all; }
+.cmd-exec-body .ln.local { color: #8a8a8a; }
+.cmd-exec-body .ln.ok    { color: #bcd8bc; }
+.cmd-exec-body .ln.err   { color: #ff8f8f; }
+.cmd-exec-body .ln.task  { color: #8ab4d8; }
+.cmd-exec-tip { color: #6f6f6f; font-size: 12px; }
+.cmd-exec-in {
+  position: relative;
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: #1c1c1c; border-top: 1px solid rgba(255,255,255,.08);
+}
+.cmd-exec-caret { color: #7a7a7a; font-family: var(--mono); }
+.cmd-exec-in input {
+  flex: 1; min-width: 0; height: 30px;
+  background: transparent; border: 0; color: #f2f2f0; font-size: 13px;
+}
+.cmd-exec-in input:focus { box-shadow: none; border: 0; }
+.cmd-exec-in input::placeholder { color: #5f5f5f; }
