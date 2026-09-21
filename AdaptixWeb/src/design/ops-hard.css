@@ -1120,7 +1120,10 @@ html[data-theme="dark"] .conn-chip.is-sync {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  /* 单列：原来左侧是「在线 / 离线」分组树（260px），按要求去掉，只保留主机列表
+     —— 就是右侧那张表（状态/主机/用户/内网/外网/归属地/进程/系统/监听/心跳/标签），
+     和 Qt 客户端的主机页同构。留着 260px 的列会空出一条。 */
+  grid-template-columns: minmax(0, 1fr);
   background: var(--paper);
 }
 .sess.is-list-collapsed {

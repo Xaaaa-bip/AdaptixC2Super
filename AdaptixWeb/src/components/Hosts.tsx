@@ -114,7 +114,6 @@ export function Hosts() {
   const removeChecked = useStore((s) => s.removeChecked)
 
   const [ctx, setCtx] = useState<Ctx>(null)
-  const [openG, setOpenG] = useState({ online: true, offline: true })
   const [busy, setBusy] = useState(false)
   // 动态心跳：每秒刷新 age 文案（对齐 Qt LastTickWorker 500ms）
   const [nowTick, setNowTick] = useState(() => Date.now())
@@ -293,44 +292,6 @@ export function Hosts() {
 
   return (
     <div className="sess">
-      {/* 左侧：在线 / 离线分组列表 */}
-      <aside className="sess-list">
-        <div className="sess-list-hd">
-          <div>
-            <div className="sess-k">主机</div>
-            <div className="sess-count">
-              <span className="signal">{online.length}</span>
-              <span className="dim"> / {filteredFixed.length}</span>
-            </div>
-          </div>
-          <button type="button" className="ghost" style={{ height: 28 }} disabled={busy} onClick={() => void doRefresh()}>
-            {busy ? '…' : '刷新'}
-          </button>
-        </div>
-        <div className="sess-list-bd">
-          <button type="button" className="sess-g" onClick={() => setOpenG((g) => ({ ...g, online: !g.online }))}>
-            <span>{openG.online ? '▾' : '▸'}</span>
-            <span>在线</span>
-            <span className="n">{online.length}</span>
-          </button>
-          {openG.online && (
-            online.length ? <TaggedGroup list={online} />
-              : <div className="sess-empty">无在线主机</div>
-          )}
-
-          <button type="button" className="sess-g" onClick={() => setOpenG((g) => ({ ...g, offline: !g.offline }))}>
-            <span>{openG.offline ? '▾' : '▸'}</span>
-            <span>离线</span>
-            <span className="n">{offline.length}</span>
-          </button>
-          {openG.offline && (
-            offline.length ? <TaggedGroup list={offline} />
-              : <div className="sess-empty">无离线主机</div>
-          )}
-        </div>
-      </aside>
-
-      {/* 右侧：工具条 + 主机表 */}
       <section className="sess-main">
         <div className="sess-bar">
           <input
@@ -378,7 +339,7 @@ export function Hosts() {
                 <button className="danger" onClick={() => removeSelected().catch((e) => pushLog('err', String(e)))}>删除</button>
               </>
             ) : (
-              <span className="dim">在左侧选择主机，或点击右侧表格行</span>
+              <span className="dim">点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量</span>
             )}
           </div>
           <PageTips id="hosts">
