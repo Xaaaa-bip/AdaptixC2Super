@@ -29,8 +29,8 @@ import { CommandPalette } from './components/CommandPalette'
 import { ShortcutHelp } from './components/ui'
 import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, tabAgentId } from './store'
 import {
-  clamp, isAgentOnline, loadDensity, loadTermHeight,
-  saveDensity, saveTermHeight, type Density,
+  clamp, isAgentOnline, loadDensity, loadTermHeight, loadTheme,
+  saveDensity, saveTermHeight, saveTheme, type Density,
 } from './utils'
 
 type Menu = { id: TabId; label: string; ico: string; group?: string; shortcut?: string }
@@ -244,6 +244,22 @@ export default function App() {
   const openVnc = useStore((s) => s.openVnc)
 
   const [density, setDensity] = useState<Density>(loadDensity)
+  // 山水太极：默认宣纸阳面（浅色），仅显式选过深色才走淡墨阴面。
+  // ★ 迁移：旧 Signal Deck 那套深色主题可能在 localStorage 里留了 dark，
+  //   第一次进来强制清成阳面，否则老用户永远停在阴面还以为换肤没生效。
+  const [dark, setDark] = useState(() => {
+    const t = loadTheme()
+    if (t === 'dark' && localStorage.getItem('adaptix.theme.migrated') !== 'shanshui') {
+      saveTheme('light')
+      localStorage.setItem('adaptix.theme.migrated', 'shanshui')
+      return false
+    }
+    return t === 'dark'
+  })
+  useEffect(() => {
+    // 壳（.ops 上的 data-theme）与 html 双写 —— token 挂在 html 上时 ops 不会自己同步
+    saveTheme(dark ? 'dark' : 'light')
+  }, [dark])
   const [termH, setTermH] = useState(loadTermHeight)
   const [dragging, setDragging] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -508,7 +524,7 @@ export default function App() {
   return (
     <div
       className="ops"
-      data-theme="dark"
+      data-theme={dark ? 'dark' : 'light'}
       data-density={density}
     >
       <div className="ink-scape" aria-hidden>
@@ -602,6 +618,9 @@ export default function App() {
             </div>
             <span className="ops-user">{username}</span>
             <button type="button" className="ghost ico" title="刷新" onClick={() => refreshRest().catch(() => {})}>↻</button>
+            <button type="button" className="ghost ico" title={dark ? '浅色（宣纸阳面）' : '深色（淡墨阴面）'} onClick={() => setDark((v) => !v)}>
+              {dark ? '☀' : '☾'}
+            </button>
             <button type="button" className="ghost ico" title="密度" onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
               {density === 'compact' ? '▣' : '▢'}
             </button>

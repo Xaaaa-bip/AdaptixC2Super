@@ -1,10 +1,8 @@
-/* AdaptixWeb — 黑客风（纯深色：近黑偏绿底 + 红/绿双强调） */
-/* Tokens: design/tokens.css · Motion: design/motion.css · Shell: ops-hard.css · Skin: hacker.css · Glass: design/glass.css */
+/* AdaptixWeb — 山水太极 / 宣纸操作台 */
+/* Tokens: design/tokens.css · Motion: design/motion.css · Shell: ops-hard.css */
 @import "./design/tokens.css";
 @import "./design/motion.css";
 @import "./design/ops-hard.css";
-@import "./design/hacker.css";
-@import "./design/glass.css";
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -72,23 +70,6 @@ input:focus, select:focus, textarea:focus {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-/* 复选框 / 单选框要从上面那条全局 input 规则里摘出来。
-   上面给所有 input 写了 height: 30px，而原生复选框的宽度由内核定死（13px），
-   只有高度听 CSS —— 结果每个复选框都被拉成 13x30 的竖条。BOF 卡片头里的
-   「异步 -a」因此被撑到 36px 高（30px 控件 + 上下各 3px margin），26 张卡
-   每张都白占一行；任务页的筛选框同理。
-   下面 .fm-table 那条局部补丁（width/height 14px）就是之前撞上这个坑之后打的，
-   但只补了文件管理一处。这里在全局修掉，局部那条留着也无害。
-   accent-color 顺带解决深色下的观感：原生复选框默认是亮白方块，
-   在暗色控制台里突兀得像没做样式，现在跟着强调色走。 */
-input[type="checkbox"], input[type="radio"] {
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  flex: none;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th, td {
   padding: 9px 12px;
@@ -117,6 +98,176 @@ tbody tr.selected td:first-child { box-shadow: none; }
 .ok { color: var(--live); }
 .err { color: var(--cinnabar); }
 .warn { color: var(--warn); }
+
+/* ===== Login — legacy (hidden; use .lx) ===== */
+.login-page, .login-card { display:none !important; /* shanshui hide legacy */ }
+.login-page {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  position: relative;
+  background:
+    radial-gradient(900px 420px at 12% 0%, rgba(61, 139, 122, 0.14), transparent 58%),
+    radial-gradient(700px 380px at 88% 100%, rgba(47, 111, 106, 0.12), transparent 55%),
+    linear-gradient(155deg, #0a1018, #0c1219 42%, #0e1622);
+}
+.login-page::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--signal), var(--accent), transparent);
+  opacity: 0.85;
+}
+.login-card {
+  width: min(400px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 28px 22px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.4);
+  color: var(--text);
+}
+html[data-theme="light"] .login-card {
+  background: #fff;
+  color: #1a2332;
+}
+.login-card .logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.login-card .logo {
+  width: 42px; height: 42px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--signal-dim), var(--accent));
+  color: #fff; font-weight: 800; display: grid; place-items: center;
+  box-shadow: 0 6px 16px var(--signal-glow);
+}
+.login-card h1 { margin: 0; font-size: 20px; }
+.login-card .sub { margin-top: 2px; color: var(--text-3); font-size: 12px; }
+.login-card label { display: block; margin: 12px 0 6px; color: var(--text-2); font-size: 12px; }
+.login-card input { width: 100%; height: 36px; }
+.login-card .actions { margin-top: 18px; }
+.login-card .actions button { width: 100%; height: 38px; font-weight: 600; }
+.login-err { min-height: 18px; margin-top: 10px; color: var(--error); font-size: 12px; }
+
+/* ===== Vben layout: sider + main ===== */
+.layout {
+  height: 100%;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--sider-w) 1fr;
+  background: var(--bg);
+}
+.layout.collapsed { --sider-w: 72px; }
+
+.sider {
+  background: linear-gradient(180deg, var(--sider), var(--sider-2));
+  color: rgba(255,255,255,.75);
+  display: flex; flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid rgba(255,255,255,.04);
+}
+.sider-logo {
+  height: var(--header-h);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  color: #fff; font-weight: 700; letter-spacing: .3px;
+}
+.sider-logo .mark {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--signal-dim), var(--accent));
+  display: grid; place-items: center; color: #fff; font-size: 14px;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(61, 139, 122, 0.25);
+}
+.sider-logo .txt { overflow: hidden; white-space: nowrap; }
+.sider-menu {
+  flex: 1; overflow: auto; padding: 10px 8px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sider-menu .mi {
+  width: 100%; justify-content: flex-start;
+  background: transparent; border: none; border-radius: 8px;
+  color: rgba(255,255,255,.72); height: 40px; padding: 0 12px;
+}
+.sider-menu .mi .ico { width: 18px; text-align: center; opacity: .9; }
+.sider-menu .mi:hover { background: rgba(255,255,255,.06); color: #fff; }
+.sider-menu .mi.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, #000), var(--accent));
+  color: #fff;
+  box-shadow: 0 6px 16px var(--accent-glow);
+  box-shadow: none;
+}
+.sider-menu .mi .badge {
+  margin-left: auto;
+  min-width: 18px; height: 18px; border-radius: 9px;
+  background: rgba(255,255,255,.14);
+  color: #fff; font-size: 11px;
+  display: inline-grid; place-items: center; padding: 0 6px;
+}
+.sider-foot {
+  border-top: 1px solid rgba(255,255,255,.06);
+  padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.sider-foot button {
+  width: 100%; justify-content: center;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  color: rgba(255,255,255,.8);
+}
+.sider-foot button:hover { background: rgba(255,255,255,.08); color: #fff; }
+
+.main {
+  min-width: 0; min-height: 0;
+  display: grid;
+  grid-template-rows: var(--header-h) var(--tabs-h) 1fr;
+}
+
+.header {
+  position: relative;
+  background: var(--header);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+}
+.header .crumb { color: var(--text-2); font-size: 13px; }
+.header .crumb b { color: var(--text); font-weight: 600; }
+.header .spacer { flex: 1; }
+.header .user {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-2); font-size: 12.5px;
+}
+.dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--error);
+}
+.dot.on { background: var(--signal); box-shadow: 0 0 0 3px var(--signal-glow); }
+
+/* multi tabs bar like vben */
+.tabsbar {
+  background: var(--header);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: end; gap: 4px;
+  padding: 0 10px 0;
+  overflow-x: auto;
+}
+.tabsbar .tab {
+  height: 28px; border-radius: 6px 6px 0 0;
+  border: 1px solid transparent;
+  background: transparent; color: var(--text-2);
+  padding: 0 12px; position: relative; top: 1px;
+}
+.tabsbar .tab:hover { color: var(--primary); }
+.tabsbar .tab.active {
+  background: var(--bg);
+  border-color: var(--line);
+  border-bottom-color: var(--bg);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--signal);
+}
+.tabsbar .tab .x {
+  margin-left: 8px; color: var(--text-3); border-radius: 3px; padding: 0 3px;
+}
+.tabsbar .tab .x:hover { background: rgba(255,77,79,.12); color: var(--error); }
 
 .content {
   min-height: 0;
@@ -149,6 +300,47 @@ tbody tr.selected td:first-child { box-shadow: none; }
 .card-hd .spacer { flex: 1; }
 .card-bd { flex: 1; min-height: 0; overflow: auto; }
 
+/* hosts split: left tree + table */
+.hosts {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  gap: 10px;
+}
+.hosts > .card { min-height: 0; }
+.tree {
+  padding: 8px;
+}
+.tree .group-title {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 8px; border-radius: 6px;
+  color: var(--text-2); font-size: 12px; font-weight: 600;
+  cursor: pointer; user-select: none;
+}
+.tree .group-title:hover { background: var(--row-hover); }
+.tree .group-title .n { margin-left: auto; color: var(--text-3); font-weight: 500; }
+.tree .item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 16px; border-radius: 8px;
+  cursor: pointer; border: 1px solid transparent;
+}
+.tree .item:hover { background: var(--row-hover); }
+.tree .item.active {
+  background: var(--row-selected);
+  border-color: transparent;
+  box-shadow: none;
+}
+html[data-theme="dark"] .tree .item.active {
+  background: var(--row-selected);
+  border-color: transparent;
+}
+.tree .sdot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.tree .sdot.on { background: var(--signal); box-shadow: 0 0 0 3px var(--signal-glow); }
+.tree .sdot.off { background: var(--error); opacity: .75; }
+.tree .meta { min-width: 0; flex: 1; }
+.tree .name { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree .ip { font-family: var(--mono); font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; }
+
 .toolbar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   padding: 8px 12px; border-bottom: 1px solid var(--line-2);
@@ -162,17 +354,6 @@ tbody tr.selected td:first-child { box-shadow: none; }
   height: 100%; min-height: 180px;
   display: grid; place-items: center; text-align: center;
   color: var(--ink-3); padding: 30px 12px;
-  /* 空态被拉伸成三行相距几百像素 —— 这是机制问题不是口味问题。
-     .empty 是 grid，子元素是 图标 / 标题 / 说明 / 动作 三到四个，每个独占一行；
-     而容器有 height:100%（面板多高它就多高，概览/凭据这类页面能到 900px），
-     grid 的 align-content 默认是 normal，对 grid 而言等价于 stretch ——
-     于是每个 auto 行都被拉到 1/3 容器高，place-items:center 再把各自的内容
-     在那一行里居中。表现出来就是"图标、暂无凭据、一句说明"被均匀撒在整屏上，
-     彼此相距 280px 左右，读起来像三个不相干的元素。
-     align-content:center 让行按内容高度收拢、整体垂直居中，这才是空态该有的样子。
-     EmptyState 是共用组件，这一条同时修掉 凭据/日志/下载/目标/截图/任务/
-     VNC/BOF/监听器/进程管理 十处的同一个毛病。 */
-  align-content: center;
 }
 .empty .big { font-size: 28px; opacity: .35; margin-bottom: 8px; }
 .empty-mark {
@@ -297,23 +478,8 @@ html[data-theme="dark"] .tag.listen { color: var(--accent-2); background: var(--
   align-items: center; margin-bottom: 10px;
 }
 .field label { color: var(--text-2); font-size: 12px; }
-/* 复选框/单选框必须排除在外。
-   原来这条是 `.field input`，特异度 (0,1,1) 与全局那条
-   `input[type="checkbox"]{width:14px}` 完全相等 —— 于是源代码顺序说话，
-   靠后的这条赢，`.field` 里的复选框被拉成 width:100%。
-   实测 OPSEC 那个复选框算出来是 1088×14：原生方块被 Chrome 画在 1088px 盒子的
-   正中（x≈658），而它自己的说明文字被挤到 x≈1211 —— 复选框和它的文字
-   隔了一千多像素，看起来就是"这个标签和它的控件中间空了一大片"。
-   排除掉而不是再加一条更高特异度的覆盖：真值只该有一处。 */
-.field input:not([type="checkbox"]):not([type="radio"]),
-.field select,
-.field textarea { width: 100%; }
+.field input, .field select, .field textarea { width: 100%; }
 .field textarea { height: auto; min-height: 64px; padding: 8px 10px; }
-/* 提示框是 .field 网格的第三个子元素（label、控件之后），自动放置会把它塞进
-   第一列 —— 也就是那个 100px 的标签列。于是整段说明被压成一根 100px 宽的窄条，
-   换行密到读不成句，看起来就是"提示框变形了"。让它横跨两列。
-   注意别写成 `.field .hint`：那会连嵌套更深的提示框一起改，这里只要直接子元素。 */
-.field > .hint { grid-column: 1 / -1; }
 .hint {
   margin: 8px 0;
   padding: 10px 12px; border-radius: 8px;
@@ -360,6 +526,16 @@ html[data-theme="dark"] .hint {
 .ctx .danger:hover { background: #fff1f0; color: var(--error); }
 
 /* ===== Productization polish ===== */
+.sider-logo .txt .sub {
+  font-size: 10px; font-weight: 500; color: rgba(255,255,255,.45);
+  letter-spacing: .2px; margin-top: 1px;
+}
+.menu-group {
+  padding: 10px 12px 4px;
+  font-size: 11px; font-weight: 600;
+  color: rgba(255,255,255,.35);
+  letter-spacing: .6px; text-transform: uppercase;
+}
 .header .vsep {
   width: 1px; height: 14px; background: var(--line); margin: 0 2px;
 }
@@ -411,9 +587,7 @@ html[data-theme="dark"] .banner.warn {
 
 /* toast */
 .toast-host {
-  /* bottom 用 --toast-lane 而不是 16px：16px 会把通知压在底栏（及其右侧的
-     快捷键提示）上面，见 tokens.css 里的说明。 */
-  position: fixed; right: 16px; bottom: var(--toast-lane); z-index: 2000;
+  position: fixed; right: 16px; bottom: 16px; z-index: 2000;
   display: flex; flex-direction: column; gap: 8px;
   max-width: min(380px, 92vw); pointer-events: none;
 }
@@ -518,48 +692,6 @@ html[data-theme="dark"] .tag.warn { color: #fbbf24; background: rgba(250,173,20,
 /* forms */
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip-row button { height: 28px; }
-
-/* 流量模板那一排：10 个 chip 挤在一起，收成胶囊形好点选 */
-.traffic-tpls { margin-bottom: 4px; }
-.traffic-tpls button { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
-
-/* ── 错误页 / 载荷页的「左边改、右边即时渲染」 ──────────────────────
-   窄屏（≤720px）落成上下两栏；iframe 用 sandbox=""（全封锁）渲染，
-   绝不给粘贴进来的诱饵页任何执行能力。 */
-.page-preview-wrap {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  min-height: 0;
-}
-.page-preview {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fff;
-  min-height: 220px;
-  display: flex;
-  flex-direction: column;
-}
-.page-preview-k {
-  flex: 0 0 auto;
-  padding: 4px 10px;
-  font-size: 11px;
-  color: var(--ink-3);
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-}
-.page-preview iframe {
-  flex: 1;
-  width: 100%;
-  min-height: 200px;
-  border: 0;
-  background: #fff;
-}
-@media (max-width: 720px) {
-  .page-preview-wrap { grid-template-columns: 1fr; }
-}
 .field-hint { font-size: 11.5px; color: var(--text-3); margin: -2px 0 4px; }
 .pass-row { display: flex; gap: 8px; }
 .pass-row input { flex: 1; }
@@ -660,8 +792,10 @@ html[data-theme="dark"] .ctx .danger:hover { background: rgba(239,68,68,.12); }
 @media (max-width: 1100px) {
   .dash { grid-template-columns: repeat(2, 1fr); }
   .dash-grid { grid-template-columns: 1fr; }
+  .hosts { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
+  .layout { grid-template-columns: 72px 1fr; }
   .dash { grid-template-columns: 1fr; }
 }
 
@@ -1022,9 +1156,11 @@ html[data-density="compact"] body { font-size: 12.5px; }
 html[data-density="compact"] button { height: 26px; padding: 0 10px; }
 html[data-density="compact"] input, html[data-density="compact"] select { height: 26px; }
 html[data-density="compact"] th, html[data-density="compact"] td { padding: 6px 10px; }
+html[data-density="compact"] .sider-menu .mi { height: 34px; }
 html[data-density="compact"] .toolbar { padding: 6px 10px; gap: 6px; }
 html[data-density="compact"] .card-hd { height: 36px; }
 html[data-density="compact"] .content { padding: 8px; }
+html[data-density="compact"] .hosts { grid-template-columns: 200px 1fr; gap: 8px; }
 
 .kbd {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1033,13 +1169,29 @@ html[data-density="compact"] .content { padding: 8px; }
   background: var(--bg); color: var(--text-3);
   font-family: var(--mono); font-size: 10.5px; line-height: 1;
 }
+.header-search {
+  height: 28px; gap: 10px; padding: 0 10px;
+  border: 1px solid var(--line) !important;
+  background: var(--bg) !important;
+  color: var(--text-3) !important;
+  border-radius: 8px;
+}
+.header-search:hover { color: var(--text) !important; border-color: var(--primary) !important; }
 .header .chord-hint {
   margin-left: 8px; padding: 1px 8px; border-radius: 999px;
   background: rgba(61, 139, 122, .12); color: var(--signal);
   font-family: var(--mono); font-size: 11px; font-weight: 700;
 }
+.sider-foot .ghost-sider {
+  background: rgba(61, 139, 122, .16) !important;
+  border-color: rgba(47, 111, 106, .32) !important;
+  color: #fff !important;
+}
+.sider-menu .mi-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-inline { display: inline-flex; gap: 6px; align-items: center; user-select: none; }
 .toolbar-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.hosts-table td { max-width: 200px; }
+.hosts-table .cell-sub { max-width: 180px; }
 
 /* command palette */
 .palette-mask {
@@ -1109,6 +1261,7 @@ html[data-density="compact"] .content { padding: 8px; }
 }
 @media (max-width: 720px) {
   .field-grid-2 { grid-template-columns: 1fr; }
+  .header-search span { display: none; }
 }
 
 /* term status dots reuse */
@@ -1157,37 +1310,16 @@ html[data-density="compact"] .content { padding: 8px; }
 /* page log uses full height */
 .page > .log-page { flex: 1; min-height: 0; }
 
-/* ===== Generate payload redesign =====
-   两栏各自滚，不是整页滚。
-
-   .card 是 `display:flex; flex-direction:column; overflow:hidden`，
-   .card-bd 是 `flex:1; min-height:0; overflow:auto` —— 这套结构本来就是
-   "卡头固定、卡身内部滚"。它一直没生效，是因为两张卡都没有高度约束：
-   原来 .gen-layout 是 `min-height:100%` + `align-items:start`，行高跟着内容长，
-   卡片自然长到内容那么高，.card-bd 就没有可滚的余地，于是滚动落到了 .gen-page 上。
-
-   后果在投递页最明显：右栏展开 10 条命令后是 1767px，左栏只有 752px，
-   整页要滚 2.2 屏，下半屏左侧整片是空的；而操作员滚下去挑命令时，
-   C2 Host URL 那个字段已经滚出视野了 —— 偏偏改完它还要重新复制命令。
-
-   改成把行高钉在视口上，配合 align-items:start + max-height:100%：
-   短的卡保持自然高度（不会被拉成一张空卡），长的卡封顶到视口并在卡身内部滚。
-   两栏从此各自滚，左栏的表单始终在视野里。 */
-.gen-page { height: 100%; min-height: 0; overflow: hidden; }
+/* ===== Generate payload redesign ===== */
+.gen-page { height: 100%; min-height: 0; overflow: auto; }
 .gen-layout {
   display: grid;
-  /* 右栏原来固定 280px —— 那是个"摘要 + 按钮"的宽度，不是"要复制的命令"的宽度。
-     右栏里每条投递命令都是 130~330 字符的一行式命令，280px 减去两侧内边距
-     只剩 252px，再被 .field 的 100px 标签列吃掉，命令框实测只有 140×66 ——
-     一个 3 行的窗口，里面塞着折成十几行的命令，而折行又是 break-all
-     （从任意字符处断），URL 被劈成两半，没法核对。
-     改成随视口伸缩、并给一个下限保证命令框够宽。 */
-  grid-template-columns: 1fr clamp(340px, 34vw, 520px);
+  grid-template-columns: 1fr 280px;
   gap: 12px;
-  height: 100%;
+  min-height: 100%;
   align-items: start;
 }
-.gen-main, .gen-side { min-height: 0; max-height: 100%; }
+.gen-main, .gen-side { min-height: 0; }
 .gen-body { padding: 14px; overflow: auto; }
 .gen-section-title {
   display: flex; align-items: center;
@@ -1244,43 +1376,6 @@ html[data-density="compact"] .content { padding: 8px; }
 .gen-listener .name { font-weight: 600; }
 .gen-listener .sub { font-size: 11.5px; color: var(--text-3); }
 .gen-params { display: grid; gap: 4px; }
-/* ── 插件声明的生成参数表（components/BuildSchemaFields.tsx） ──
-   全是**新类名**，一条既有选择器都没覆盖：.gen-params 的栅格/间距、.field 的两列
-   布局、.chip-row / .check-inline / .hint 的观感一个字节没动，所以未迁移的 agent
-   走原 JSX 时和改动前逐像素一致。别把这些规则并进上面的 .gen-* 里 ——
-   hacker.css 里那些 `html:root[data-theme="dark"] .gen-*` 特异度更高，
-   一旦共用选择器，改这里就等于在跟另一个文件抢同一份声明。 */
-.bs-group { min-width: 0; }
-.bs-head {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  height: auto; padding: 0; border: 0; background: none; text-align: left;
-  font-size: 12px; font-weight: 700; letter-spacing: .3px; color: var(--text-2);
-  margin: 12px 0 6px; cursor: pointer;
-}
-.bs-head:hover { background: none; }
-.bs-caret { width: 10px; flex: 0 0 auto; color: var(--text-3); }
-/* 收起来时也报个数，否则「这组里有没有我要的东西」只能靠点开试 */
-.bs-count { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-3); }
-.bs-body { display: grid; }
-/* 提示框跟着它描述的那个控件走，别飘在字段中间。
-   ★ 两条都**只在 .bs-body 里**收紧：出了这个容器（未迁移的 agent 走原 JSX）
-     一切照旧，回退界面仍然和改动前逐像素一致。
-   1) 左边缘对齐控件。styles.css:316 的 `.field > .hint{grid-column:1/-1}` 让它从
-      标签列起（实测 x=83），而控件在 x=193 —— 中间空着一整个标签列，读起来像另起一栏。
-      改成只占第 2 列，宽度也就正好等于输入框。排除 .field-flat（复选框那种单列块）
-      不是栅格，grid-column 对它无效，写了也没用。
-   2) 上下留白 18px → 6px。18 = .field 的 row-gap 10 + .hint 的 margin 8；
-      下面那 18 = margin 8 + .field 的 margin-bottom 10。所以行间距和 margin 一起收。
-      用 :has() 只对**带提示框**的字段动手，没提示框的字段间距仍是原来的 10px ——
-      否则整张表会挤成一片，那是另一个极端。 */
-.bs-body .field { row-gap: 2px; margin-bottom: 2px; }
-.bs-body .field:not(:has(> .hint)) { margin-bottom: 10px; }
-.bs-body .field > .hint { margin: 4px 0; }
-.bs-body .field:not(.field-flat) > .hint { grid-column: 2; }
-.bs-chips button { height: 26px; font-size: 12px; }
-.bs-file-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.bs-file-row input[type="file"] { min-width: 0; flex: 1 1 160px; }
-.bs-file-meta { font-size: 11.5px; word-break: break-all; }
 .gen-summary { display: grid; gap: 10px; font-size: 12.5px; }
 .gen-summary > div { display: flex; gap: 10px; align-items: baseline; }
 .gen-summary .k { color: var(--text-3); min-width: 48px; flex: 0 0 auto; }
@@ -1327,11 +1422,7 @@ html[data-density="compact"] .content { padding: 8px; }
   border: 1px solid color-mix(in srgb, var(--late, #b8860b) 35%, transparent);
 }
 @media (max-width: 980px) {
-  /* 单栏时退回整页滚：两栏变上下堆叠，再把各自钉成视口高就成了
-     两个各自带滚动条的矮窗，谁也读不完整。 */
-  .gen-layout { grid-template-columns: 1fr; height: auto; }
-  .gen-page { overflow: auto; }
-  .gen-main, .gen-side { max-height: none; }
+  .gen-layout { grid-template-columns: 1fr; }
   .gen-side { order: -1; }
 }
 
@@ -1576,14 +1667,7 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
   min-width: 0;
   min-height: 0;
   display: grid;
-  /* 这里原来硬编码了 48px 34px 1fr 26px，而 design/ops-hard.css 里
-     同一个选择器写的是 var(--header-h) var(--tabs-h) 1fr var(--status-h)。
-     两条特异度都是 (0,1,0)，而 @import 会被提升到样式表顶部 ——
-     所以 styles.css 自己的规则排在 design/*.css 之后，硬编码这份赢了，
-     token 形同虚设（改密度不生效），并且 26px 的轨道装不下
-     .ops-status 的 min-height:32px，底栏整个往下溢出视口 6px。
-     两份真值只能留一份：这里跟着 token 走，谁赢都一样。 */
-  grid-template-rows: var(--header-h) var(--tabs-h) 1fr var(--status-h);
+  grid-template-rows: 48px 34px 1fr 26px;
   background: var(--bg);
 }
 
@@ -1738,7 +1822,420 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
   background: rgba(255,255,255,.12);
 }
 
+/* ----- Login GATE ----- */
+.gate {
+  height: 100%;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  background: #070b10;
+  color: #e8eef6;
+}
+.gate-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(47,111,106,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61,139,122,.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%);
+  pointer-events: none;
+}
+.gate-shell {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 94vw);
+  display: grid;
+  grid-template-columns: 1.05fr .95fr;
+  gap: 0;
+  border: 1px solid #243041;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0c1219;
+  box-shadow: 0 30px 80px rgba(0,0,0,.55);
+}
+.gate-brief {
+  padding: 36px 32px;
+  background:
+    radial-gradient(600px 280px at 0% 0%, rgba(61,139,122,.12), transparent 60%),
+    linear-gradient(165deg, #0a1018, #0c1219 60%);
+  border-right: 1px solid #1c2838;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.gate-eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  color: var(--signal);
+  font-weight: 600;
+}
+.gate-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  color: #f2f6fc;
+}
+.gate-title-mark {
+  margin: 0 6px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.gate-title-en {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent-2);
+  letter-spacing: .08em;
+}
+.gate-lead {
+  margin: 0;
+  color: #8b9bb0;
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 36em;
+}
+.gate-checklist {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: #c5d0e0;
+}
+.gate-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gate-checklist i {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-glow);
+  flex: 0 0 auto;
+}
+.gate-meta {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px dashed #243041;
+  display: grid;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #8b9bb0;
+}
+.gate-meta .k {
+  display: inline-block;
+  min-width: 64px;
+  color: #5b6b80;
+  margin-right: 8px;
+}
+.gate-form {
+  padding: 32px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  background: #101820;
+}
+.gate-form-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.gate-brand { display: flex; align-items: center; gap: 10px; }
+.gate-logo {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: grid; place-items: center;
+  font-weight: 800;
+  background: linear-gradient(145deg, var(--signal-dim), var(--accent));
+  color: #fff;
+}
+.gate-brand-name { font-weight: 700; font-size: 15px; }
+.gate-brand-sub { font-size: 10.5px; color: #6b778c; letter-spacing: .06em; }
+.gate-form-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: #8b9bb0;
+  letter-spacing: .08em;
+}
+.gate-led {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-glow);
+}
+.gate-led.pulse { animation: pulse 1s ease-in-out infinite; background: var(--warn); box-shadow: 0 0 0 3px rgba(230,184,77,.2); }
+.gate-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b9bb0;
+  letter-spacing: .04em;
+  margin: 10px 0 6px;
+  text-transform: uppercase;
+}
+.gate-input {
+  width: 100%;
+  height: 38px;
+  background: #0c1219 !important;
+  border: 1px solid #2a384c !important;
+  border-radius: 8px;
+  color: #e8eef6 !important;
+  padding: 0 12px;
+}
+.gate-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-glow) !important;
+}
+.gate-pass { display: flex; gap: 8px; }
+.gate-pass .gate-input { flex: 1; }
+.gate-ghost {
+  height: 38px;
+  background: transparent;
+  border: 1px solid #2a384c;
+  color: #8b9bb0;
+}
+.gate-ghost:hover { color: #fff; border-color: var(--accent); }
+.gate-adv {
+  margin-top: 12px;
+  height: 28px;
+  justify-content: flex-start;
+  background: transparent;
+  border: none;
+  color: #6b778c;
+  padding: 0;
+}
+.gate-adv:hover { color: var(--signal); border: none; background: transparent; }
+.gate-adv-box { margin-top: 8px; }
+.gate-hint { font-size: 11px; color: #6b778c; margin-top: 6px; }
+.gate-submit {
+  margin-top: 18px;
+  height: 40px;
+  width: 100%;
+  justify-content: center;
+  font-weight: 700;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+  border-radius: 8px;
+}
+.gate-submit:hover:not(:disabled) {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: #fff;
+}
+.gate-submit:disabled { opacity: .45; }
+.gate-err {
+  min-height: 18px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: transparent;
+}
+.gate-err.show { color: var(--danger); }
+
+@media (max-width: 820px) {
+  .gate-shell { grid-template-columns: 1fr; }
+  .gate-brief { display: none; }
+}
+
+/* ----- Mission board (dashboard) ----- */
+.mission {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px;
+}
+.mission-hero {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 14px;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    radial-gradient(500px 200px at 0% 0%, rgba(61,139,122,.1), transparent 55%),
+    radial-gradient(400px 180px at 100% 0%, rgba(47,111,106,.1), transparent 50%),
+    var(--panel);
+  box-shadow: var(--shadow);
+}
+.mission-kicker {
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  color: var(--signal);
+  font-weight: 700;
+}
+.mission-h {
+  margin: 6px 0 8px;
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+}
+.mission-sub {
+  margin: 0 0 14px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 40em;
+}
+.mission-cta { display: flex; flex-wrap: wrap; gap: 8px; }
+.mission-hero-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.m-metric {
+  text-align: left;
+  height: auto;
+  min-height: 78px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+}
+.m-metric.static { cursor: default; }
+.m-metric:hover:not(.static) { border-color: var(--accent); color: inherit; }
+.m-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.m-num {
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -.03em;
+  line-height: 1.15;
+  color: var(--text);
+}
+.m-num.signal { color: var(--signal); }
+.m-num.accent { color: var(--accent); }
+.m-foot { font-size: 11px; color: var(--text-3); }
+
+.mission-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.pipe {
+  height: 34px;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+.pipe:hover { border-color: var(--accent); }
+.pipe-i { color: var(--signal); font-size: 11px; font-weight: 700; }
+.pipe-t { font-weight: 600; font-size: 12.5px; }
+.pipe-sep {
+  width: 18px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line), var(--signal), var(--line));
+  opacity: .7;
+}
+.pipe-hint { margin-left: auto; color: var(--text-3); font-size: 11px; }
+
+.mission-cols {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 12px;
+  min-height: 0;
+  flex: 1;
+}
+.mission-panel {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.mission-panel.grow { min-height: 280px; }
+.mission-phd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mission-phd h3 { margin: 0; font-size: 13px; font-weight: 650; flex: 1; }
+.mission-list {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.mission-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  justify-content: flex-start;
+  text-align: left;
+}
+.mission-row:hover { background: var(--row-hover); border-color: transparent; color: var(--text); }
+.mission-row.static { cursor: default; }
+.mission-row .meta { min-width: 0; flex: 1; }
+.mission-row .name {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mission-row .sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mission-row .tick { flex: 0 0 auto; font-size: 11px; }
+.mission-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  color: var(--text-3);
+  padding: 28px 12px;
+  text-align: center;
+}
+.mission-empty.sm { padding: 20px 12px; }
+.mission-empty .big { font-size: 36px; opacity: .3; }
+
 @media (max-width: 1100px) {
+  .mission-hero { grid-template-columns: 1fr; }
+  .mission-cols { grid-template-columns: 1fr; }
   .ops-top { grid-template-columns: 1fr auto; }
   .ops-top-center { display: none; }
 }
@@ -1746,6 +2243,11 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
   .ops { grid-template-columns: 48px 1fr; }
   .ops-top-right .ops-pills { display: none; }
 }
+
+/* Ax DynamicForm */
+.dyn-form { display: flex; flex-direction: column; gap: 10px; }
+.dyn-form .check-label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.dyn-form.compact .field { margin-bottom: 0; }
 
 .ctx-subhd{font-size:11px;padding:4px 10px;opacity:.7}
 
@@ -1774,4 +2276,977 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
 .graph-sub{font-size:9px;fill:currentColor;opacity:.55}
 .graph-hint{padding:0 14px 12px;font-size:12px}
 
+/* host cell: status + name */
+.host-cell{display:flex;align-items:center;gap:10px;min-width:0}
+.host-cell .st{flex:0 0 auto}
+.host-cell-meta{min-width:0}
+.host-cell-meta .cell-main{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-actions button{min-width:auto}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   兼容层 —— dev 版新增页面（BOF / 参数混淆 / 扩展命令 / 中转 / 拓扑 / 会话）
+   引用的变量在太极·宣纸这套令牌里没有同名项，这里统一映射过去。
+   ★ 只在 :root 定义、值用 var() 引用令牌 —— 阴面（深色）切换时能一起跟着变。
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  /* 玻璃 —— 宣纸没有毛玻璃：去模糊、饱和度归 1，面板直接取表面色 */
+  --glass-blur: 0px;
+  --glass-blur-lg: 0px;
+  --glass-sat: 100%;
+  --glass-chrome: var(--surface);
+  --glass-rail: var(--surface-2);
+  --glass-panel: var(--surface);
+  --glass-raised: var(--panel-elevated);
+  --glass-line: var(--line);
+  --glass-line-hi: var(--line-2);
+
+  /* 环境光 / 扫描线 / 故障特效 —— 黑客皮肤专属，全部关掉 */
+  --ambient-1: transparent;
+  --ambient-2: transparent;
+  --crt-line: transparent;
+  --glitch-c: transparent;
+  --glitch-c-soft: transparent;
+  --glitch-m: transparent;
+  --glitch-m-soft: transparent;
+  --glitch-dur: 0s;
+
+  /* 彩底上的文字：宣纸里强调色是焦墨（深），所以底上的字取纸色 */
+  --accent-ink: var(--paper);
+  --danger-ink: var(--paper);
+
+  /* 终端沿用「墨池」：深底浅字，与 .term 的既有配色一致 */
+  --term-bg: #141414;
+  --term-ink: #ecece8;
+  --term-ink-dim: #8a8a8a;
+
+  /* 版式尺寸：结构性数值原样保留 */
+  --status-h: 32px;
+  --toast-lane: calc(var(--status-h) + 12px);
+}
+
+/* ── dev 专有组件的规则 ────────────────────────────────────────────────
+   从黑客皮肤里**整条**搬来（含选择器）：凡选择器里出现的类名在太极版 CSS 中
+   一个都没定义过的，就原样保留（`.bof-*` `.xkit-*` `.axf-*` `.graph-*` `.bs-*`
+   `.cs-*` `.wd-*` `.page-tips*` `.sess-*` `.pty-*` `.traffic-tpls` `.page-preview*` …）。
+   重定义既有类（`.card` `.field` `.dlg` 等）的黑客风规则**不会**被搬过来 ——
+   那些一律以太极版为准。配色由上面那层变量决定，所以这些组件会跟着宣纸/墨色走。
+   ═══════════════════════════════════════════════════════════════════ */
+/* 娴侀噺妯℃澘閭ｄ竴鎺掞細10 涓� chip 鎸ゅ湪涓�璧凤紝鏀舵垚鑳跺泭褰㈠ソ鐐归�� */
+.traffic-tpls { margin-bottom: 4px; }
+.traffic-tpls button { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+/* 鈹�鈹� 閿欒��椤� / 杞借嵎椤电殑銆屽乏杈规敼銆佸彸杈瑰嵆鏃舵覆鏌撱�� 鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
+   绐勫睆锛堚墹720px锛夎惤鎴愪笂涓嬩袱鏍忥紱iframe 鐢� sandbox=""锛堝叏灏侀攣锛夋覆鏌擄紝
+   缁濅笉缁欑矘璐磋繘鏉ョ殑璇遍サ椤典换浣曟墽琛岃兘鍔涖�� */
+.page-preview-wrap {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+.page-preview {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.page-preview-k {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.page-preview iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  border: 0;
+  background: #fff;
+}
+.bs-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  height: auto; padding: 0; border: 0; background: none; text-align: left;
+  font-size: 12px; font-weight: 700; letter-spacing: .3px; color: var(--text-2);
+  margin: 12px 0 6px; cursor: pointer;
+}
+.bs-head:hover { background: none; }
+.bs-caret { width: 10px; flex: 0 0 auto; color: var(--text-3); }
+/* 鏀惰捣鏉ユ椂涔熸姤涓�鏁帮紝鍚﹀垯銆岃繖缁勯噷鏈夋病鏈夋垜瑕佺殑涓滆タ銆嶅彧鑳介潬鐐瑰紑璇� */
+.bs-count { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-3); }
+.bs-body { display: grid; }
+.bs-chips button { height: 26px; font-size: 12px; }
+.bs-file-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bs-file-row input[type="file"] { min-width: 0; flex: 1 1 160px; }
+.bs-file-meta { font-size: 11.5px; word-break: break-all; }
+/* 鈹�鈹� 鎶曢�掑懡浠ゅ潡 鈹�鈹� */
+html:root[data-theme="dark"] .wd-block + .wd-block {
+  margin-top: 10px;
+}
+html:root[data-theme="dark"] .wd-block-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+html:root[data-theme="dark"] .wd-block-hd > label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .wd-copy {
+  flex: none;
+  height: 22px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+/* 鈹�鈹� PageTips 姣忛〉鎿嶄綔鎻愮ず 鈹�鈹� */
+html:root[data-theme="dark"] .tips-btn {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+html:root[data-theme="dark"] .tips-btn:hover {
+  background: var(--live-soft);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.25);
+}
+html:root[data-theme="dark"] .page-tips {
+  margin: 8px 0;
+  background: var(--panel-elevated);
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+  animation: tips-in 0.18s ease-out;
+}
+html:root[data-theme="dark"] .page-tips-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+html:root[data-theme="dark"] .page-tips-body {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+html:root[data-theme="dark"] .page-tips-body p { margin: 4px 0; }
+html:root[data-theme="dark"] .page-tips-body code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+html:root[data-theme="dark"] .page-tips-body b { color: var(--ink); }
+/* 鈹�鈹� BOF 妯″潡椤� 鈹�鈹� */
+html:root[data-theme="dark"] .bof-wrap {
+  padding: 8px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+html:root[data-theme="dark"] .bof-cat {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin: 0 0 8px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html:root[data-theme="dark"] .bof-cat::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  /* 鍘熸潵杩欓噷鏄� 闈掆啋閫忔槑 鐨勬笎鍙樸�傞潚鑹叉寜绾�寰嬪彧琛ㄣ�屾椿鐨�/鍙�浜や簰/鐒︾偣銆嶏紝
+     鐢ㄥ湪绾�瑁呴グ鐨勫垎闅旂嚎涓婂睘浜庤��涔夋尓鐢�锛涜�屼笖杩欎竴灞忓凡缁忔湁鍗＄墖鎻忚竟銆佸崱鐗囬棿璺濄��
+     鍒嗙粍闂磋窛涓夐噸鍒嗛殧锛岃繖鏉＄嚎鏈�鏉ュ氨鍙�鏄�鏀朵釜灏俱�傛崲鎴愪腑鎬у彂涓濈嚎锛�
+     鍒嗛殧浣滅敤淇濈暀锛屼笉鍐嶈姳鎺変竴涓�璇�涔夎壊銆� */
+  background: var(--line);
+}
+html:root[data-theme="dark"] .bof-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px;
+}
+html:root[data-theme="dark"] .bof-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s;
+}
+html:root[data-theme="dark"] .bof-card:hover {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.06);
+}
+html:root[data-theme="dark"] .bof-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 鍗＄墖澶翠竴琛屽�炰簡 鍚嶅瓧 + 鏂囦欢璺�寰� + 鏈�澶氫袱涓�鐘舵�佸窘鏍� + 寮傛�ュ嬀閫夛紝
+     鑰屽崱鐗囨渶灏忓�藉害鍙�鏈� 340px銆傚師鏉ヤ笉缁欐崲琛岋紝绌洪棿涓嶅�熸椂娴忚�堝櫒灏辨妸
+     姣忎釜鍏冪礌鍘嬪埌銆屽唴瀹瑰�藉害浠ヤ笅銆嶁�斺�斾腑鏂囨病鏈夊彲鏂�璇嶏紝浜庢槸琚�閫愬瓧绔栨帓锛�
+     銆屾簮鐮佸凡鏀广�嶅彉鎴愬洓琛屻�併�屽紓姝� -a銆嶆姌鍦ㄣ�屽紓/姝ャ�嶄箣闂达紝鍚屼竴涓�寰芥爣
+     鍦ㄥ悓涓�灞忛噷鍑虹幇妯�鎺�/鎶樿��/绔栨帓涓夌�嶅舰鎬侊紝鎵�瑙嗘椂鏍规湰娌℃硶姣斿�瑰崱鐗囩姸鎬併��
+     鍏佽�告崲琛� + 姣忎釜鍏冪礌 nowrap锛氳�呬笉涓嬪氨鏁村潡鎸�鍒扮��浜岃�岋紝鑰屼笉鏄�鎷嗗瓧銆� */
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+html:root[data-theme="dark"] .bof-card-head > * {
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .bof-name {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 13.5px;
+}
+html:root[data-theme="dark"] .bof-desc { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+html:root[data-theme="dark"] .bof-param { display: flex; align-items: center; gap: 8px; }
+html:root[data-theme="dark"] .bof-param label {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  min-width: 76px;
+}
+html:root[data-theme="dark"] .bof-param input {
+  flex: 1;
+  background: #0e1117;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 4px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+html:root[data-theme="dark"] .bof-param input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25);
+}
+html:root[data-theme="dark"] .bof-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+/* 銆屽�嶅埗鍛戒护 / 閲嶇紪 / 鎵ц�屻�嶄笁涓�鎸夐挳鍘熸潵娌℃湁 flex:none锛岃�屽悓涓�琛岀殑
+   .bof-usage 鍏堝崰璧� max-width:42%锛屽墿浣欏�藉害涓嶅�熸椂鎸夐挳琚�鍘嬪埌鍐呭�瑰�藉害浠ヤ笅锛�
+   涓�鏂囬�愬瓧绔栨帓锛氥�屽�嶅埗鍛�/浠ゃ�嶃�岄噸/缂栥�嶃�屾墽/琛屻�嶃�備富鎿嶄綔銆屾墽琛屻�嶈��鎷嗘垚涓よ�岋紝
+   绗�涓�鐪艰�讳笉鍑烘潵銆傛寜閽�鏄�涓嶈�ヨ��鍘嬬缉鐨勫厓绱狅紝閿佹�诲昂瀵歌�╁畠鑷�宸辨崲琛屻�� */
+html:root[data-theme="dark"] .bof-card-foot > button {
+  flex: none;
+  white-space: nowrap;
+}
+/* .o / .c 涓ゆ潯浜х墿娴佹按
+   鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
+   鍘熸潵鏄�涓�娈佃繛缁�鏂囧瓧锛歚.o 12.3 KB 路 鏃堕棿 路 sha256銆�.c 9.5 KB 路 鏃堕棿`锛�
+   涓ゆ潯璁板綍涔嬮棿鍙�闅斾竴涓�鍏ㄨ�掔┖鏍笺�備袱涓�鍚庢灉锛�
+     1. 鎿嶄綔鍛樹細鎶� .o 鐨� sha256 璇�璇绘垚 .c 鐨� 鈥斺�� 鍒ゆ柇瑕佷笉瑕侀噸缂栭潬鐨勫氨鏄�杩欎袱鏉★紱
+     2. 鏁板瓧鍜屽崟浣嶈��浠庝腑闂存姌鏂�锛坄9.5` 鍦ㄨ�屽熬銆乣KB` 鍒颁笅涓�琛岋級锛�
+        鍥犱负鏁存�垫病鏈� nowrap 杈圭晫銆�
+   鎷嗘垚涓や釜鍚勮嚜 nowrap 鐨� span锛岀敤鐪熷疄闂磋窛鍒嗗紑锛屼袱涓�闂�棰樹竴璧锋病鏈夈��
+   瀛楀彿 10.5 鈫� 11px锛岄�滆壊 --ink-3 鍏ㄤ笉閫忔槑銆� */
+html:root[data-theme="dark"] .bof-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+html:root[data-theme="dark"] .bof-meta span { white-space: nowrap; }
+html:root[data-theme="dark"] .bof-usage {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42%;
+}
+html:root[data-theme="dark"] .bof-async {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  user-select: none;
+}
+html:root[data-theme="dark"] .bof-base {
+  background: #0e1117;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 5px 8px;
+}
+html:root[data-theme="dark"] .bof-base:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25);
+}
+/* 鈹�鈹� BOF 瀹炴垬鐢ㄦ硶锛坣otes锛夆攢鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
+   杩欏紶鍗′笂鐜板湪鏈変笁绉嶆枃瀛楋紝鑱岃矗蹇呴』涓�鐪煎垎寰楀紑锛�
+
+     .bof-desc   杩欎釜妯″潡**鏄�浠�涔�**         12.5px --ink-2  涓�琛�
+     .bof-notes  浠�涔堟椂鍊欒兘璺� / 浼氭�庢牱      11.5px --ink-3  绔栨帓鑻ュ共鏉�
+     .bof-meta   .o/.c 鐨勫ぇ灏忎笌鏃堕棿鎴�       11px   mono     鏈哄櫒璇荤殑
+
+   涓夋潯绾︽潫锛�
+
+   1. **瀹冧笉鑳借窡璇存槑鏂囧瓧鎶㈡敞鎰忓姏銆�** notes 鏄�銆岃窇涔嬪墠璇ョ煡閬撶殑浜嬨�嶏紝涓嶆槸鍗栫偣锛�
+      姣� desc 鏇村皬銆佹洿鏆楋紝涓旂敤涓�鏉″乏杞寸嚎鎶婃暣鍧楀湀鎴愪竴涓�鏁翠綋锛岃�嗚�変笂閫�鍒�
+      杈撳叆妗嗗悗闈�銆傚瓧鍙峰啀灏忎竴绾э紙11.5锛夛紝琛岄珮缁欒冻锛�1.6锛変繚璇佷腑鏂囦笉鎸ゃ��
+
+   2. **鍗＄墖鏈�灏忓�藉害鍙�鏈� 340px锛屼腑鏂囧繀椤昏兘鎹㈣�屻��** 鍗曟潯 note 鍔ㄨ緞涓夊洓鍗佸瓧锛�
+      nowrap 浼氱洿鎺ラ《鐮村崱鐗囷紱overflow-wrap 鍏滀綇闀胯矾寰� / 闀垮崟鍏冨悕杩欑被
+      娌℃湁绌烘牸鍙�鏂�鐨勪覆銆�
+
+   3. **鈽� 椤规寜棰滆壊鍖哄垎锛屼笉鎸夊瓧鍙枫��** 宸茬粡鏄�鏈�灏忓瓧鍙蜂簡锛屽啀缂╁氨鐪嬩笉娓咃紱
+      鑰� 鈽� 椤规伆鎭版槸銆屽拷鐣ヤ簡浼氶潤榛樺嚭閿欐垨涓嶅彲閫嗐�嶇殑閭ｄ竴鏉★紝蹇呴』鑳芥壂鍒般��
+      鐢� --warn 涓婅壊 + 宸﹁酱绾垮悓鑹诧紝瀛楀彿涓庡叾浣欐潯鐩�涓�鑷淬�� */
+/* 鐩�鏍囪〃锛氱煭瀛楁�靛垪鏀剁缉鍒板唴瀹瑰�斤紝瀵屼綑鐣欑粰銆屽�囨敞銆嶃��
+   鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�鈹�
+   瀹炴祴锛坰cripts/probe_batch8.mjs锛夛細7 鍒楀钩鍒� 1518px锛岃�屾瘡鍒楀唴瀹瑰彧鏈� 14~130px锛�
+   閫愬垪姝诲尯 152 / 153 / 171 / 267 / 189 / 160 / 57 鈥斺�� 璇绘暟瑕佷粠琛ㄦ牸鏈�宸︽壂鍒�
+   鏈�鍙冲幓瀵逛竴琛岋紝鐪肩潧寰楁í璺ㄦ暣涓�灞忓箷銆�
+
+   width:1% 閰嶅悎 table-layout:auto 鏄�璁╁垪"鏀剁缉鍒板唴瀹瑰��"鐨勬爣鍑嗗啓娉�
+   锛堢櫨鍒嗘瘮鏋佸皬鏃舵祻瑙堝櫒鎸夋渶灏忓唴瀹瑰�藉�勭悊锛夛紝鍐嶅姞 nowrap 鎶�"鏈�灏忓��"閽夊湪
+   "涓嶆崲琛屾椂鐨勫��"锛屼簬鏄�鐭�瀛楁�靛垪鍙�鍗犲畠鐪熸�ｉ渶瑕佺殑瀹藉害銆�
+   銆屽�囨敞銆嶆槸鑷�鐢辨枃鏈�銆佸彲闀垮彲鐭�锛�**涓嶇粰瀹藉害**璁╁畠鑷�鐒跺悆鎺夊墿涓嬬殑绌洪棿 鈥斺��
+   姝诲尯浜庢槸浠�"姣忓垪涓�浠�"闆嗕腑鎴�"涓�鍒椾竴浠�"锛屾暟鎹�鍒楀郊姝ょ浉閭汇�佸彲浠ョ珫鐫�鎵�銆�
+   涓嶇粰鍥哄畾鍍忕礌瀹芥槸鍥犱负杩欎簺瀛楁�甸暱搴︿笉鐢遍〉闈㈠喅瀹氾紙涓绘満鍚�/IP 閮藉彲鑳藉緢闀匡級锛�
+   鍐欐�诲�藉害鍦ㄩ暱鍐呭�逛笂浼氭埅鏂�銆� */
+html:root[data-theme="dark"] .tgt-table th,
+html:root[data-theme="dark"] .tgt-table td {
+  width: 1%;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .tgt-table th:nth-child(6),
+html:root[data-theme="dark"] .tgt-table td:nth-child(6) {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+html:root[data-theme="dark"] .bof-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 9px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+html:root[data-theme="dark"] .bof-notes > li {
+  position: relative;
+  padding-left: 11px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+html:root[data-theme="dark"] .bof-notes > li::before {
+  content: '鈻�';
+  position: absolute;
+  left: 0;
+  color: var(--line-2);
+  /* 椤圭洰绗﹀彿鍙�鏄�銆岃繖鏄�涓�鏉＄嫭绔嬬害鏉熴�嶇殑鍒嗛殧绗︼紝涓嶅弬涓庨槄璇� */
+}
+html:root[data-theme="dark"] .bof-notes > li.hot { color: var(--warn); }
+html:root[data-theme="dark"] .bof-notes > li.hot::before { color: var(--warn); }
+html:root[data-theme="dark"] .bof-hot-mark { color: var(--warn); font-weight: 700; }
+/* 銆屾湭鐧昏�般�嶏細鏈嶅姟绔�鏈夎繖涓� .o銆佹湰鍦� META 娌℃湁鏉＄洰銆傚師鏉ヨ繖涓�鐘舵�佹槸闈�**鍒嗙被鍚�**
+   锛堛�屾湭鐧昏�� / 涓婁紶銆嶏級琛ㄨ揪鐨勶紝鎰忓懗鐫�瀹冩棦鏄�涓�涓�鍒嗙被鍙堜笉鏄�涓�涓�鍒嗙被 鈥斺��
+   鑰屽垎绫诲悕鎻忚堪鐨勬槸銆岃繖鏄�浠�涔堟ā鍧椼�嶏紝璺熴�屾湁娌℃湁鐧昏�般�嶆牴鏈�涓嶆槸涓�鍥炰簨銆�
+   鐜板湪姣忓紶鍗¤嚜甯﹀窘鏍囷紝鐢� --warn 鎻忚竟鑰屼笉鏄�瀹炲績锛氬畠鏄�鎻愮ず锛屼笉鏄�閿欒��銆� */
+html:root[data-theme="dark"] .bof-unknown {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--warn);
+  border: 1px solid rgba(245, 165, 36, 0.4);
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 15px;
+}
+/* 鍙傛暟缂栫爜寰芥爣锛堝�氫釜 / NUL 杩炴帴 / 鏁存暟锛夈��
+   杩欎笁涓�璇嶅洖绛旂殑鏄�銆岃繖涓�妗嗘�庝箞琚�缂栫爜杩涘弬鏁版祦銆嶁�斺�斿�氬�兼媶鎴� N 涓�瀛楁�点��
+   澶氬�煎悎鎴� 1 涓�瀛楁�点�佽繕鏄�瑁� 4 瀛楄妭鏁存暟銆傛墦鍖呮柟寮忎笉鍚屻�侀敊浜嗚繕涓嶆姤閿欙紝
+   鎵�浠ュ繀椤诲啓鍦ㄥ弬鏁版梺杈癸紝鑰屼笉鏄�鎶樺彔杩涜�存槑閲屻�� */
+html:root[data-theme="dark"] .bof-hint {
+  margin-left: 5px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 14px;
+}
+/* 寮�鍏冲瀷鍙傛暟锛�--unlink / --keep锛夈��
+   鍗曠嫭涓�涓�绫诲悕鏄�蹇呴』鐨勶細`.bof-param input` 鏄� flex:1 鐨勬殫鑹叉枃鏈�妗嗭紝
+   澶嶉�夋�嗗�椾笂鍘讳細琚�鎷夋弧鏁磋�岋紙杩欐�ｆ槸鎵规�� 1 鍦ㄥ叏绔欎慨杩囩殑
+   `input{height:30px}` 閭ｇ被鍧戯紝鍙�鏄�鎹�浜嗕釜鍦版柟锛夈�� */
+html:root[data-theme="dark"] .bof-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+  user-select: none;
+}
+html:root[data-theme="dark"] .bof-flag code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+/* 甯﹀窘鏍囦箣鍚庢爣绛句細鍙橀暱锛堛�岃�侀殣钘忕殑鍚� * 澶氫釜銆嶏級銆傚師鏉� min-width:76px + nowrap
+   鎰忓懗鐫�瀹冨彧澧炰笉鍑忓湴鎶婅緭鍏ユ�嗘尋绐勶紝鏈�闀跨殑銆岀洰鏍囨満 ELF 璺�寰� *銆嶄細鎶婅緭鍏ユ��
+   鍘嬪埌 150px 浠ヤ笅銆傜粰涓�涓婇檺骞跺厑璁告崲琛岋細瑁呬笉涓嬫槸鏍囩�炬崲琛岋紝涓嶆槸杈撳叆妗嗗彉绐勩�� */
+html:root[data-theme="dark"] .bof-param label {
+  max-width: 46%;
+  white-space: normal;
+  line-height: 1.35;
+}
+/* 涓绘満鍒楄〃鏍囩�惧垎缁勫ご */
+html:root[data-theme="dark"] .sess-tag-g {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 2px 18px;
+  font-size: 11px;
+  color: var(--warn);
+  letter-spacing: 0.04em;
+  border-top: 1px dashed var(--line-2);
+  margin-top: 2px;
+}
+html:root[data-theme="dark"] .graph-node-bg {
+  fill: #11151c;
+  stroke: rgba(34, 211, 238, 0.35);
+  stroke-width: 1.2;
+  transition: stroke 0.15s;
+}
+html:root[data-theme="dark"] .graph-listener {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+/* agent 鐭� ID锛氬崱鐗囦笂鍞�涓�鐨勫敮涓�鏍囪瘑锛屾墍浠ョ粰瀹冩瘮鐩戝惉鍣ㄧ暐楂樼殑鍙�璇绘�� 鈥斺��
+   鐩戝惉鍣ㄥ悕鍙�鏄�鍒嗙粍鎻愮ず锛孖D 鏄�"鎴戣�佺偣鐨勬槸鍝�涓�鍙�"鐨勭瓟妗堛�� */
+html:root[data-theme="dark"] .graph-sid {
+  fill: var(--ink-2);
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+html:root[data-theme="dark"] .graph-pivot-tag {
+  fill: var(--warn);
+  font-size: 9px;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+}
+/* 灞傛爣涓庡眰鍒嗛殧绾裤�傚師鏉ュ彧鏈変笁鏉＄瓑璺濊櫄绾匡紙COL_X 纭�缂栫爜鐨� x-8锛夛紝
+   璺熷疄闄呰妭鐐逛綅缃�鏃犲叧 鈥斺�� 鑺傜偣鍏ㄦ尋鍦ㄧ��涓�鍒楁椂锛屽彟澶栦袱鏉¤櫄绾胯繕绔嬪湪閭ｅ効锛�
+   鐪嬭捣鏉ュ儚"杩欎袱鍒楁湰璇ユ湁涓滆タ"銆傜幇鍦ㄦ瘡灞備竴鏉★紝浣嶇疆璺熺潃灞傝蛋锛�
+   灞傛爣椤哄甫鍐欏嚭杩欎竴灞傛湁澶氬皯鍙帮紝鎿嶄綔鍛樹笉鐢ㄦ暟銆� */
+html:root[data-theme="dark"] .graph-layer-label {
+  fill: var(--ink-3);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+}
+html:root[data-theme="dark"] .graph-layer-rule {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+html:root[data-theme="dark"] .graph-empty-title {
+  fill: var(--ink-3);
+  font-size: 15px;
+  font-family: var(--mono);
+}
+html:root[data-theme="dark"] .graph-empty-hint {
+  fill: var(--ink-3);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+html:root[data-theme="dark"] .graph-edge-path {
+  fill: none;
+  stroke: rgba(34, 211, 238, 0.35);
+  stroke-width: 1.6;
+}
+html:root[data-theme="dark"] .graph-edge-flow {
+  fill: none;
+  stroke: rgba(34, 211, 238, 0.9);
+  stroke-width: 2;
+  stroke-dasharray: 6 14;
+  animation: graph-flow 1.2s linear infinite;
+}
+html:root[data-theme="dark"] .graph-legend {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  background: rgba(15, 18, 24, 0.75);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+html:root[data-theme="dark"] .graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
+html:root[data-theme="dark"] .lgd { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+html:root[data-theme="dark"] .lgd-dead { background: #7d3540; }
+html:root[data-theme="dark"] .lgd-pivot { border-radius: 2px; width: 14px; height: 3px; background: rgba(34, 211, 238, 0.5); }
+html:root[data-theme="dark"] .graph-zoom { position: relative; }
+/* agent 鍗＄墖鍙充笂瑙掔殑銆岃�掕壊銆嶅浘鏍囷紙鏉ヨ嚜 a_tags锛夈�傚埆璺� PIVOT 鏍囩�炬墦鏋� 鈥斺��
+   TSX 閲屾湁鍥炬爣鏃朵細鎶� PIVOT 寰�宸﹁�� 24px銆� */
+html:root[data-theme="dark"] .graph-role-ico { color: rgba(34, 211, 238, 0.8); pointer-events: none; }
+/* 鎵嬪伐杩炵嚎锛氫腑鎬х伆铏氱嚎 + 瀹炲績绠�澶达紝鍜� pivot 鐨勯潚鑹叉祦鍔ㄨ櫄绾夸竴鐪煎垎寰楀紑銆� */
+html:root[data-theme="dark"] .graph-edge-manual {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.75);
+  stroke-width: 1.8;
+  stroke-dasharray: 7 5;
+}
+/* 鐐瑰嚮鐑�鍖猴細1.8px 鐨勭嚎鏈�韬�鍑犱箮鐐逛笉涓�锛岀敤涓�鏉� 12px 鐨勯�忔槑绾跨僵鍦ㄤ笂闈�銆�
+   pointer-events:stroke 鈬� 鍙�鏈夋弿鍒扮嚎鐨勫湴鏂瑰彲鐐癸紝鍖呭洿鐩掍笉绠椼�� */
+html:root[data-theme="dark"] .graph-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+html:root[data-theme="dark"] .graph-edge-manual-g.sel .graph-edge-manual {
+  stroke: var(--accent);
+  stroke-width: 2.6;
+  stroke-dasharray: none;
+}
+html:root[data-theme="dark"] .lgd-ctrl { background: var(--accent); box-shadow: 0 0 6px rgba(34, 211, 238, 0.7); }
+html:root[data-theme="dark"] .lgd-unctrl { background: #64748b; }
+html:root[data-theme="dark"] .lgd-manual {
+  border-radius: 2px; width: 14px; height: 0;
+  border-top: 2px dashed rgba(148, 163, 184, 0.85);
+}
+html:root[data-theme="dark"] .graph-pop .ctx-hd {
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 4px 6px 6px;
+  letter-spacing: 0.04em;
+}
+html:root[data-theme="dark"] .graph-pop button {
+  width: 100%;
+  justify-content: flex-start;
+  background: transparent;
+  border: none;
+  height: 30px;
+  color: var(--ink-2);
+  border-radius: 6px;
+}
+html:root[data-theme="dark"] .graph-pop button:hover { background: rgba(34, 211, 238, 0.1); color: var(--accent); }
+/* 14 绉嶈�惧�囩被鍨嬬殑閫夋嫨鏍笺��4 鍒� 脳 4 琛岋紝姣斾竴涓� 14 椤圭殑绔栨帓涓嬫媺鐭�涓�鍗娿�� */
+html:root[data-theme="dark"] .graph-kind-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+html:root[data-theme="dark"] .graph-pop .graph-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: auto;
+  padding: 7px 2px;
+  font-size: 10.5px;
+  border: 1px solid transparent;
+}
+html:root[data-theme="dark"] .graph-pop .graph-kind:hover { border-color: rgba(34, 211, 238, 0.35); }
+html:root[data-theme="dark"] .graph-kind-ico { color: currentColor; }
+/* 銆岃繛绾垮埌鈥︺�嶇殑鐩�鏍囧垪琛�锛氫富鏈哄彲鑳戒笂鐧惧彴锛屽繀椤昏兘婊氾紝鍚﹀垯杩滃�勭殑鑺傜偣鏍规湰閫変笉鍒般�� */
+html:root[data-theme="dark"] .graph-pop-link { width: 300px; }
+html:root[data-theme="dark"] .graph-link-list { overflow: auto; flex: 1; min-height: 0; }
+html:root[data-theme="dark"] .graph-pop .graph-link-list button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+}
+html:root[data-theme="dark"] .graph-link-ico { color: var(--ink-3); flex-shrink: 0; }
+html:root[data-theme="dark"] .graph-link-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+/* 鍙抽敭鑿滃崟閲岀殑瑙掕壊/绫诲瀷鍒楄〃鏈�闀� 13 椤癸紝瓒呰繃瑙嗗彛楂樺害瑕佽兘婊氥�� */
+html:root[data-theme="dark"] .graph-ctx { max-height: 72vh; overflow: auto; }
+/* 鈹�鈹� 鍛戒护琛ュ叏鍊欓�夊脊灞傦紙.cmd-suggest锛夆攢鈹�
+   Term 涓庛�屾墽琛屽懡浠ゃ�嶅�硅瘽妗嗗叡鐢ㄤ竴涓�缁勪欢銆傚師鏉ユ槸 .term-suggest 鐨勬í鍚� chip 娴侊細
+   鍊欓�変竴澶氬氨鎹㈣�屾垚涓�鍧�锛岃�屼笖**鍙�鏄剧ず鍚嶅瓧** 鈥斺�� 鏈嶅姟绔�鏄庢槑鎶� description /
+   example 涓�璧峰彂杩囨潵浜嗭紙core/axscript/types.go 鐨� CommandDef锛夛紝鐧界櫧涓㈡帀銆�
+   鏀规垚绾靛悜鍒楄〃锛屼竴琛屼竴鏉★細鍚嶅瓧 + 璇存槑 + 绀轰緥銆� */
+html:root[data-theme="dark"] .cmd-suggest {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--term-bg);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow: hidden;
+}
+/* 闄嶇骇鎶�闇叉潯锛氬彧鍦ㄦ湇鍔＄��鍛戒护琛ㄦ嬁涓嶅埌鏃跺嚭鐜般��
+   娴呭簳 + --warn 鎻忚竟锛屼笉鐢ㄥ疄蹇� 鈥斺�� 瀹冩槸鎻愮ず锛屼笉鏄�閿欒��锛堝悓 .bof-unknown锛夈�� */
+html:root[data-theme="dark"] .cmd-suggest .cs-warn {
+  padding: 4px 9px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-name {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: var(--ink);
+}
+/* 璇存槑鐢� --ink-2 鑰屼笉鏄�鏇村急涓�绾э細瀹冭�寸殑鏄�杩欐潯鍛戒护**鏄�浠�涔�**锛屾槸鍐呭�逛笉鏄�瑁呴グ銆�
+   涓�寰嬫埅鏂�涓嶆崲琛� 鈥斺�� 寮瑰眰楂樺害蹇呴』鍙�棰勬祴锛屽惁鍒欎細鎶婅緭鍏ユ�嗛《璧般�� */
+html:root[data-theme="dark"] .cmd-suggest .cs-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-eg {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 浜х墿姣旀簮鐮佹棫锛坰tale锛夌殑鏍囪�般��**鍙�鏍囨敞銆佷笉闅愯棌** 鈥斺�� 鏈嶅姟绔�涓嶄笅鏋躲��
+   鍓嶇��涔熶笉鎷︼細銆屾棫銆嶄笉绛変簬銆岄敊銆嶏紝鎿嶄綔鍛樺彲鑳藉氨鏄�瑕佽窇閭ｄ釜鐗堟湰銆�
+   鐢� warn 鑹茶�屼笉鏄� err 鑹诧細杩欐槸銆屽�煎緱鐪嬩竴鐪笺�嶏紝涓嶆槸銆岃繖鏉″潖浜嗐�嶃��
+   鍘熷洜鍦� title 涓婏紙鎮�娴�鍙�瑙侊級锛屼笉鍗犺�� 鈥斺�� 寮瑰眰楂樺害蹇呴』鍙�棰勬祴銆� */
+html:root[data-theme="dark"] .cmd-suggest .cs-stale {
+  margin-right: 4px;
+  color: var(--warn);
+  cursor: help;
+}
+/* 寮瑰眰搴曢儴鎿嶄綔琛岋細鐩�鍓嶅彧鏈夈�屽埛鏂板�欓�夈�嶃��
+   瀛樺湪鐨勭悊鐢憋細BOF 娓呭崟鏄�**鏈嶅姟绔�鐩�褰�**鐨勬槧灏勶紝鑰岀洰褰曚細鍙� 鈥斺��
+   鎿嶄綔鍛樺彲鑳藉湪鍒�鐨勭粓绔�缂栬瘧銆佹垨寰� _bin 閲屼涪浜嗕釜鏂� .o銆�
+   娌℃湁杩欎釜鎸夐挳锛屼粬鍙�鑳界瓑鎴栧埛鏂版暣椤点�� */
+html:root[data-theme="dark"] .cmd-suggest .cs-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 6px 2px;
+  border-top: 1px solid var(--line-2);
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-refresh {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-refresh:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+html:root[data-theme="dark"] .lx-brandline-prompt { margin-right: 4px; opacity: .72; }
+html:root[data-theme="dark"] .lx-brandline-sub { color: var(--ink-3); text-shadow: none; }
+/* 鍏夋爣鎸傚湪 typing 涓婏紝**涓嶈兘**鎸傚湪 text 涓婏細text 甯� clip-path锛�
+   浼氭妸瀛愬瓩涓�璧疯�佹帀锛屽厜鏍囨暣娈垫秷澶便�� */
+html:root[data-theme="dark"] .lx-brandline-typing {
+  position: relative;
+  display: inline-block;
+}
+html:root[data-theme="dark"] .lx-brandline-text {
+  display: inline-block;
+  white-space: nowrap;
+  clip-path: inset(0 100% 0 0);
+  animation: lx-brandline-type 1.8s steps(18, end) .25s forwards;
+}
+/* 鍏夋爣璺熺潃鎵撳瓧寰�鍓嶈蛋锛歭eft 浠� 0 鍒� 100%锛�= 鏂囨湰鏁村�斤級锛岀敤**鍚屾牱鐨�**
+   steps(18) 鍜屾椂闀� 鈬� 姣忎竴鏍兼�ｅソ涓�涓�瀛楃殑瀹藉害锛屼笌涓婇潰 clip-path 鐨� 18 鏍�
+   涓�涓�瀵瑰簲锛屽厜鏍囧�嬬粓璐村湪鏈�鍚庝竴涓�宸叉樉瀛椾箣鍚庛��
+   鈽� 鐢� left 鑰屼笉鏄� transform锛歵ranslate 鐨勭櫨鍒嗘瘮鏄�**鍏夋爣鑷�宸�**鐨勫�藉害
+   锛�8px锛夎�屼笉鏄�鏂囨湰瀹藉害锛岄偅鏍峰彧鑳芥尓 8px锛岃蛋涓嶅埌澶淬��
+   鈽� 涓や釜鍔ㄧ敾鍒嗗埆绠� left 鍜� opacity锛屽睘鎬т笉鍐茬獊锛屽彲浠ュ苟瀛樸�� */
+html:root[data-theme="dark"] .lx-brandline-typing::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 1.05em;
+  margin-left: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(34, 211, 238, .8);
+  animation:
+    lx-caret-ride 1.8s steps(18, end) .25s forwards,
+    caret-blink 1.1s steps(1) 1.1s infinite;
+}
+html:root[data-theme="dark"] .xkit-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+}
+html:root[data-theme="dark"] .xkit-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+html:root[data-theme="dark"] .xkit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-chip:hover {
+  color: var(--ink);
+  border-color: var(--accent-2);
+}
+html:root[data-theme="dark"] .xkit-search {
+  width: 200px;
+  margin-right: 8px;
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, .3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+html:root[data-theme="dark"] .xkit-search:focus {
+  outline: none;
+  border-color: var(--accent-2);
+}
+html:root[data-theme="dark"] .xkit-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .015);
+  overflow: hidden;
+  /* 鈽� 蹇呴』绂佹�㈡敹缂╋紝鍚﹀垯銆屽叏閮ㄣ�嶄粛鐒舵槸鍧忕殑锛堝彧鏄�鍧忔硶鍙樹簡锛夛細
+     .xkit-wrap 涓�鏃︽垚涓烘粴鍔ㄥ�瑰櫒锛岃繖 15 涓�鍒嗙粍灏辨槸瀹冪殑 flex 椤癸紱鑰� flex 椤圭殑
+     鑷�鍔ㄦ渶灏忓昂瀵稿湪 `overflow` 闈� visible 鏃舵寜瑙勮寖鍙� 0 鈥斺�� 杩欓噷姝ｅソ鏄� hidden
+     锛堜负浜嗗渾瑙掕�佹帀琛ㄥご搴曡壊锛夈�備簬鏄�瀹冧滑涓嶆孩鍑恒�佸彧**琚�鍘嬫墎**锛氬疄娴嬬�� 1 缁�
+     62px 楂樿�� 538px 鍐呭�癸紝鍗＄墖鍏ㄨ��瑁佹帀涓� scrollHeight 鎭掔瓑浜� clientHeight锛�
+     杩炴粴鍔ㄦ潯閮戒笉鍑虹幇銆俹verflow-x 鍚岀悊锛屽埆鍐嶅線鍥炲姞銆� */
+  flex: 0 0 auto;
+}
+html:root[data-theme="dark"] .xkit-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, .03);
+  border-bottom: 1px solid var(--line);
+}
+html:root[data-theme="dark"] .xkit-group-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+html:root[data-theme="dark"] .xkit-group-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+html:root[data-theme="dark"] .xkit-group-desc {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-src {
+  font-size: 11px;
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+html:root[data-theme="dark"] .xkit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+html:root[data-theme="dark"] .xkit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, .18);
+}
+html:root[data-theme="dark"] .xkit-card:hover {
+  border-color: var(--accent-2);
+}
+html:root[data-theme="dark"] .xkit-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+html:root[data-theme="dark"] .xkit-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+html:root[data-theme="dark"] .xkit-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-badge.hook {
+  color: var(--warn);
+  border-color: rgba(245, 165, 36, .35);
+  background: var(--warn-soft);
+}
+html:root[data-theme="dark"] .xkit-desc {
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+html:root[data-theme="dark"] .xkit-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+html:root[data-theme="dark"] .xkit-sub {
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, .04);
+  border-radius: var(--radius-sm);
+}
+html:root[data-theme="dark"] .xkit-args {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--line);
+  background: rgba(0, 0, 0, .2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+html:root[data-theme="dark"] .xkit-arg {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 52px 1fr;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+html:root[data-theme="dark"] .xkit-arg-k {
+  font-family: var(--mono);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-arg-k.req {
+  color: var(--ink);
+  font-weight: 700;
+}
+html:root[data-theme="dark"] .xkit-arg-t {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+html:root[data-theme="dark"] .xkit-arg-d {
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html:root[data-theme="dark"] .xkit-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+/* 鍗＄墖椤佃剼鏄� flex 琛岋紝鎸夐挳榛樿�や細琚�鍘嬬缉骞舵妸涓�鏂囨爣棰樻姌鎴愪袱琛岋紙銆屼笅/鍙戙�嶏級銆�
+   鎸夐挳涓�寰嬩笉缂┿�佷笉鎶樿�岋紝浣欓噺鍏ㄧ粰宸﹁竟鐨勭ず渚嬶紱绀轰緥鑷�宸� min-width:0 鎵嶈兘琚�鍘嬬缉銆� */
+html:root[data-theme="dark"] .xkit-foot > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-ex {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--term-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}

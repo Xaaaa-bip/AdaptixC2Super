@@ -333,7 +333,7 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: var(--header-h) var(--tabs-h) 1fr var(--status-h);
+  grid-template-rows: var(--header-h) var(--tabs-h) 1fr 28px;
   background: color-mix(in srgb, var(--paper) 88%, transparent);
 }
 
@@ -622,16 +622,14 @@ html[data-theme="dark"] .conn-chip.is-sync {
 .ops-body.content > .sess,
 .ops-body.content > .page,
 .ops-body.content > .fm,
-.ops-body.content > .form-page,
-.ops-body.content > .pty-page,
-.ops-body.content > .vnc-page {
+.ops-body.content > .form-page {
   flex: 1 1 auto;
   height: 100%;
   max-height: 100%;
 }
 .ops-body.content.with-term {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 10px var(--term-h);
+  grid-template-rows: minmax(0, 1fr) 6px var(--term-h);
   gap: 0;
   padding: 0;
 }
@@ -655,8 +653,7 @@ html[data-theme="dark"] .conn-chip.is-sync {
   color: var(--ink-3);
   background: var(--surface);
   border-top: 1px solid var(--line);
-  /* 必须跟 .ops-main 的网格轨道同源，见 tokens.css --status-h */
-  min-height: var(--status-h);
+  min-height: 32px;
 }
 .ops-status .conn-chip {
   min-height: 26px;
@@ -1123,9 +1120,6 @@ html[data-theme="dark"] .conn-chip.is-sync {
   grid-template-columns: 260px 1fr;
   background: var(--paper);
 }
-.sess.is-list-collapsed {
-  grid-template-columns: 40px 1fr;
-}
 .sess-list {
   min-height: 0;
   display: flex;
@@ -1140,45 +1134,6 @@ html[data-theme="dark"] .conn-chip.is-sync {
   justify-content: space-between;
   padding: 0 12px 0 14px;
   border-bottom: 1px solid var(--line);
-}
-.sess-list-hd-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.sess-list-fold {
-  min-width: 28px;
-  padding: 0 8px;
-  color: var(--ink-3);
-}
-.sess-list-rail {
-  height: 100%;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--ink-3);
-  cursor: pointer;
-}
-.sess-list-rail:hover {
-  background: var(--row-hover);
-  border: none;
-  color: var(--ink);
-}
-.sess-list-rail-ico {
-  font-size: 12px;
-  line-height: 1;
-}
-.sess-list-rail-k {
-  writing-mode: vertical-rl;
-  letter-spacing: 0.18em;
-  font-size: 11px;
-  font-weight: 650;
 }
 .sess-k {
   font-size: 11px;
@@ -1293,14 +1248,12 @@ html[data-theme="dark"] .conn-chip.is-sync {
 }
 .sess-bar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
-  min-height: 48px;
-  overflow: hidden;
 }
 .sess-search {
   min-width: 220px;
@@ -1321,13 +1274,9 @@ html[data-theme="dark"] .conn-chip.is-sync {
 }
 .sess-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  justify-content: flex-end;
 }
 .sess-actions button {
   height: 30px;
@@ -1352,23 +1301,10 @@ html[data-theme="dark"] .conn-chip.is-sync {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-2);
-  max-width: 280px;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sess-sleep {
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.sess-sleep.on,
-.sess-table .sleep-on {
-  color: var(--live);
-  font-weight: 650;
-}
-.sess-table .sleep-hi {
-  color: #b58900;
-  font-weight: 650;
 }
 .sess-table-wrap {
   min-height: 0;
@@ -1405,81 +1341,6 @@ html[data-theme="dark"] .conn-chip.is-sync {
   box-shadow: none;
 }
 
-/* ── 主机页批量删除 ──────────────────────────────────────────────
-   下面这批用 html:root[data-theme="dark"] 前缀（而不是跟邻居一样裸写）：
-   :root 是伪类、[data-theme] 是属性，都落在 class 列，白拿 3 个优先级点数。
-   本项目没有浅色主题（utils.ts:209 的 loadTheme 硬编码返回 'dark'），
-   所以只写一条完整规则，不做 base + 覆盖。 */
-
-/* 批量条：贴在「仅在线」右边，独立于 .sess-actions —— 后者是**单选**工具条
-   （作用于 selectedAgentId），两种选择模型混在一起，操作员就分不清
-   「删除」删的是哪一个。 */
-html:root[data-theme="dark"] .sess-bulk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 6px 3px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--line-2);
-  background: var(--surface-2);
-  font-size: 12px;
-  color: var(--ink-2);
-}
-html:root[data-theme="dark"] .sess-bulk .sb-n b {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-/* 勾选与筛选不一致时必须说出来：操作员绝不能删掉比自己被告知的更多的机器 */
-html:root[data-theme="dark"] .sess-bulk .sb-note {
-  color: var(--warn);
-  font-size: 11.5px;
-}
-/* 全局 button 重置是 height:30px（styles.css:20-32），批量条要小一号 */
-html:root[data-theme="dark"] .sess-bulk button {
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: 11.5px;
-}
-/* 破坏性按钮在这里是**描边红**，不是实心红。作用域刻意收在 .sess-bulk：
-   真正的闸门是它打开的那个确认框，而 .mask > .dlg 里的 danger 必须保持
-   实心红（hacker.css:1158 定的规矩）。一个动作两块实心红，等于把
-   「最后一道闸」的分量摊薄。 */
-html:root[data-theme="dark"] .sess-bulk button.danger {
-  background: transparent;
-  border-color: rgba(255, 77, 94, .45);
-  color: var(--danger);
-}
-html:root[data-theme="dark"] .sess-bulk button.danger:hover {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: var(--danger-ink);
-}
-
-/* 勾选列。宽度收窄到只放得下复选框，右边距也让给 th/td 的 12px padding。 */
-html:root[data-theme="dark"] .sess-table th.sess-cell-check,
-html:root[data-theme="dark"] .sess-table td.sess-cell-check {
-  width: 34px;
-  padding-right: 2px;
-}
-/* 这一格只放复选框，没有文字，所以把 .sess-check 的 6px gap 收掉 */
-html:root[data-theme="dark"] .sess-cell-check .sess-check { gap: 0; }
-
-/* 勾选行：琥珀 = 「这批已经上膛，等着删」。
-   刻意不用 --row-selected（青色）—— 那是「焦点主机」的意思，而焦点主机
-   同时是下面控制台的目标，两者混成一个颜色，操作员就分不出
-   「我正在看这台」和「这台马上要被删」。 */
-html:root[data-theme="dark"] .sess-table tbody tr.checked td { background: var(--warn-soft); }
-html:root[data-theme="dark"] .sess-table tbody tr.checked td:first-child {
-  box-shadow: inset 3px 0 0 var(--warn);
-}
-/* 悬停**不**再叠一层：琥珀本身就是反馈，再叠一层只会把它冲淡。
-   这条规则是刻意写的，不是漏了 —— 少了它，上面的 tr.checked 会因为
-   源码顺序压掉 tr:hover，效果一样，但读代码的人会以为是意外。 */
-html:root[data-theme="dark"] .sess-table tbody tr.checked:hover td { background: var(--warn-soft); }
-/* 既勾选又是焦点主机：焦点态赢（它同时是下面控制台的目标），但保留琥珀竖条 */
-html:root[data-theme="dark"] .sess-table tbody tr.checked.selected td { background: var(--row-selected); }
-
 .sdot {
   width: 7px;
   height: 7px;
@@ -1508,11 +1369,7 @@ html[data-theme="dark"] .sdot.on {
 }
 @media (max-width: 900px) {
   .sess { grid-template-columns: 1fr; }
-  .sess.is-list-collapsed { grid-template-columns: 1fr; grid-template-rows: 40px 1fr; }
   .sess-list { max-height: 220px; border-right: none; border-bottom: 1px solid var(--line); }
-  .sess-list.is-collapsed { max-height: 40px; }
-  .sess-list-rail { flex-direction: row; padding: 0 12px; }
-  .sess-list-rail-k { writing-mode: horizontal-tb; letter-spacing: 0.04em; }
   .conn-sub { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1523,139 +1380,4 @@ html[data-theme="dark"] .sdot.on {
   .conn-chip.is-sync .conn-dot {
     animation: none !important;
   }
-}
-
-/* ── 参数混淆（argfuscator）───────────────────────────────────────────────
-   只加这一个页面需要的东西，其余全部复用 gen-page / gen-* / card / kv。
-
-   全部带 html:root[data-theme="dark"] 前缀：:root 是伪类，落在 class 列，
-   比 html[data-theme="dark"] 多 1 点优先级（没有浅色主题，见 utils.ts 的
-   loadTheme 写死 'dark'，所以只写这一条完整规则，不做 base + 覆盖）。      */
-
-html:root[data-theme="dark"] .axf-input {
-  width: 100%;
-  height: auto;
-  min-height: 76px;
-  padding: 8px 10px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-  /* 只放开纵向拖拽：横向拉宽会把右栏挤没 */
-  resize: vertical;
-  white-space: pre;
-  overflow-wrap: normal;
-  overflow-x: auto;
-}
-
-html:root[data-theme="dark"] .axf-run {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-/* .gen-section-title 本身已是 flex + align-items:center，这里只补间隔 */
-html:root[data-theme="dark"] .axf-res-hd {
-  gap: 8px;
-  margin-top: 18px;
-}
-
-html:root[data-theme="dark"] .axf-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-html:root[data-theme="dark"] .axf-item {
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  overflow: hidden;
-}
-
-html:root[data-theme="dark"] .axf-item-hd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 4px 2px 10px;
-  border-bottom: 1px solid var(--line-2);
-}
-
-/* 序号用等宽数字，多行时右侧编号不会左右跳 */
-html:root[data-theme="dark"] .axf-n {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-
-html:root[data-theme="dark"] .axf-cmd {
-  margin: 0;
-  padding: 8px 10px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--ink);
-  /* 变体里会出现同形字（如 ᵃ ᶜ ᵈ）和 U+2013 连字符，字体必须能显示；
-     折行但不省略 —— 操作员要复制的是**完整**命令，截断就是给错东西。 */
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-html:root[data-theme="dark"] .axf-bad { color: var(--danger); }
-
-/* 服务端路径可能很长，允许在任意字符处断开，不要撑破右栏 */
-html:root[data-theme="dark"] .axf-path {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--text-3);
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-/* ── 投递页里的参数混淆 ────────────────────────────────────────────────────
-   .wd-block-hd 是 `display:flex; justify-content: space-between`。往里再加一个
-   按钮就会被摊成三段（标签居中、两个按钮分列两侧）—— 所以先包进 .wd-acts
-   再整体靠右，而不是去改 .wd-block-hd 的分布方式（那会影响另外十条命令块）。
-   变体列表直接复用上面的 .axf-list / .axf-item / .axf-cmd，不另起一套。      */
-html:root[data-theme="dark"] .wd-acts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-
-html:root[data-theme="dark"] .wd-axf {
-  margin-top: 8px;
-}
-
-html:root[data-theme="dark"] .wd-axf-hd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-/* 标出「语义被改坏」的变体。
-   用独立类名 .axf-item-bad，**不复用** .axf-bad —— 后者在 ArgFuscator.tsx 里
-   是「红字」职责（`color: var(--danger)`），拿来当容器修饰符会把整条的
-   文字全染红，而命令本体恰恰必须保持可读。
-   这里的做法是只改边框色 + 加一个徽标，命令正文颜色一律不动。 */
-html:root[data-theme="dark"] .axf-item-bad {
-  border-color: var(--danger);
-}
-
-html:root[data-theme="dark"] .axf-badge {
-  font-size: 11px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  flex: none;
-}
-
-/* 常驻警告（如 certutil 过不了自签证书）。挂在命令框下面、混淆结果上面。 */
-html:root[data-theme="dark"] .wd-warn {
-  margin-top: 6px;
 }

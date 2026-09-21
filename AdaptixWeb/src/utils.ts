@@ -109,6 +109,7 @@ function fallbackCopy(text: string) {
 }
 
 const LS = {
+  theme: 'adaptix.theme',
   collapsed: 'adaptix.sider.collapsed',
   loginUser: 'adaptix.login.user',
   loginBase: 'adaptix.login.base',
@@ -208,8 +209,15 @@ export function formatHeartbeat(
 }
 
 export function loadTheme(): 'light' | 'dark' {
-  // 黑客风：纯深色，无主题切换
-  return 'dark'
+  const v = localStorage.getItem(LS.theme)
+  // 山水太极默认宣纸阳面；仅显式 dark 走淡墨阴面
+  if (v === 'dark') return 'dark'
+  return 'light'
+}
+
+export function saveTheme(theme: 'light' | 'dark') {
+  localStorage.setItem(LS.theme, theme)
+  document.documentElement.setAttribute('data-theme', theme)
 }
 
 export function loadCollapsed(): boolean {
