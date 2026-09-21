@@ -44,10 +44,21 @@ Thumbs.db
 
 # Local secrets (if any)
 .env
-cmake-build-release/
-dist/
-dist.zip
-AdaptixServer.zip
-AdaptixClient.zip
-vnc.zip*
+
+# ── 预编译 / 打包产物 ───────────────────────────────────────────────
+# ★ 这几条是 2026-09-21 那次合并事故的补丁：并入 fix/x86-beacon-online 时，
+#   该分支里一笔「Save local changes before syncing remote」把作者本机的
+#   cmake 构建目录、19 个 .so、几个 zip、编译好的服务端二进制、
+#   甚至 server.rsa.key 私钥一起提交了。合并时它们作为**新增文件**静默进来
+#   （不产生冲突，所以冲突列表里看不到），393 个文件 / 1.6M 行。
+#   已跟踪文件不受 .gitignore 影响，所以 LLVMObf.so 那种有意入库的例外不受影响。
+*.so
+*.zip
+**/cmake-build-*/
 AdaptixClient_windows_x64/
+# 插件自己的 dist/（由各插件 Makefile 生成，再被根 Makefile 拷进 dist/extenders）
+AdaptixServer/extenders/*/dist/
+# 编译好的服务端二进制与 TLS 私钥
+AdaptixServer/adaptixserver_linux_amd64*
+AdaptixServer/server.rsa.crt
+AdaptixServer/server.rsa.key

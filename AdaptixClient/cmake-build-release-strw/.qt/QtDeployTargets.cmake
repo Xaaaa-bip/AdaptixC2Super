@@ -1,7 +1,0 @@
-set(__QT_DEPLOY_TARGET_kddockwidgets_FILE X:/AdaptixClient/cmake-build-release-strw/Libs/kddockwidgets/libkddockwidgets.a)
-set(__QT_DEPLOY_TARGET_kddockwidgets_TYPE STATIC_LIBRARY)
-set(__QT_DEPLOY_TARGET_qlementine_FILE X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/libqlementine.a)
-set(__QT_DEPLOY_TARGET_qlementine_TYPE STATIC_LIBRARY)
-set(__QT_DEPLOY_TARGET_AdaptixClient_FILE X:/AdaptixClient/cmake-build-release-strw/AdaptixClient.exe)
-set(__QT_DEPLOY_TARGET_AdaptixClient_TYPE EXECUTABLE)
-set(__QT_DEPLOY_TARGET_AdaptixClient_RUNTIME_DLLS D:/Qt/6.11.0/mingw_64/bin/Qt6Widgets.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6WebSockets.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Sql.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Qml.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Gui.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Network.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Core.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Widgets.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Gui.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Core.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Widgets.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Svg.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Gui.dll;D:/Qt/6.11.0/mingw_64/bin/Qt6Core.dll)
