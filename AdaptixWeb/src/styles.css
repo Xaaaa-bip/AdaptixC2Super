@@ -1197,11 +1197,11 @@ html[data-density="compact"] .content { padding: 8px; }
 .gen-section-title:first-child { margin-top: 0; }
 .gen-presets {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
 }
 .gen-presets-platform {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 .gen-agent-row { margin-bottom: 4px; }
 .gen-format-row {
@@ -1350,7 +1350,7 @@ html[data-density="compact"] .content { padding: 8px; }
 .field.field-top > label { padding-top: 8px; }
 .listener-type-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   width: 100%;
 }
@@ -1834,10 +1834,18 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
      12px 的壳级 padding，内容本来就和别的页一样是 1584px 宽。再垫一层 14px，
      内容就被吃到 1539，右侧空出 62px（实测：1664 → 1608 → 1584 → 1567 → 1539）。 */
 .gen-layout {
-  grid-template-columns: minmax(0, 1fr);
+  /* 单栏 + **高度也铺满**：原来是 grid(1fr) + height:auto，卡片只长到内容那么高，
+     内容在 1400px 处就结束、下面 600px 全是空底（1680×2000 实测）。
+     改 flex 列：主卡 flex:1 吃掉剩余高度，摘要卡按内容高。内容真的超出时由
+     .gen-page 的 overflow:auto 滚动。 */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
   height: auto;
-  align-content: start;
 }
+.gen-main { flex: 1 1 auto; }
+.gen-side { flex: 0 0 auto; }
 .gen-page { overflow: auto; }
 .gen-main, .gen-side { max-height: none; }
 .gen-body { overflow: visible; padding: 0; }
