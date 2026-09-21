@@ -78,11 +78,33 @@ Qt 侧 `GenerateUI` 早已在传该键。
 - `payload-generate-options` / `delivery-full-layout`：Web 侧改动与 `dev` 的 `BuildSchema()` 通用渲染是两套实现，
   **只移植了 `pe_header_mod` 开关与 `ConnectorWS.cpp` 的 Makefile 去重**，其余取 `dev` 版
 
+### eBPF 模块的正确用法（不是构建缺口）
+
+`linux_agent` 的 eBPF 不在 `make all` 流程内，这是**设计如此**：BPF 对象是操作员
+**离线按需生成**的，不随插件 dist 交付。
+
+```bash
+cd AdaptixServer/extenders/linux_agent
+bash tools/build_bpf.sh all x86     # → src_agent/bpf/out/<module>.{o,insns.bin,mapreloc.txt,attach.txt}
+```
+
+随后把 `insns.bin` 与 `mapreloc.txt` 上传到目标机，用**运行期 BOF** 加载：
+
+```text
+execute bof ebpf_load.o <insns.bin> <mapreloc> <prog_type> <attach> <target> <names> <ports> <key16> <pin>
+```
+
+`make all` 会拷贝 `src_agent/bofs/*.c`（正是 `ebpf_load.c` 这类运行期编译的输入），
+因此插件侧不缺件；缺的只是操作员自己按架构/内核生成的那几份 BPF 对象。
+
 ### 已知待办
 
-- Cursor 侧的 `AdaptixWeb/src/api/trafficTemplates.ts`（监听器 HTTP/WS 流量模板）**已入库但未接线**
-- Web 会话列表折叠持久化、主题切换等 Cursor 侧会话 UI 改动未并入
-- `linux_agent` 的 eBPF 对象不在 `make all` 流程内，需用 `tools/build_bpf.sh` 单独生成
+- Cursor 侧的 `AdaptixWeb/src/api/trafficTemplates.ts`（监听器 HTTP/WS 流量模板）**已入库但未接线** ——
+  模块自包含（`templatesFor` / `applyTrafficTemplate` / `officialPatchFor` + `TRAFFIC_TEMPLATES` 表），
+  接法是往监听器对话框加一个模板选择器
+- Web 会话列表折叠持久化、主题切换等 Cursor 侧会话 UI 改动未并入。
+  `loadSessListCollapsed` / `saveSessListCollapsed` 已在 `utils.ts` 中，只差在 `Hosts.tsx` 里接开关；
+  主题切换需新增 `saveTheme`，且 `App.tsx` 目前把 `data-theme="dark"` 写死，要先改成受控状态
 
 ---
 
