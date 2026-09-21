@@ -32,7 +32,6 @@ AdaptixServer/data/
 AdaptixServer/extenders/beacon_agent/src_beacon/objects_*/stub.*.bin
 
 # Stray prebuilt blobs
-AdaptixServer/extenders/agent_kharon/src_beacon/LLVMObf.so
 AdaptixServer/extenders/vnc/agent/native.zip
 *.tar.gz
 
