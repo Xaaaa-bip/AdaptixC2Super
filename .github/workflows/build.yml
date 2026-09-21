@@ -94,6 +94,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
+          # 产物只是 publish-release 的转运件，真身在 GitHub Release。
+          # 默认 90 天会把配额堆爆（实测 55 个产物 / 1011 MB，
+          # 之后再传就报 "Artifact storage quota has been hit"）。
+          retention-days: 1
           path: AdaptixServer/${{ matrix.output }}
 
   adaptix-extenders:
@@ -136,6 +140,7 @@ jobs:
             extenders/beacon_listener_dns \
             extenders/beacon_listener_ws \
             extenders/beacon_listener_discord \
+            extenders/beacon_listener_https_emu \
             extenders/gopher_listener_tcp \
             extenders/linux_listener_tcp \
             extenders/listener_kharon_http \
@@ -143,7 +148,11 @@ jobs:
             extenders/notifier \
             extenders/vnc \
             extenders/hosting_service \
-            extenders/phishing_service
+            extenders/phishing_service \
+            extenders/argfuscator \
+            extenders/relay \
+            extenders/topology \
+            extenders/arachne_service
           do
             echo "===== make $d ====="
             make -C "$d" all
@@ -170,6 +179,7 @@ jobs:
         with:
           name: extenders-dist
           if-no-files-found: warn
+          retention-days: 1
           path: |
             AdaptixServer/extenders/beacon_listener_http/dist
             AdaptixServer/extenders/beacon_listener_smb/dist
@@ -177,6 +187,7 @@ jobs:
             AdaptixServer/extenders/beacon_listener_dns/dist
             AdaptixServer/extenders/beacon_listener_ws/dist
             AdaptixServer/extenders/beacon_listener_discord/dist
+            AdaptixServer/extenders/beacon_listener_https_emu/dist
             AdaptixServer/extenders/gopher_listener_tcp/dist
             AdaptixServer/extenders/linux_listener_tcp/dist
             AdaptixServer/extenders/listener_kharon_http/dist
@@ -185,6 +196,10 @@ jobs:
             AdaptixServer/extenders/vnc/dist
             AdaptixServer/extenders/hosting_service/dist
             AdaptixServer/extenders/phishing_service/dist
+            AdaptixServer/extenders/argfuscator/dist
+            AdaptixServer/extenders/relay/dist
+            AdaptixServer/extenders/topology/dist
+            AdaptixServer/extenders/arachne_service/dist
             AdaptixServer/extenders/beacon_agent/dist
             AdaptixServer/extenders/linux_agent/dist
             AdaptixServer/extenders/macos_agent/dist
