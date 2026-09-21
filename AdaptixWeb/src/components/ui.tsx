@@ -64,10 +64,11 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
     ['G 然后 A', '参数混淆'],
     ['G 然后 O', '系统日志'],
     ['/', '主机页聚焦搜索；其它页打开命令面板'],
+    ['Enter', '主机页聚焦底部命令行（再点已选主机同样进入）'],
     ['Ctrl+Shift+F', '当前主机 · 文件管理'],
     ['Ctrl+Shift+P', '当前主机 · 进程管理'],
     ['主机工具栏 PTY / VNC', '交互伪终端 / 远程桌面会话'],
-    ['Esc', '关闭文件/进程/PTY/VNC 页签或浮层'],
+    ['Esc', '关闭文件/进程页签或浮层（不关 PTY / VNC）'],
     ['↑ / ↓ + Enter', '终端命令历史 / 面板选择'],
     ['Ctrl+L', '清空当前终端输出'],
   ]

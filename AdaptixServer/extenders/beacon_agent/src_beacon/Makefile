@@ -19,10 +19,12 @@ DNS_DIST_DIR := objects_dns
 WS_DIST_DIR := objects_ws
 
 # Each flavor compiles only its Connector*.cpp (see also rm -f cleanup in x64/x86 targets).
-HTTP_SOURCES := $(filter-out beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
-SMB_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
-TCP_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
-DNS_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp,$(SOURCES))
+# ConnectorWS.cpp 无 #ifdef 守卫，必须从另外四个 flavor 里排除，否则同一次链接里
+# 会出现两份 WS connector（HTTP flavor 曾经同时编 ConnectorHTTP + ConnectorWS）。
+HTTP_SOURCES := $(filter-out beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp beacon/ConnectorWS.cpp,$(SOURCES))
+SMB_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp beacon/ConnectorWS.cpp,$(SOURCES))
+TCP_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorDNS.cpp beacon/ConnectorWS.cpp,$(SOURCES))
+DNS_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorWS.cpp,$(SOURCES))
 # WS keeps ConnectorWS.cpp and drops the other four (MainAgent.cpp: #elif defined(BEACON_WS) -> CreateConnectorWS()).
 WS_SOURCES := $(filter-out beacon/ConnectorHTTP.cpp beacon/ConnectorSMB.cpp beacon/ConnectorTCP.cpp beacon/ConnectorDNS.cpp,$(SOURCES))
 

