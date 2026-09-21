@@ -31,5 +31,8 @@ bof: clean
 	@$(MAKE) --no-print-directory -C nanodump
 	@cp nanodump/dist/*.o _bin/
 
+mimikatz:
+	@bash mimikatz/fetch_mimikatz.sh
+
 clean:
 	@(rm -rf _bin)

@@ -100,6 +100,21 @@ Automatically extracts and adds discovered cached credentials to Adaptix credent
 
 
 
+## mimikatz
+
+Official Mimikatz PE executed in-memory through No-Consolation. Full module set (`sekurlsa`, `lsadump`, `kerberos`, `vault`, `dpapi`, ...). Fetch the PE on the teamserver first: `bash mimikatz/fetch_mimikatz.sh`. [More details](mimikatz/README.md)
+
+```
+mimikatz
+mimikatz privilege::debug sekurlsa::logonpasswords
+mimikatz_small
+logonpasswords
+```
+
+Same operator flow as Cobalt Strike `bmimikatz` / `bmimikatz_small` (inline PE via No-Consolation BOF, not a rewrite of gentilkiwi as `.o`). Access-menu items cover logonpasswords, tickets, SAM, LSA secrets, cache, vault, ekeys, and coffee.
+
+
+
 ## nanodump
 
 A flexible tool that creates a minidump of the LSASS process. [More details](https://github.com/Adaptix-Framework/Extension-Kit/blob/main/Creds-BOF/nanodumnp/README.md)

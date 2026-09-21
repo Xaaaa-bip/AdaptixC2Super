@@ -1,4 +1,7 @@
 _bin
+Creds-BOF/mimikatz/_bin/*.exe
+Creds-BOF/mimikatz/_bin/*.dll
+Creds-BOF/mimikatz/_bin/*.sys
 .vscode
 .cache/jb
 SAL-BOF/vulndrivers.h
