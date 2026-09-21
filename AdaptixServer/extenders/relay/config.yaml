@@ -1,0 +1,14 @@
+extender_type: "service"
+extender_file: "relay.so"
+
+service_name: "relay"
+service_config: |
+  # 注册 <Teamserver.endpoint><api_route>/{status,start,stop,restart}
+  # 最终 URL ≈ https://<host>:<port>/api/relay/status
+  api_route: "/relay"
+
+  # 下面三项必须与 /etc/systemd/system/axrelay.service 一致，
+  # 否则面板显示的「监听地址 / 日志」会和真正跑着的东西对不上。
+  unit_name: "axrelay.service"
+  relay_listen: "/ip4/0.0.0.0/tcp/4446"
+  log_file: "/home/ad/dist/axrelay.log"

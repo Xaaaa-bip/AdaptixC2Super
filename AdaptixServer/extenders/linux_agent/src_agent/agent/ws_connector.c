@@ -9,6 +9,12 @@
 #include "syscalls_aarch64.h"
 #endif
 
+// ── Embedded mbedtls (H1 WSS transport layer) ──
+#include <mbedtls/ssl.h>
+#include <mbedtls/hmac_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/md.h>
+
 // Linux socket constants
 #define AF_INET      2
 #define SOCK_STREAM  1
@@ -177,6 +183,171 @@ static int ws_write_all(int fd, const uint8_t* data, size_t len) {
     return 0;
 }
 
+// ── TLS (embedded mbedtls) — H1 transport stealth ──
+// All fd I/O below dispatches through ws_sock_write/ws_sock_read so the
+// HTTP upgrade + WS frames ride inside the TLS record layer when enabled.
+
+typedef struct {
+    mbedtls_ssl_context     ssl;
+    mbedtls_ssl_config      conf;
+    mbedtls_entropy_context ent;
+    mbedtls_hmac_drbg_context rng;
+} ws_tls_t;
+
+// ALPN list: h2 first (JA4 baseline captures the first ALPN; curl sends h2).
+// mbedtls takes PLAIN strings here — it adds the wire length prefix itself.
+static const char* ws_alpn_protos[] = { "h2", "http/1.1", 0 };
+
+// mbedtls BIO over the raw blocking fd
+// (MBEDTLS_ERR_NET_* lives in net_sockets.h, which is disabled in the
+// zero-libc build — use ssl.h error codes instead)
+static int ws_tls_bio_send(void* ctx, const unsigned char* buf, size_t len) {
+    ws_connector_t* ws = (ws_connector_t*)ctx;
+    size_t off = 0;
+    while (off < len) {
+        long n = sys_write(ws->fd, buf + off, len - off);
+        if (n <= 0) return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+        off += (size_t)n;
+    }
+    return (int)off;
+}
+
+static int ws_tls_bio_recv(void* ctx, unsigned char* buf, size_t len) {
+    ws_connector_t* ws = (ws_connector_t*)ctx;
+    long n = sys_read(ws->fd, buf, len);
+    if (n == 0) return MBEDTLS_ERR_SSL_CONN_EOF;
+    if (n < 0) return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    return (int)n;
+}
+
+// Initialize mbedtls on an already-connected fd. Returns 0 on success.
+static int ws_tls_start(ws_connector_t* ws, int fd, const char* host) {
+    ws_tls_t* t = (ws_tls_t*)ax_malloc(sizeof(ws_tls_t));
+    if (!t) return -1;
+    ws->tls = t;
+
+    mbedtls_ssl_init(&t->ssl);
+    mbedtls_ssl_config_init(&t->conf);
+    mbedtls_entropy_init(&t->ent);
+    mbedtls_hmac_drbg_init(&t->rng);
+
+    const mbedtls_md_info_t* md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (mbedtls_hmac_drbg_seed(&t->rng, md, mbedtls_entropy_func, &t->ent,
+                              (const unsigned char*)"ax-h1-wss", 9) != 0) goto fail;
+
+    if (mbedtls_ssl_config_defaults(&t->conf, MBEDTLS_SSL_IS_CLIENT,
+                                    MBEDTLS_SSL_TRANSPORT_STREAM,
+                                    MBEDTLS_SSL_PRESET_DEFAULT) != 0) goto fail;
+
+    // No chain/name verification (operator self-signed); CertificateVerify
+    // signature is still checked by the TLS 1.3 state machine (ECDSA-only build).
+    mbedtls_ssl_conf_authmode(&t->conf, MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls_ssl_conf_rng(&t->conf, mbedtls_hmac_drbg_random, &t->rng);
+    mbedtls_ssl_conf_alpn_protocols(&t->conf, ws_alpn_protos);
+
+    if (mbedtls_ssl_setup(&t->ssl, &t->conf) != 0) goto fail;
+
+    // SNI with the listener hostname
+    if (host && host[0]) {
+        if (mbedtls_ssl_set_hostname(&t->ssl, host) != 0) goto fail;
+    }
+
+    mbedtls_ssl_set_bio(&t->ssl, ws, ws_tls_bio_send, ws_tls_bio_recv, (void*)0);
+
+    // Handshake (fd is blocking; retry WANT_* defensively)
+    int r;
+    do {
+        r = mbedtls_ssl_handshake(&t->ssl);
+    } while (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE);
+    if (r != 0) goto fail;
+
+    ws->tls_active = 1;
+    return 0;
+
+fail:
+    mbedtls_ssl_free(&t->ssl);
+    mbedtls_ssl_config_free(&t->conf);
+    mbedtls_entropy_free(&t->ent);
+    mbedtls_hmac_drbg_free(&t->rng);
+    ax_free(t);
+    ws->tls = (void*)0;
+    return -1;
+}
+
+static void ws_tls_stop(ws_connector_t* ws) {
+    if (!ws->tls) return;
+    ws_tls_t* t = (ws_tls_t*)ws->tls;
+    mbedtls_ssl_free(&t->ssl);
+    mbedtls_ssl_config_free(&t->conf);
+    mbedtls_entropy_free(&t->ent);
+    mbedtls_hmac_drbg_free(&t->rng);
+    ax_free(t);
+    ws->tls = (void*)0;
+    ws->tls_active = 0;
+}
+
+// Write all bytes (TLS-aware)
+static int ws_sock_write(ws_connector_t* ws, const uint8_t* data, size_t len) {
+    if (!ws->tls_active) return ws_write_all(ws->fd, data, len);
+    ws_tls_t* t = (ws_tls_t*)ws->tls;
+    size_t off = 0;
+    while (off < len) {
+        int r = mbedtls_ssl_write(&t->ssl, data + off, len - off);
+        if (r > 0) { off += (size_t)r; continue; }
+        if (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+        return -1;
+    }
+    return 0;
+}
+
+// Single read (TLS-aware). Returns bytes read, or -1.
+static int ws_sock_read(ws_connector_t* ws, uint8_t* buf, size_t len) {
+    if (!ws->tls_active) {
+        long n = sys_read(ws->fd, buf, len);
+        return n <= 0 ? -1 : (int)n;
+    }
+    ws_tls_t* t = (ws_tls_t*)ws->tls;
+    int r;
+    do {
+        r = mbedtls_ssl_read(&t->ssl, buf, len);
+    } while (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE);
+    return r > 0 ? r : -1;
+}
+
+// Read exactly n bytes (TLS-aware)
+static int ws_read_exact_ws(ws_connector_t* ws, uint8_t* buf, size_t size) {
+    size_t total = 0;
+    while (total < size) {
+        int n = ws_sock_read(ws, buf + total, size - total);
+        if (n <= 0) return -1;
+        total += (size_t)n;
+    }
+    return 0;
+}
+
+// ── Exported TLS-aware primitives for the HTTPS-emulation transport ──
+// (https_emu.c reuses the connector's TCP/TLS plumbing without WS frames)
+
+int ws_tls_handshake(ws_connector_t* ws, int fd, const char* host) {
+    return ws_tls_start(ws, fd, host);
+}
+
+int ws_tls_send(ws_connector_t* ws, const uint8_t* data, size_t len) {
+    return ws_sock_write(ws, data, len);
+}
+
+int ws_tls_recv(ws_connector_t* ws, uint8_t* buf, size_t len) {
+    return ws_sock_read(ws, buf, len);
+}
+
+int ws_tls_recv_exact(ws_connector_t* ws, uint8_t* buf, size_t size) {
+    return ws_read_exact_ws(ws, buf, size);
+}
+
+int ws_b64_encode_pub(const uint8_t* in, size_t in_len, char* out, size_t out_cap) {
+    return ws_b64_encode(in, in_len, out, out_cap);
+}
+
 // Generate a random 16-byte key for Sec-WebSocket-Key (base64 of random bytes)
 static int ws_generate_key(char* out_key, size_t key_len) {
     uint8_t random[16];
@@ -212,6 +383,38 @@ static int ws_read_http_response(int fd, uint8_t** out_buf, size_t* out_len) {
         len++;
 
         // Check for \r\n\r\n
+        if (len >= 4 &&
+            buf[len-4] == '\r' && buf[len-3] == '\n' &&
+            buf[len-2] == '\r' && buf[len-1] == '\n') {
+            found_end = 1;
+        }
+    }
+
+    *out_buf = buf;
+    *out_len = len;
+    return 0;
+}
+
+// TLS-aware variant of ws_read_http_response (byte-by-byte via dispatch)
+static int ws_read_http_response_ws(ws_connector_t* ws, uint8_t** out_buf, size_t* out_len) {
+    size_t cap = 4096;
+    size_t len = 0;
+    uint8_t* buf = (uint8_t*)ax_malloc(cap);
+    if (!buf) return -1;
+
+    int found_end = 0;
+    while (!found_end) {
+        if (len + 1 > cap) {
+            cap *= 2;
+            uint8_t* nb = (uint8_t*)ax_realloc(buf, cap);
+            if (!nb) { ax_free(buf); return -1; }
+            buf = nb;
+        }
+
+        int n = ws_sock_read(ws, buf + len, 1);
+        if (n <= 0) { ax_free(buf); return -1; }
+        len++;
+
         if (len >= 4 &&
             buf[len-4] == '\r' && buf[len-3] == '\n' &&
             buf[len-2] == '\r' && buf[len-1] == '\n') {
@@ -303,6 +506,8 @@ void ws_init(ws_connector_t* ws) {
     ws->host = (char*)0;
     ws->port = 0;
     ws->use_ssl = 0;
+    ws->tls_active = 0;
+    ws->tls = (void*)0;
 }
 
 int ws_connect(ws_connector_t* ws, const char* host, uint16_t port,
@@ -312,9 +517,7 @@ int ws_connect(ws_connector_t* ws, const char* host, uint16_t port,
         ws_disconnect(ws);
     }
 
-    // Phase 1: No SSL support in nostdlib mode (would need raw TLS handshake)
-    // TLS would require a separate library or hand-coded handshake
-    if (use_ssl) return -1;
+    // TLS handled below (embedded mbedtls, H1)
 
     // Build address string "IP:port"
     // host must be an IP address (no DNS resolution)
@@ -357,6 +560,18 @@ int ws_connect(ws_connector_t* ws, const char* host, uint16_t port,
     if (sys_connect(fd, (const void*)&addr, sizeof(addr)) != 0) {
         sys_close(fd);
         return -1;
+    }
+
+    // ---- TLS handshake (H1: WSS transport) ----
+    ws->fd = fd;
+    ws->tls_active = 0;
+    ws->tls = (void*)0;
+    if (use_ssl) {
+        if (ws_tls_start(ws, fd, host) != 0) {
+            sys_close(fd);
+            ws->fd = -1;
+            return -1;
+        }
     }
 
     // ---- WebSocket HTTP Upgrade ----
@@ -430,9 +645,11 @@ int ws_connect(ws_connector_t* ws, const char* host, uint16_t port,
     WS_APPEND("\r\n");
 
     // Send HTTP upgrade request
-    if (ws_write_all(fd, req, req_len) != 0) {
+    if (ws_sock_write(ws, req, req_len) != 0) {
         ax_free(req);
+        ws_tls_stop(ws);
         sys_close(fd);
+        ws->fd = -1;
         return -1;
     }
     ax_free(req);
@@ -440,8 +657,10 @@ int ws_connect(ws_connector_t* ws, const char* host, uint16_t port,
     // Read HTTP response
     uint8_t* resp = (uint8_t*)0;
     size_t resp_len = 0;
-    if (ws_read_http_response(fd, &resp, &resp_len) != 0) {
+    if (ws_read_http_response_ws(ws, &resp, &resp_len) != 0) {
+        ws_tls_stop(ws);
         sys_close(fd);
+        ws->fd = -1;
         return -1;
     }
 
@@ -463,7 +682,9 @@ int ws_connect(ws_connector_t* ws, const char* host, uint16_t port,
     ax_free(resp);
 
     if (!upgrade_ok) {
+        ws_tls_stop(ws);
         sys_close(fd);
+        ws->fd = -1;
         return -1;
     }
 
@@ -528,7 +749,7 @@ static int ws_send_frame(ws_connector_t* ws, int opcode, const uint8_t* data, si
     header_len += 4;
 
     // Write header
-    if (ws_write_all(ws->fd, header, (size_t)header_len) != 0) return -1;
+    if (ws_sock_write(ws, header, (size_t)header_len) != 0) return -1;
 
     // If payload exists, mask and send
     if (len > 0) {
@@ -537,14 +758,14 @@ static int ws_send_frame(ws_connector_t* ws, int opcode, const uint8_t* data, si
             uint8_t masked[4096];
             ax_memcpy(masked, data, len);
             ws_apply_mask(masked, len, mask_key);
-            if (ws_write_all(ws->fd, masked, len) != 0) return -1;
+            if (ws_sock_write(ws, masked, len) != 0) return -1;
         } else {
             // Large payload: allocate temp buffer
             uint8_t* masked = (uint8_t*)ax_malloc(len);
             if (!masked) return -1;
             ax_memcpy(masked, data, len);
             ws_apply_mask(masked, len, mask_key);
-            int ret = ws_write_all(ws->fd, masked, len);
+            int ret = ws_sock_write(ws, masked, len);
             ax_free(masked);
             if (ret != 0) return -1;
         }
@@ -574,7 +795,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
     while (1) {
         // Read frame header (first 2 bytes minimum)
         uint8_t hdr[2];
-        if (ws_read_exact(ws->fd, hdr, 2) != 0) {
+        if (ws_read_exact_ws(ws, hdr, 2) != 0) {
             if (msg_buf) ax_free(msg_buf);
             return -1;
         }
@@ -587,11 +808,11 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
         // Extended payload length
         if (payload_len == 126) {
             uint8_t ext[2];
-            if (ws_read_exact(ws->fd, ext, 2) != 0) { if (msg_buf) ax_free(msg_buf); return -1; }
+            if (ws_read_exact_ws(ws,ext, 2) != 0) { if (msg_buf) ax_free(msg_buf); return -1; }
             payload_len = ((uint64_t)ext[0] << 8) | ext[1];
         } else if (payload_len == 127) {
             uint8_t ext[8];
-            if (ws_read_exact(ws->fd, ext, 8) != 0) { if (msg_buf) ax_free(msg_buf); return -1; }
+            if (ws_read_exact_ws(ws,ext, 8) != 0) { if (msg_buf) ax_free(msg_buf); return -1; }
             payload_len = 0;
             for (int i = 0; i < 8; i++) {
                 payload_len = (payload_len << 8) | ext[i];
@@ -602,7 +823,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
         // but we handle it for robustness)
         uint8_t mask_key[4];
         if (masked) {
-            if (ws_read_exact(ws->fd, mask_key, 4) != 0) {
+            if (ws_read_exact_ws(ws,mask_key, 4) != 0) {
                 if (msg_buf) ax_free(msg_buf);
                 return -1;
             }
@@ -615,7 +836,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
             uint64_t remaining = payload_len;
             while (remaining > 0) {
                 size_t chunk = remaining < sizeof(discard_buf) ? (size_t)remaining : sizeof(discard_buf);
-                if (ws_read_exact(ws->fd, discard_buf, chunk) != 0) {
+                if (ws_read_exact_ws(ws,discard_buf, chunk) != 0) {
                     if (msg_buf) ax_free(msg_buf);
                     return -1;
                 }
@@ -632,7 +853,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
             // Read payload
             uint8_t ping_buf[256];
             size_t ping_len = payload_len < sizeof(ping_buf) ? (size_t)payload_len : sizeof(ping_buf);
-            if (ws_read_exact(ws->fd, ping_buf, ping_len) != 0) {
+            if (ws_read_exact_ws(ws,ping_buf, ping_len) != 0) {
                 if (msg_buf) ax_free(msg_buf);
                 return -1;
             }
@@ -641,7 +862,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
             while (skip > 0) {
                 uint8_t dbuf[64];
                 size_t chunk = skip < sizeof(dbuf) ? (size_t)skip : sizeof(dbuf);
-                if (ws_read_exact(ws->fd, dbuf, chunk) != 0) break;
+                if (ws_read_exact_ws(ws,dbuf, chunk) != 0) break;
                 skip -= chunk;
             }
             // Send pong
@@ -655,7 +876,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
             uint64_t remaining = payload_len;
             while (remaining > 0) {
                 size_t chunk = remaining < sizeof(discard_buf) ? (size_t)remaining : sizeof(discard_buf);
-                if (ws_read_exact(ws->fd, discard_buf, chunk) != 0) {
+                if (ws_read_exact_ws(ws,discard_buf, chunk) != 0) {
                     if (msg_buf) ax_free(msg_buf);
                     return -1;
                 }
@@ -684,7 +905,7 @@ int ws_recv_message(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
         if (!payload) { if (msg_buf) ax_free(msg_buf); return -1; }
 
         if (payload_size > 0) {
-            if (ws_read_exact(ws->fd, payload, payload_size) != 0) {
+            if (ws_read_exact_ws(ws,payload, payload_size) != 0) {
                 ax_free(payload);
                 if (msg_buf) ax_free(msg_buf);
                 return -1;
@@ -732,6 +953,13 @@ int ws_recv_message_timeout(ws_connector_t* ws, uint8_t** out_data, size_t* out_
 int ws_poll_read(ws_connector_t* ws, int timeout_ms) {
     if (ws->fd < 0 || ws->state != WS_STATE_CONNECTED) return -1;
 
+    // TLS: decrypted bytes may already be buffered inside mbedtls while the
+    // socket itself has nothing pending — surface them without polling.
+    if (ws->tls_active && ws->tls) {
+        ws_tls_t* t = (ws_tls_t*)ws->tls;
+        if (mbedtls_ssl_get_bytes_avail(&t->ssl) > 0) return 1;
+    }
+
     // fd_set manipulation matching connector.c pattern
     typedef struct {
         unsigned long fds_bits[1024 / (8 * sizeof(unsigned long))];
@@ -758,6 +986,7 @@ int ws_poll_read(ws_connector_t* ws, int timeout_ms) {
 }
 
 void ws_disconnect(ws_connector_t* ws) {
+    ws_tls_stop(ws);
     if (ws->fd >= 0) {
         sys_close(ws->fd);
         ws->fd = -1;

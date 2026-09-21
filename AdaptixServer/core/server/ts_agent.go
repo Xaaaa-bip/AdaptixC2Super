@@ -177,6 +177,11 @@ func (ts *Teamserver) TsAgentCommand(agentName string, agentId string, clientNam
 func (ts *Teamserver) TsAgentProcessData(agentId string, bodyData []byte) error {
 	agent, err := ts.getAgent(agentId)
 	if err != nil {
+		// ★ 不要静默：走到这里说明上游把一个 agent 的数据包路由给了**不存在的
+		//   agent**（典型：pivot 记录过期/错配 ⇒ 回程数据投给已死的子 agent）。
+		//   调用方（extender 的 relay 分支）是 `_ = TsAgentProcessData(...)`，
+		//   返回值没人看 —— 不打日志的话，现象就只剩「链路全绿、数据面静默不通」。
+		logs.Error("", "process data: agent %s not found: %v (len=%d)", agentId, err, len(bodyData))
 		return err
 	}
 
@@ -202,9 +207,18 @@ func (ts *Teamserver) TsAgentProcessData(agentId string, bodyData []byte) error 
 	}
 
 	if len(bodyData) > 4 {
-		return agent.ProcessData(bodyData)
+		if err := agent.ProcessData(bodyData); err != nil {
+			// 解密/解析失败同样是黑洞：agentId + 包长是区分
+			// 「会话密钥不匹配」与「协议错位」的最小充分信息。
+			logs.Error("", "process data: agent %s: %v (len=%d)", agentId, err, len(bodyData))
+			return err
+		}
+		return nil
 	}
 
+	// 长度 <= 4 的包按协议是 no-op（不解析）。合法路径，用 Debug 留痕即可，
+	// 否则「包到了却什么也没发生」同样无从查起。
+	logs.Debug("", "process data: agent %s: drop short packet len=%d", agentId, len(bodyData))
 	return nil
 }
 
@@ -255,11 +269,21 @@ func (ts *Teamserver) TsAgentGetHostedTasks(agentId string, maxDataSize int) ([]
 
 	agentData := agent.GetData()
 	tasksCount := agent.HostedTasks.Len()
-	if tasksCount == 0 && agent.HostedTunnelTasks.Len() == 0 {
+	tunnelConnectCount := agent.HostedTunnelTasks.Len()
+	tunnelTasksCount := agent.HostedTunnelData.Len()
+	// pivot 子 agent 的任务也走这条通道下发：父 agent 自己往往没有任务，
+	// 任务全在子 agent 的队列里 ⇒ 只看自己的队列会在这里提前返回空，
+	// 子 agent 的任务就永远发不出去（链路通、数据面静默不通）。
+	pivotTasksExists := false
+	if agent.PivotChilds.Len() > 0 {
+		pivotTasksExists = ts.TsTasksPivotExists(agentData.Id, true)
+	}
+	if tasksCount == 0 && tunnelConnectCount == 0 && tunnelTasksCount == 0 && !pivotTasksExists {
 		return []byte(""), nil
 	}
 
-	tasks, _, err := ts.TsTaskGetAvailableTasks(agentData.Id, maxDataSize)
+	// 必须用 All 版本：只有它带 extractPivotTasks，Tasks 版本没有 pivot。
+	tasks, err := ts.TsTaskGetAvailableAll(agentData.Id, maxDataSize)
 	if err != nil {
 		return nil, err
 	}
@@ -862,14 +886,26 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 			_ = ts.DBMS.DbAgentTick(agent.GetData())
 		}
 		agent.Tick = true
-	} else if listenerChanged {
+	} else {
+		// Non-async agents (gopher/linux persistent connections) never
+		// ticked before: LastTick froze, so the Web/Qt UI health check
+		// (age > sleep*2+40s) marked live sessions as offline ~60s after
+		// the last task. Update tick + DB here and let TsAgentTickUpdate
+		// broadcast it like async agents.
 		agent.UpdateData(func(d *adaptix.AgentData) {
-			d.Listener = listenerName
+			d.LastTick = int(time.Now().Unix())
+			if listenerChanged {
+				d.Listener = listenerName
+			}
 		})
-		updatedAgentData := agent.GetData()
-		packet := CreateSpAgentUpdate(updatedAgentData)
-		ts.TsSyncStateWithCategory(packet, "agent:"+agentId, SyncCategoryAgents)
-		_ = ts.DBMS.DbAgentUpdate(updatedAgentData)
+		agent.Tick = true
+		_ = ts.DBMS.DbAgentTick(agent.GetData())
+		if listenerChanged {
+			updatedAgentData := agent.GetData()
+			packet := CreateSpAgentUpdate(updatedAgentData)
+			ts.TsSyncStateWithCategory(packet, "agent:"+agentId, SyncCategoryAgents)
+			_ = ts.DBMS.DbAgentUpdate(updatedAgentData)
+		}
 	}
 	return nil
 }
@@ -885,11 +921,9 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 				return true
 			}
 			agentData := agent.GetData()
-			if agentData.Async {
-				if agent.Tick {
-					agent.Tick = false
-					agentSlice = append(agentSlice, agentData.Id)
-				}
+			if agent.Tick {
+				agent.Tick = false
+				agentSlice = append(agentSlice, agentData.Id)
 			}
 			return true
 		})

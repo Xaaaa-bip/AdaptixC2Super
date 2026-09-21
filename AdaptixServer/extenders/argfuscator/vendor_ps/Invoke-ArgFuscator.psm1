@@ -1,0 +1,319 @@
+using module "Types\Token.psm1"
+using module "Types\Argument.psm1"
+using module "Modifiers\CharacterInsertion.psm1"
+using module "Modifiers\FilePathTransformer.psm1"
+using module "Modifiers\OptionCharSubstitution.psm1"
+using module "Modifiers\QuoteInsertion.psm1"
+using module "Modifiers\RandomCase.psm1"
+using module "Modifiers\Regex.psm1"
+using module "Modifiers\ReorderArgs.psm1"
+using module "Modifiers\Sed.psm1"
+using module "Modifiers\Shorthands.psm1"
+using module "Modifiers\UrlTransformer.psm1"
+
+$OutputEncoding = [System.Text.Encoding]::UTF8
+function Invoke-TokeniseCommand {
+    param (
+        [string]$InputCommand,
+        [Argument[]]$Arguments
+    )
+
+    if ($null -eq $InputCommand) { return $null }
+    $SeparationChar = ' '
+    $QuoteChars = @('"', "'")
+    $ValueChars = @('=', ':')
+    $CommonOptionChars = @('/', '-')
+
+    $InQuote = $null
+    $InOptionChar = $null
+    [Token[]]$Tokens = @()  # Explicitly type the array as Token[]
+    $TokenContent = @()
+    $SeenValueChar = $false
+
+    for ($i = 0; $i -lt $InputCommand.Length; $i++) {
+        if ($TokenContent.Count -eq 0) { $SeenValueChar = $false }
+        $Char = $InputCommand[$i].ToString()
+        $InOptionChar = if ($TokenContent.Length -eq 0 -and ($Modifier.CommonOptionChars -contains $Char)) { $true } else { $InOptionChar }
+
+        if (($null -eq $InQuote) -and (
+                ($Char -eq $SeparationChar) -or (
+                    (-not $SeenValueChar) -and
+                    ((($i -eq $InputCommand.Length) -or (-not @('\\', '/') -contains $InputCommand[$i + 1])) -and
+                    $ValueChars.contains($Char))
+                )
+            )) {
+            if ($Char -ne $SeparationChar) {
+                $TokenContent += $Char
+            }
+
+            if ($TokenContent.Count -gt 0) {
+                $details = [Argument]::GetArgumentDetails($Arguments, $TokenContent)
+                $Tokens += [Token]::new($TokenContent, ($null -eq $details) -and ($details.ValueCount -gt 0))
+            }
+            $TokenContent = @()
+            $InOptionChar = $false
+        }
+        else {
+            if (($null -ne $InQuote) -and ($Char -eq $InQuote)) {
+                $InQuote = $null
+            }
+            elseif (($null -eq $InQuote) -and ($QuoteChars | Where-Object { $_ -eq $Char })) {
+                $InQuote = $Char
+            }
+
+            $TokenContent += $Char
+
+            # Check for known argument match
+            $a = [Argument]::GetArgumentDetails($Arguments, $TokenContent)
+
+            if ($TokenContent.Length -eq 2 -and $null -ne $a) {
+                # Create existing find as new token
+                $Tokens += [Token]::new($TokenContent, $a.ValueCount -gt 0)
+
+                # Reset TokenContent and InOptionChar
+                $TokenContent = @()
+                $InOptionChar = $false
+
+                # If we are NOT expecting a value and the next character is not a separation char, it will be another command
+                if ($a.ValueCount -eq 0 -and (($i + 1) -lt $InputCommand.Length -and $InputCommand[$i + 1] -ne $SeparationChar)) {
+                    $TokenContent += $Tokens[$Tokens.Count - 1].ToString()[0]
+                }
+            }
+        }
+        $SeenValueChar = $SeenValueChar -or ($ValueChars | Where-Object { $_ -eq $Char })
+    }
+
+    if ($TokenContent.Count -gt 0) {
+        $details = [Argument]::GetArgumentDetails($Arguments, $TokenContent)
+        $Tokens += [Token]::new($TokenContent, ($null -eq $details) -and ($details.ValueCount -gt 0))
+    }
+
+    # Find matching template, if available
+    $Tokens[0].Type = "command"
+
+    $Tokens | Select-Object -Skip 1 | ForEach-Object -Begin { $i = 0 } -Process {
+        $TokenText = $_.ToString()
+        $_TokenText = $TokenText -replace "(['`"])(.*?)\1", '$2' #Remove any surrounding quotes
+
+        # If previous token ends with a ValueChar, assume this token denotes a 'value' type;
+        # or, if no option char present, designate it as 'value', unless overwritten further down
+        if (($ValueChars | Where-Object { $Tokens[$i].TokenContent[-1] -eq $_ }) -or -not ($CommonOptionChars | Where-Object { $_TokenText.StartsWith($_) })) {
+            $_.Type = 'value'
+
+            # Special case: WMIC
+            if ($Tokens[0].ToString() -match 'wmic(\.exe)?'`
+                    -and -not ($Tokens[1..($i + 1)] | Where-Object { $_.GetType() -eq 'disabled' })`
+                    -and -not ($Tokens[$i].GetType() -eq 'argument' -and ($ValueChars | Where-Object { $Tokens[$i].TokenContent[-1] -eq $_ }))) {
+                $_.Type = 'disabled'
+            }
+        }
+
+        if ($_TokenText -match '^(?:\\\\[^\\]+|[a-zA-Z]:|\.[\\/])((?:\\[^\\]+)+\\)?([^<>:]*)$' -or $_TokenText -match '^[^<>:]+\.[a-zA-Z0-9]{2,4}$') {
+            $_.Type = 'path' # Windows file path format
+        }
+        if ($_TokenText -match '^(HKLM|HKCC|HKCR|HKCU|HKU|HKEY_(LOCAL_MACHINE|CURRENT_CONFIG|CLASSES_ROOT|CURRENT_USER|USERS))\\?') {
+            $_.Type = 'disabled' # Windows Registry
+        }
+        if ($_TokenText.StartsWith('http:') -or $_TokenText.StartsWith('https:') -or $_TokenText -match '[12]?\d?\d\.[12]?\d?\d\.[12]?\d?\d\.[12]?\d?\d') {
+            $_.Type = 'url' #URLs (including IP addresses)
+        }
+
+        $i++
+    }
+
+    $result = @()
+    $Tokens | ForEach-Object {
+        $hashtable = @{}
+        $hashtable[$_.Type] = ($_.TokenContent -join '')
+        $result += $hashtable
+    }
+
+    return $result
+}
+
+function Invoke-ArgFuscator {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory = $true, ParameterSetName = "FromFile")]
+        [ValidateScript({ if ((Test-Path $_ -PathType 'Leaf') -and ((Get-Item $_ | Select-Object -Expand Extension) -eq ".json" )) {
+                    return $true
+                }
+                else {
+                    throw "Make sure the file exists, and has a '.json' extension."
+                } })]
+        [string]$InputFile,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "FromCommand")]
+        [ValidateNotNullOrEmpty()]
+        [string]$Command,
+
+        [Parameter(ParameterSetName = "FromCommand")]
+        [ValidateScript({
+                $platformPath = Join-Path $PSScriptRoot "models" $_
+                if ($_ -eq 'windows' -or $_ -eq 'linux' -or $_ -eq 'mac') {
+                    return $true
+                }
+                else {
+                    throw "Platform '$_' not found. Choose from 'windows', 'linux' and 'mac'."
+                }
+            })]
+        [string]$Platform = "windows",
+        [int]$n = 1,
+        [int]$Profile = 0,
+        [switch]$Interactive
+    )
+    <#
+    .SYNOPSIS
+    Obfuscates a command provided in a JSON-formatted configuration file or command string.
+
+    .DESCRIPTION
+    Obfuscates a command provided in a JSON-formatted configuration file/command string by applying specified obfuscation options to the provided command.
+
+    .PARAMETER InputFile
+    Specifies the path to the JSON-formatted config file.
+
+    .PARAMETER Command
+    Specifies the command as string.
+
+    .PARAMETER Platform
+    Specifies the platform (windows, linux, macos). Default value is windows.
+
+    .PARAMETER n
+    Specifies the number of obfuscated commands to generate. Default value is 1.
+
+    .PARAMETER Profile
+    Specifies the profile ID to use. Default value is 0.
+
+    .PARAMETER Interactive
+    Specifies whether or not this is an interactive execution, i.e. whether to request user input via the standard in. Without specifying this, a non-interactive session is assumed.
+
+
+    .EXAMPLE
+    PS> Invoke-Argfuscator some_config.json 5
+
+    .LINK
+    https://www.twitter.com/wietze
+
+    .LINK
+    https://www.github.com/wietze/Invoke-Argfuscator
+#>
+
+    if ($PSCmdlet.ParameterSetName -eq "FromFile") {
+        $JSONData = Get-Content -Encoding UTF8 -Path $InputFile | ConvertFrom-Json
+        if($Profile -gt $JSONData.profiles.length-1){
+            throw "Profile $Profile could not be found"
+        }
+        $JSONData = $JSONData.profiles[$Profile].parameters
+    }
+    else {
+        $CommandData = Invoke-TokeniseCommand $Command @()
+        $cmd = $CommandData[0]["command"]
+        $filePath = Join-Path -Path $PSScriptRoot -ChildPath "\models\$cmd.json"
+        if (Test-Path $filePath) {
+            $ModelData = Get-Content -Encoding UTF8 -Path $filePath | ConvertFrom-Json
+            $ProfileData = $ModelData.profiles | Where-Object { $_.platform -eq $platform } | Select-Object -First 1
+            if($null -eq $ProfileData){
+                throw "Could not find profile for platform '$platform'. Specify a different one using option -Platform or try a different command."
+            }
+            $CommandData = Invoke-TokeniseCommand $Command ($ProfileData.parameters.arguments | ForEach-Object { [Argument]::new($_.Arguments, $_.ValueCount, $_.Redundant) })
+            # Create a PSCustomObject that matches the expected format
+            $JSONData = [PSCustomObject]@{
+                "command"   = ($CommandData | ConvertTo-JSON | ConvertFrom-Json)
+                "modifiers" = $ProfileData.parameters.modifiers
+                "arguments" = $ProfileData.parameters.arguments
+            }
+        }
+        else {
+            Write-Error ("Command '{0}' could not be found in models folder ({1} does not exist)" -f $cmd, $filePath)
+            return $null
+        }
+    }
+    $ErrorModifiers = @();
+    for ($i = 0; $i -lt $n; $i++) {
+        $Tokens = [System.Collections.ArrayList]@();
+        $OriginalTokens = [System.Collections.ArrayList]@();
+        $Arguments = [System.Collections.ArrayList]@();
+
+        # Select the right profile
+        $ProfileParameters = $JSONData
+        Write-Debug "Assuming version $($ProfileData.executableVersion) on $($ProfileData.operatingSystem) $($ProfileData.operatingSystemVersion)."
+        # Ensure a command is provided
+        if (!(Get-Member -InputObject $ProfileParameters -name "command" -Membertype Properties) -or ($ProfileParameters.command.Length -le 0)) {
+            if ($Interactive.IsPresent) {
+                Write-Warning "No command was specified in the provided JSON file."
+                while (($null -eq $CommandInput) -or ($CommandInput.Length -eq 0)) {
+                    $CommandInput = Read-Host "Enter your command here"
+                }
+                $ProfileParameters.command = (Invoke-TokeniseCommand $CommandInput ($ProfileParameters.parameters.arguments | ForEach-Object { [Argument]::new($_.Arguments, $_.ValueCount, $_.Redundant) }) | ConvertTo-JSON | ConvertFrom-Json)
+            }
+            else {
+                Write-Error "No command was specified in the provided JSON file." -RecommendedAction "Either define a tokenised command in your file, or use interactive mode by specifying -Interactive." -Category InvalidData
+                return $null;
+            }
+        }
+
+        if ($ProfileParameters.arguments) {
+            foreach ($argument in $ProfileParameters.arguments) {
+                $Arguments.Add([Argument]::new($argument.Arguments, $argument.ValueCount, $argument.Redundant)) | Out-Null;
+            }
+        }
+
+        foreach ($type_value in $ProfileParameters.command) {
+            $TokenContent = $type_value.PSObject.Properties.Value
+            $suffix = if ($TokenContent[-1] -eq "=") { $TokenContent[-1] } else { "" }
+            $details = [Argument]::GetArgumentDetails($Arguments, $TokenContent.Substring(0, $TokenContent.length - $suffix.length).ToCharArray())
+
+            $Token = [Token]::new($TokenContent.ToCharArray(), ($null -ne $details) -and ($details.ValueCount -gt 0));
+            $Token.Type = $type_value.PSObject.Properties.Name;
+            $Tokens.Add($Token) | Out-Null;
+
+            $Token = [Token]::new($TokenContent.ToCharArray(), ($null -eq $details) -and ($details.ValueCount -gt 0));
+            $Token.Type = $type_value.PSObject.Properties.Name;
+            $OriginalTokens.Add($Token) | Out-Null;
+        }
+
+        foreach ($modifier_params in $ProfileParameters.modifiers.PSObject.Properties) {
+            $ModifierName = $modifier_params.Name -replace "^(?i)regex$", "RegularExpression"; # Regex is a reserved name, hence this rename for the Modifier class
+            $Modifier = ($ModifierName -as [type])
+
+            if ($null -eq $Modifier) {
+                if ($ErrorModifiers -cnotcontains $ModifierName) {
+                    Write-Error("Modifier {0} could not be found." -f $ModifierName)
+                    $ErrorModifiers += $ModifierName;
+                }
+                continue
+            }
+
+            # Create dictionary with arguments and values
+            $ModifierArguments = @{InputCommandTokens = [Token[]]$Tokens; AppliesTo = [string[]]@(); Arguments = [Argument[]]$Arguments };
+            foreach ($param in $modifier_params.Value.PSObject.Properties) {
+                if ($ModifierArguments.ContainsKey($param.Name)) {
+                    $ModifierArguments[$param.Name] = $param.Value;
+                }
+                else {
+                    $ModifierArguments.Add($param.Name, $param.Value) | Out-Null;
+                }
+            }
+
+            # Create an (ordered) list with the arguments to pass
+            $ModifierArgumentsList = [System.Collections.ArrayList]@();
+            foreach ($Argument in $Modifier.GetConstructors()[0].GetParameters()) {
+                $ModifierArgumentsList.Add($ModifierArguments[$Argument.Name]) | Out-Null;
+            }
+
+            # Create Modifier object and generate output
+            $Modifier = New-Object -TypeName $Modifier.FullName -ArgumentList $ModifierArgumentsList;
+            $Modifier.GenerateOutput();
+        }
+
+        # Show final result
+        $Output = $tokens[0]
+        if ($Tokens.Count -gt 1) {
+            ForEach ($Index in (1..($Tokens.Count - 1))) {
+                $Output = -join ($Output, $(if (($Tokens[$Index - 1].Type -eq "argument" -or $Tokens[$Index - 1].Type -eq "value") -and ($OriginalTokens[$Index - 1].TokenContent[-1] -match '[=:]')) { "" } else { " " }), ($Tokens[$Index].ToString()))
+            }
+        }
+
+        Write-Output $Output.ToString();
+    }
+}

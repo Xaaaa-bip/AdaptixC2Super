@@ -230,6 +230,13 @@ func (ts *Teamserver) Start() {
 		}
 	}
 
+	// 文件参数沙箱根目录：agent/user axs 脚本可读取这些目录下的文件
+	// （BOF 的 addArgFile 路径等）。必须在加载插件/脚本之前设置。
+	var sandboxDirs []string
+	sandboxDirs = append(sandboxDirs, ts.Profile.Server.Extenders...)
+	sandboxDirs = append(sandboxDirs, ts.Profile.Server.AxScripts...)
+	ts.ScriptManager.SetGlobalAllowedRoots(sandboxDirs)
+
 	ts.Extender.LoadPlugins(ts.Profile.Server.Extenders)
 
 	ts.TsAxScriptLoadFromProfile()

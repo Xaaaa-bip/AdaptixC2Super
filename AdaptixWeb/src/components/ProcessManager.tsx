@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { browserKillProc, browserListProcs } from '../api/browser'
 import type { ProcItem } from '../utils/browserParse'
-import { copyText } from '../utils'
+import { copyText, isLinuxAgent } from '../utils'
 import { EmptyState } from './ui'
+import { PageTips } from './PageTips'
 
 export function ProcessManager({ agentId }: { agentId: string }) {
   const api = useStore((s) => s.api)
@@ -16,6 +17,8 @@ export function ProcessManager({ agentId }: { agentId: string }) {
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
   const agent = agents[agentId]
   const boosted = !!interactBoost[agentId]?.ref
+  // Linux 主机不做 sleep 0 交互加速（linux_agent 无该命令）
+  const linux = isLinuxAgent(agent)
 
   const [items, setItems] = useState<ProcItem[]>([])
   const [message, setMessage] = useState('')
@@ -55,7 +58,9 @@ export function ProcessManager({ agentId }: { agentId: string }) {
       })
       if (my !== seq.current) return
       setItems(res.items)
-      setMessage(`${res.message} · ${res.items.length} 进程`)
+      // 服务端回显文案 "Status: OK"：本地化为「已回显」
+      const msg = res.message === 'Status: OK' ? '已回显' : res.message
+      setMessage(`${msg} · ${res.items.length} 进程`)
       pushLog('ok', `进程 ${agentId}: ${res.items.length}`, false)
       if (selected != null && !res.items.some((p) => p.pid === selected)) {
         setSelected(null)
@@ -108,9 +113,13 @@ export function ProcessManager({ agentId }: { agentId: string }) {
         <div className="pm-title">
           <strong>进程管理</strong>
           <span className="mono dim">{agent?.a_computer || agentId}</span>
-          <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`}>
-            {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
-          </span>
+          {linux ? (
+            <span className="fm-boost">Linux 进程</span>
+          ) : (
+            <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`}>
+              {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
+            </span>
+          )}
         </div>
         <div className="sep" />
         <button disabled={busy || killing != null} onClick={refresh}>
@@ -137,6 +146,10 @@ export function ProcessManager({ agentId }: { agentId: string }) {
           {err ? <span className="err">{err}</span> : null}
         </div>
         <button className="ghost" onClick={() => closeUiTab(`procs:${agentId}` as any)}>关闭</button>
+        <PageTips id="procs">
+          <p>进程列表 + 搜索过滤；选中行后「结束进程」。</p>
+          <p>Linux 主机的结束操作经由 <code>kill &lt;pid&gt;</code> 命令完成（列表随后自动刷新）。</p>
+        </PageTips>
       </div>
 
       <div className="table-wrap pm-table-wrap">
@@ -211,7 +224,7 @@ export function ProcessManager({ agentId }: { agentId: string }) {
           onMouseLeave={() => setCtx(null)}
         >
           <div className="ctx-hd mono">{ctx.name} · {ctx.pid}</div>
-          <button type="button" onClick={() => { void copyPid(ctx.pid); setCtx(null) }}>Copy PID</button>
+          <button type="button" onClick={() => { void copyPid(ctx.pid); setCtx(null) }}>复制 PID</button>
           <button type="button" className="danger" onClick={() => { void kill(ctx.pid, ctx.name); setCtx(null) }}>结束进程</button>
         </div>
       )}

@@ -51,6 +51,7 @@ type TunnelPack struct {
 	Id        uint   `msgpack:"id"`
 	Type      uint   `msgpack:"type"`
 	ChannelId int    `msgpack:"channel_id"`
+	TunnelId  int    `msgpack:"tunnel_id"`
 	Key       []byte `msgpack:"key"`
 	Iv        []byte `msgpack:"iv"`
 	Alive     bool   `msgpack:"alive"`
@@ -78,6 +79,17 @@ type Profile struct {
 	SslCert     []byte   `msgpack:"ssl_cert"`
 	SslKey      []byte   `msgpack:"ssl_key"`
 	CaCert      []byte   `msgpack:"ca_cert"`
+
+	// ↓ Phase5 新增（**只增不改**，见文件头）。零值语义：Transport == "" ⇒ tcp。
+	// ★ S6：删掉 libp2p_peer_id / libp2p_relays。前者 agent 侧**从不读**（peer id
+	//   本来就在每个 multiaddr 的 /p2p/<id> 里，且已由 pl_main.go 改成一条真判据），
+	//   后者全树**从没被写过**。死字段不只是浪费字节 —— 它会让下一个人以为这两条路
+	//   是通的。msgpack 反序列化忽略未知键，所以删字段不破坏与旧 builder 的兼容。
+	Transport         string   `msgpack:"transport"`
+	Libp2pAddrs       []string `msgpack:"libp2p_addrs"`
+	Libp2pPrivKey     []byte   `msgpack:"libp2p_privkey"`
+	Libp2pProtocol    string   `msgpack:"libp2p_protocol"`
+	Libp2pDialTimeout int      `msgpack:"libp2p_dial_timeout"`
 }
 
 type SessionInfo struct {
@@ -270,6 +282,7 @@ type ParamsJobKill struct {
 type ParamsTunnelStart struct {
 	Proto     string `msgpack:"proto"`
 	ChannelId int    `msgpack:"channel_id"`
+	TunnelId  int    `msgpack:"tunnel_id"`
 	Address   string `msgpack:"address"`
 }
 
@@ -317,6 +330,23 @@ type ParamsTunnelResume struct {
 	ChannelId int `msgpack:"channel_id"`
 }
 
+// ★ 批次9（rportfwd）。与 gopher_agent/pl_utils.go 里的同名结构**逐字段一致**
+// （msgpack 按字段名编解码；两份定义分处两个 module，编译器管不到）—— 判据 V4 比对。
+type ParamsTunnelReverse struct {
+	TunnelId int `msgpack:"tunnel_id"`
+	Port     int `msgpack:"port"`
+}
+
+type AnsTunnelReverse struct {
+	TunnelId int `msgpack:"tunnel_id"`
+	Result   int `msgpack:"result"`
+}
+
+type ParamsTunnelAccept struct {
+	TunnelId  int `msgpack:"tunnel_id"`
+	ChannelId int `msgpack:"channel_id"`
+}
+
 const (
 	COMMAND_ERROR      = 0
 	COMMAND_PWD        = 1
@@ -344,6 +374,10 @@ const (
 	COMMAND_TUNNEL_STOP   = 32
 	COMMAND_TUNNEL_PAUSE  = 33
 	COMMAND_TUNNEL_RESUME = 34
+
+	// ★ 批次9（rportfwd）：与 pl_utils.go、beacon_agent/pl_utils.go **同值**（判据 V3 交叉核对）
+	COMMAND_TUNNEL_REVERSE = 67
+	COMMAND_TUNNEL_ACCEPT  = 68
 
 	COMMAND_TERMINAL_START = 35
 	COMMAND_TERMINAL_STOP  = 36

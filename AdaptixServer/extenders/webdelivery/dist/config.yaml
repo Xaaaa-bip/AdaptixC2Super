@@ -1,8 +1,0 @@
-script_route:  "/deliver"
-payload_route: "/deliver/payload"
-listener:      "BeaconHTTP1"
-agent_name:    "beacon"
-format:        "Artifact Go Exe"
-sleep:         "5s"
-jitter:        20
-cache_ttl_min: 30

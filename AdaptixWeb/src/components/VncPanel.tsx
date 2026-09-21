@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { isAgentOnline } from '../utils'
+import { isAgentOnline, isLinuxAgent } from '../utils'
 import { vncViewerUrl } from '../api/channel'
+import { EmptyState } from './ui'
+import { PageTips } from './PageTips'
 
 type VncSession = {
   id: string
@@ -55,6 +57,8 @@ export function VncPanel({ agentId }: { agentId: string }) {
   }
 
   useEffect(() => {
+    // Linux 主机不需要加速心跳，也不轮询插件侧会话
+    if (isLinuxAgent(agent)) return
     acquireInteractBoost(agentId).catch(() => {})
     listSessions()
     const t = window.setInterval(listSessions, 10000)
@@ -177,6 +181,15 @@ export function VncPanel({ agentId }: { agentId: string }) {
     el.src = viewer + (viewer.includes('?') ? '&' : '?') + 'r=' + Date.now()
   }
 
+  // 所有 hook 已在其上方无条件执行；Linux 主机直接给空状态，不启动部署/轮询
+  if (isLinuxAgent(agent)) {
+    return (
+      <div className="page">
+        <EmptyState icon="⧉" title="VNC 不支持 Linux 主机" hint="linux_agent 无桌面捕获能力；本面板仅适用于 Windows 主机。" />
+      </div>
+    )
+  }
+
   return (
     <div className="vnc-page">
       <div className="toolbar">
@@ -220,6 +233,10 @@ export function VncPanel({ agentId }: { agentId: string }) {
           <a className="buttonish" href={viewer} target="_blank" rel="noreferrer">新窗口</a>
         )}
         <button className="ghost" onClick={() => closeUiTab(`vnc:${agentId}` as any)}>关闭</button>
+        <PageTips id="vnc">
+          <p>VNC 桌面仅适用于 <b>Windows 主机</b>；Linux 主机显示不支持提示。</p>
+          <p>启动后浏览器内嵌查看器访问桌面。</p>
+        </PageTips>
       </div>
       {err && <div className="banner warn">{err}</div>}
       {busy && phase && <div className="banner warn">{phase}</div>}

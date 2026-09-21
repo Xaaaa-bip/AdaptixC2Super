@@ -152,6 +152,50 @@ func makeProxyTask(packData []byte) adaptix.TaskData {
 	return adaptix.TaskData{Type: adaptix.TASK_TYPE_PROXY_DATA, Data: packData, Sync: false}
 }
 
+// maxBofObjectBytes 是单个 BOF 对象的上限，一条**读文件前**的守卫：
+// 实参可能是敲错的路径（"/var/log/syslog"），没有上限就会把整个文件读进内存
+// 再塞进任务包 —— 服务端 1.9G，这类手误不该有放大器。
+const maxBofObjectBytes = 16 << 20 // 16 MiB
+
+// resolveBofObject 把 `execute bof` 的实参解析成对象字节。
+//
+// ★ 为什么必须先试路径：本命令在命令树里的示例一直是
+//   `execute bof /home/user/whoami.o`（ax_config.axs），WebUI 的补全也按
+//   服务端绝对路径给候选，而这里原本**只认 base64** —— 操作员从候选里选一个，
+//   得到 `illegal base64 data at input byte 4`，完全看不出「其实要贴 base64」。
+//   linux_agent 早已是「先路径、后 base64」，这里补齐，四个 extender 行为一致。
+//
+// ★ 路径按**进程 cwd** 解析（服务端 cwd = <dist>，如 /home/ad/dist），
+//   所以补全给的是绝对路径；相对路径能用只是巧合，不要依赖。
+func resolveBofObject(v string) ([]byte, error) {
+	if v == "" {
+		return nil, errors.New("bof object is empty")
+	}
+
+	if st, statErr := os.Stat(v); statErr == nil && !st.IsDir() {
+		if st.Size() > maxBofObjectBytes {
+			return nil, fmt.Errorf("bof object %s is too large (%d bytes, max %d)", v, st.Size(), maxBofObjectBytes)
+		}
+		b, readErr := os.ReadFile(v)
+		if readErr != nil {
+			return nil, fmt.Errorf("cannot read bof object %s: %v", v, readErr)
+		}
+		if len(b) == 0 {
+			return nil, fmt.Errorf("bof object %s is empty", v)
+		}
+		return b, nil
+	}
+
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("bof object %q is neither a readable file on the teamserver nor valid base64 data", v)
+	}
+	if len(b) == 0 {
+		return nil, fmt.Errorf("bof object %q decoded to 0 bytes", v)
+	}
+	return b, nil
+}
+
 func getStringArg(args map[string]any, key string) (string, error) {
 	v, ok := args[key].(string)
 	if !ok {
@@ -305,36 +349,52 @@ func TerminalMessageClose(terminalId int) adaptix.TaskData {
 ////// PLUGIN AGENT
 
 type GenerateConfig struct {
-	Os            string `json:"os"`
-	Arch          string `json:"arch"`
-	Format        string `json:"format"`
-	Sleep         string `json:"sleep"`
-	Jitter        int    `json:"jitter"`
-	SvcName       string `json:"svcname"`
-	IsKillDate    bool   `json:"is_killdate"`
-	Killdate      string `json:"kill_date"`
-	Killtime      string `json:"kill_time"`
-	IsWorkingTime bool   `json:"is_workingtime"`
-	StartTime     string `json:"start_time"`
-	EndTime       string `json:"end_time"`
+	Os            string `json:"os" ax:"label=系统;group=基础;extra=windows;hint=beacon 只有 Windows 版；这个键固定是 windows"`
+	Arch          string `json:"arch" ax:"label=架构;group=基础;extra=x64;hint=x86 是 pl_main.go:910 起的特例分支，x64 是隐含的 else;optorder=x64"`
+	Format        string `json:"format" ax:"label=输出格式;group=基础;hint=Stager 需在下面「Stager 下载端点」组填地址与端口;optorder=Exe,Service Exe,DLL,Shellcode,Hex C,Stager"`
+	Sleep         string `json:"sleep" ax:"label=Sleep;group=基础;hint=支持 h/m/s；beacon 的解析器（pl_utils.go:414）不补单位，裸数字会被当成 0"`
+	Jitter        int    `json:"jitter" ax:"label=Jitter %;group=基础;range=0-100"`
+	SvcName       string `json:"svcname" ax:"label=服务名;group=进程与签名;showif=format:Service Exe;hint=Service Exe 必填：pl_main.go:975 只是逐字符转义后串进 -DSERVICE_NAME，空值不报错，会生成一个装不上的服务"`
+	IsKillDate    bool   `json:"is_killdate" ax:"label=启用 killdate;group=信标窗口"`
+	Killdate      string `json:"kill_date" ax:"label=killdate 日期;group=信标窗口;hint=GMT 时间"`
+	Killtime      string `json:"kill_time" ax:"label=killdate 时间;group=信标窗口"`
+	IsWorkingTime bool   `json:"is_workingtime" ax:"label=启用 workingtime;group=信标窗口"`
+	StartTime     string `json:"start_time" ax:"label=工作起始;group=信标窗口;hint=每周一跳的窗口，靠 killdate/workingtime 命令可远程改"`
+	EndTime       string `json:"end_time" ax:"label=工作结束;group=信标窗口"`
 	// nil / omitted in JSON → default true (no CRT: -nostdlib + IAT path). Explicit false uses MinGW CRT.
-	IatHiding          *bool  `json:"iat_hiding"`
-	IsSideloading      bool   `json:"is_sideloading"`
-	SideloadingContent string `json:"sideloading_content"`
-	IconContent        string `json:"icon_content"`
-	IconRandom         bool   `json:"icon_random"`
-	ExePseudoSign      bool   `json:"exe_pseudo_sign"`
-	DnsResolvers       string `json:"dns_resolvers"`
-	DohResolvers       string `json:"doh_resolvers"`
-	DnsMode            string `json:"dns_mode"`
-	UserAgent          string `json:"user_agent"`
-	UseProxy           bool   `json:"use_proxy"`
-	ProxyType          string `json:"proxy_type"`
-	ProxyHost          string `json:"proxy_host"`
-	ProxyPort          int    `json:"proxy_port"`
-	ProxyUsername      string `json:"proxy_username"`
-	ProxyPassword      string `json:"proxy_password"`
-	RotationMode       string `json:"rotation_mode"`
+	IatHiding          *bool  `json:"iat_hiding" ax:"label=IAT Hiding（无 CRT、空导入表）;group=进程与签名;hint=插件默认值来自 buildenv.mk 的 BEACON_IAT_HIDING_DEFAULT（见 pl_main.go:400）；开启后被 360 QVM 2.0 判为 HEUR/QVM.9B7A"`
+	IsSideloading      bool   `json:"is_sideloading" ax:"label=Legit-DLL 侧载;group=图标与侧载;showif=format:DLL;order=-3"`
+	SideloadingContent string `json:"sideloading_content" ax:"label=合法 DLL 文件;group=图标与侧载;file=.dll;showif=format:DLL;hint=作为导出表来源；勾了侧载但留空会构建失败;order=-2"`
+	IconContent        string `json:"icon_content" ax:"label=ICO 文件;group=图标与侧载;file=.ico;showif=format:Exe,Service Exe,DLL;hint=留空 = 用默认图标；与「随机 ICO」同时勾选时以随机为准"`
+	IconRandom         bool   `json:"icon_random" ax:"label=随机生成 ICO;group=图标与侧载;showif=format:Exe,Service Exe,DLL;order=-1"`
+	ExePseudoSign      bool   `json:"exe_pseudo_sign" ax:"label=Exe 伪 Authenticode 签名;group=进程与签名;showif=format:Exe,Service Exe;hint=随机自签名；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败"`
+	DnsResolvers       string `json:"dns_resolvers" ax:"label=DNS 解析器;group=DNS;showif=listener:BeaconDNS;hint=逗号分隔；留空则用监听器上的 resolvers（pl_utils.go:483）"`
+	DohResolvers       string `json:"doh_resolvers" ax:"label=DoH 解析器;group=DNS;showif=listener:BeaconDNS;hint=逗号分隔；留空则用插件内置默认（pl_utils.go:488）"`
+	DnsMode            string `json:"dns_mode" ax:"label=DNS 模式;group=DNS;showif=listener:BeaconDNS;order=-1"`
+	UserAgent          string `json:"user_agent" ax:"label=User-Agent;group=DNS;showif=listener:BeaconDNS;hint=留空用插件内置默认（pl_main.go:819）"`
+	UseProxy           bool   `json:"use_proxy" ax:"label=使用 HTTP/HTTPS 代理;group=代理与轮换;showif=listener:BeaconHTTP,BeaconWS"`
+	ProxyType          string `json:"proxy_type" ax:"label=代理类型;group=代理与轮换;extra=http;showif=listener:BeaconHTTP,BeaconWS;hint=https 是 pl_main.go:786 的特例，http 是隐含的 else;optorder=http"`
+	ProxyHost          string `json:"proxy_host" ax:"label=代理地址;group=代理与轮换;showif=listener:BeaconHTTP,BeaconWS"`
+	ProxyPort          int    `json:"proxy_port" ax:"label=代理端口;group=代理与轮换;range=0-65535;showif=listener:BeaconHTTP,BeaconWS;hint=开启代理时必填 —— 插件不做兜底，空值就是 0"`
+	ProxyUsername      string `json:"proxy_username" ax:"label=代理用户名;group=代理与轮换;showif=listener:BeaconHTTP,BeaconWS;hint=可留空"`
+	ProxyPassword      string `json:"proxy_password" ax:"label=代理口令;group=代理与轮换;showif=listener:BeaconHTTP,BeaconWS;hint=可留空"`
+	RotationMode       string `json:"rotation_mode" ax:"label=轮换模式;group=代理与轮换;extra=sequential;showif=listener:BeaconHTTP,BeaconWS;hint=多个 callback 地址时的取用顺序；random 是 pl_main.go:756 的特例"`
+
+	// --- Stager 下载端点的来源（仅 Stager / Service Stager 格式用到）---
+	//
+	// 产品化 Stager 把载荷挂在**团队服务器自己的 HTTP endpoint** 的 /s/:token 上，
+	// 所以生成时必须知道那个 endpoint 在哪：端口、协议、对外地址。
+	//
+	// 这三项**必须由控制台表单提供**（主路径）—— 约定是所有操作员都在 WebUI 上
+	// 操作，而进程环境变量只有起服务那一步能注入，操作员在控制台里改不了。
+	// 环境变量（ADAPTIX_TEAMSERVER_HOST/PORT/SSL，由 build_deploy.sh --up 注入）
+	// 只作为回退保留。两者都缺时生成**硬报错**，绝不静默回落 8080 ——
+	// 那在标准 profile 里是 agent 监听器，stager 会对一个明文端口讲 TLS，
+	// 死在目标机上且服务端一点痕迹都不留。
+	StagerTSHost string `json:"stager_ts_host" ax:"label=Teamserver 地址;group=Stager 下载端点;showif=format:Stager;hint=内层载荷挂在 teamserver 自己的 /api/s/<token> 上，不是监听器端口；控制台默认填当前页面的地址"`
+	StagerTSPort int    `json:"stager_ts_port" ax:"label=端口;group=Stager 下载端点;range=0-65535;showif=format:Stager"`
+	// 指针：区分「没填」与「明确填 false（明文端点）」。nil ⇒ 交由回退决定。
+	StagerTSSSL *bool `json:"stager_ts_ssl" ax:"label=走 TLS（与 Teamserver.ssl 一致）;group=Stager 下载端点;showif=format:Stager"`
 }
 
 func (c GenerateConfig) effectiveIatHiding() bool {
@@ -758,10 +818,18 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			if userAgent == "" {
 				userAgent = "Mozilla/5.0 (Windows NT 6.2; rv:20.0) Gecko/20121202 Firefox/20.0"
 			}
-			params, err = buildDNSProfileParams(generateConfig, listenerMap, userAgent)
-			if err != nil {
-				return nil, err
+			// Append, never assign: `params` already holds the six-field common
+			// prefix added above (agent_type, kill_date, working_time, sleep_delay,
+			// jitter_delay, listener_type). Overwriting it makes the C side
+			// (AgentConfig.cpp, BEACON_DNS branch) read every DNS field one slot
+			// early -- it takes this list's string length prefixes for integers,
+			// so kill_date lands in 1994 and Agent_IsActive() declares the agent
+			// dead before its first beat. The other four flavours all append.
+			dnsParams, dnsErr := buildDNSProfileParams(generateConfig, listenerMap, userAgent)
+			if dnsErr != nil {
+				return nil, dnsErr
 			}
+			params = append(params, dnsParams...)
 
 		default:
 			return nil, errors.New("protocol unknown")
@@ -1256,14 +1324,27 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 
 	finalExePath := buildPath
-	if generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe" {
-		signedPath := tempDir + "/file_signed.exe"
-		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying random self-signed Authenticode (openssl + osslsigncode)...")
-		if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {
-			_ = os.RemoveAll(tempDir)
-			return nil, "", err
+	// ★ 原来只判 Format、不判开关：ExePseudoSign 在 :326 声明、Generate.tsx / ax_config.axs /
+	//   webdelivery 都往里填了值，却**没有任何地方读它** ⇒ 勾选框是惰性的（取消勾选也照样签名，
+	//   工具缺失时照样让生成失败）。这里补上开关判断，与 gopher_agent/pl_main.go 同口径。
+	if (generateConfig.Format == "Exe" || generateConfig.Format == "Service Exe") && generateConfig.ExePseudoSign {
+		// ★ 工具缺失时降级为不签名并继续（同上方 :1254 pe_header_mod.py 缺失的处理）。
+		//   伪签名是让产物"看起来有签名"的美化步骤，缺一个可选工具不该让最常见的 EXE 载荷
+		//   完全生成不出来（实测：控制台点「生成并下载」直接红字
+		//   `pseudo-sign requires osslsigncode in PATH`）。
+		//   只对「工具缺失」降级：签名**执行失败**仍终止 —— 可能已写出半份产物。
+		if miss := pseudoSignMissingTool(); miss != "" {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO,
+				fmt.Sprintf("pseudo-sign skipped: %s not in server PATH — payload will be UNSIGNED (install it: pre_install_linux_all.sh server)", miss))
+		} else {
+			signedPath := tempDir + "/file_signed.exe"
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Applying random self-signed Authenticode (openssl + osslsigncode)...")
+			if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {
+				_ = os.RemoveAll(tempDir)
+				return nil, "", err
+			}
+			finalExePath = signedPath
 		}
-		finalExePath = signedPath
 	}
 
 	buildContent, err := os.ReadFile(finalExePath)
@@ -1292,7 +1373,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 			return nil, "", err
 		}
 		defer os.RemoveAll(stagerTemp)
-		stagerBin, stagerName, err := buildWindowsStager(profile.BuilderId, currentDir, stagerTemp, Payload, listenerMap, generateConfig.Arch)
+		stagerBin, stagerName, err := buildWindowsStager(profile.BuilderId, currentDir, stagerTemp, Payload, listenerMap, generateConfig.Arch, generateConfig)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1736,7 +1817,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			if err != nil {
 				goto RET
 			}
-			bofContent, err := base64.StdEncoding.DecodeString(bofFile)
+			bofContent, err := resolveBofObject(bofFile)
 			if err != nil {
 				goto RET
 			}

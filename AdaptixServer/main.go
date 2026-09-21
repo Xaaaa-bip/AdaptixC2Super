@@ -8,6 +8,8 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 )
@@ -77,6 +79,16 @@ func main() {
 	token.InitJWT(ts.Profile.Server.ATokenLive, ts.Profile.Server.RTokenLive)
 
 	ts.EnableWeb = *enableWeb
+
+	// Diagnostics: pprof on loopback only (heap/goroutine profiles for
+	// memory troubleshooting). Not reachable from outside the host.
+	go func() {
+		if err := http.ListenAndServe("127.0.0.1:38213", nil); err != nil {
+			logs.Error("", "pprof listener: "+err.Error())
+		}
+	}()
+	fmt.Printf("[*] pprof diagnostics -> http://127.0.0.1:38213/debug/pprof/\n")
+
 	ts.Start()
 }
 

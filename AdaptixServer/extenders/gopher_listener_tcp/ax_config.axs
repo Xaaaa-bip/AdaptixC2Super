@@ -34,6 +34,32 @@ function ListenerUI(mode_create)
     let buttonEncryptKey = form.create_button("Generate");
     buttonEncryptKey.setEnabled(mode_create)
 
+    let labelProto = form.create_label("Transport protocol:");
+    let comboProto = form.create_combo();
+    comboProto.setEnabled(mode_create)
+    comboProto.clear();
+    comboProto.addItem("tcp");
+    comboProto.addItem("libp2p");
+
+    let labelL2pProto = form.create_label("libp2p protocol id:");
+    let textlineL2pProto = form.create_textline("/gopher/1.0.0");
+
+    let labelL2pKey = form.create_label("libp2p privkey (b64):");
+    let textlineL2pKey = form.create_textline("");
+
+    let labelL2pRelays = form.create_label("libp2p relays (隐藏 C2):");
+    let texteditL2pRelays = form.create_textmulti("");
+    texteditL2pRelays.setPlaceholder("/ip4/<relay公网IP>/tcp/4446/p2p/<relayPeerID>\n一行一条；填了它 ⇒ agent 只拨 circuit 地址，C2 真实 IP:端口不进载荷");
+
+    let labelL2pAddrs = form.create_label("libp2p addrs (agent 拨号地址):");
+    let texteditL2pAddrs = form.create_textmulti("");
+    texteditL2pAddrs.setPlaceholder("留空 ⇒ 由 l2p_relays 自动派生为\n<relay>/p2p-circuit/p2p/<本 listener 的 PeerID>\n填了 ⇒ 覆盖回连地址（高级：自建 circuit / 多跳）");
+
+    let labelL2pDialTimeout = form.create_label("libp2p dial timeout (秒):");
+    let spinL2pDialTimeout = form.create_spin();
+    spinL2pDialTimeout.setRange(0, 3600);
+    spinL2pDialTimeout.setValue(0);
+
     let checkMtls = form.create_check("Use mTLS");
     checkMtls.setEnabled(mode_create)
 
@@ -74,6 +100,18 @@ function ListenerUI(mode_create)
     layout.addWidget(labelEncryptKey,    5, 0, 1, 1);
     layout.addWidget(textlineEncryptKey, 5, 1, 1, 2);
     layout.addWidget(buttonEncryptKey,   5, 3, 1, 1);
+    layout.addWidget(labelProto,         9, 0, 1, 1);
+    layout.addWidget(comboProto,         9, 1, 1, 3);
+    layout.addWidget(labelL2pProto,     10, 0, 1, 1);
+    layout.addWidget(textlineL2pProto,  10, 1, 1, 3);
+    layout.addWidget(labelL2pKey,       11, 0, 1, 1);
+    layout.addWidget(textlineL2pKey,    11, 1, 1, 3);
+    layout.addWidget(labelL2pRelays,    12, 0, 1, 1);
+    layout.addWidget(texteditL2pRelays, 12, 1, 1, 3);
+    layout.addWidget(labelL2pAddrs,     13, 0, 1, 1);
+    layout.addWidget(texteditL2pAddrs,  13, 1, 1, 3);
+    layout.addWidget(labelL2pDialTimeout, 14, 0, 1, 1);
+    layout.addWidget(spinL2pDialTimeout,  14, 1, 1, 3);
     layout.addWidget(checkMtls,          6, 0, 1, 1);
     layout.addWidget(howButton,          6, 1, 1, 1);
     layout.addWidget(caCertSelector,     6, 2, 1, 2);
@@ -125,6 +163,17 @@ function ListenerUI(mode_create)
         dialog.exec()
     });
 
+    // ★ Phase5 批次16：libp2p 组的**开关语义**。
+    //   protocol=tcp 时这些键不参与任何逻辑（validConfig 的 tcp 分支根本不看它们），
+    //   若仍可编辑就是"填了以为生效"的经典坑 ⇒ 整组随 protocol 联动。
+    //   初始态从 combo 当前文本取（编辑既有 libp2p listener 时不会被错误禁用）。
+    let l2pGroup = [labelL2pProto, textlineL2pProto, labelL2pKey, textlineL2pKey,
+                    labelL2pRelays, texteditL2pRelays, labelL2pAddrs, texteditL2pAddrs,
+                    labelL2pDialTimeout, spinL2pDialTimeout];
+    function l2pSwitch(on) { for (let w of l2pGroup) { w.setEnabled(on); } }
+    form.connect(comboProto, "currentTextChanged", function(text) { l2pSwitch(text === "libp2p"); });
+    l2pSwitch(comboProto.currentText() === "libp2p");
+
     let container = form.create_container()
     container.put("host_bind", comboHostBind)
     container.put("port_bind", spinPort)
@@ -139,6 +188,19 @@ function ListenerUI(mode_create)
     container.put("server_key", srvKeySelector)
     container.put("client_cert", clientCertSelector)
     container.put("client_key", clientKeySelector)
+    // ★ Phase5：tcp 或 libp2p。存进 config JSON 的 "protocol" 键，
+    //   由 TransportConfig.Protocol 接住，并在 GetProfile() 里流到 teamserver。
+    //   ★★ 本组全部键都是 transport.Config 的字段 ⇒ GetProfile() 把整份 Config
+    //   编码给 teamserver，agent 侧插件按 listenerMap[<同名键>] 取值
+    //   （gopher_agent/pl_main.go: l2p_addrs 覆盖 callback_addresses；l2p_protocol /
+    //   l2p_dial_timeout 直接进 Profile）⇒ **UI 改了就等于载荷改了**，无需再改 Profile 结构。
+    //   l2p_peer_id 由 listener 的私钥派生（自报），l2p_privkey 不进 profile（防拨自己+防外泄）。
+    container.put("protocol", comboProto)
+    container.put("l2p_protocol", textlineL2pProto)
+    container.put("l2p_privkey", textlineL2pKey)
+    container.put("l2p_relays", texteditL2pRelays)
+    container.put("l2p_addrs", texteditL2pAddrs)
+    container.put("l2p_dial_timeout", spinL2pDialTimeout)
 
     let panel = form.create_panel()
     panel.setLayout(layout)
@@ -146,7 +208,7 @@ function ListenerUI(mode_create)
     return {
         ui_panel: panel,
         ui_container: container,
-        ui_height: 650,
+        ui_height: 800,
         ui_width: 650
     }
 }

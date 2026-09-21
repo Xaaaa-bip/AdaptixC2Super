@@ -11,6 +11,7 @@
 #define __NR_ioctl           29
 #define __NR_fcntl           25
 #define __NR_openat          56
+#define __NR_faccessat       48
 #define __NR_close           57
 #define __NR_read            63
 #define __NR_write           64
@@ -18,6 +19,8 @@
 #define __NR_fstat           80
 #define __NR_exit            93
 #define __NR_exit_group      94
+#define __NR_rt_sigaction   134
+
 #define __NR_kill            129
 #define __NR_getpid          172
 #define __NR_getuid          174
@@ -39,6 +42,11 @@
 #define __NR_chdir           49
 #define __NR_mkdirat         34
 #define __NR_unlinkat        35
+#define __NR_symlinkat       36
+// 注意：arm64 走 asm-generic 表，**没有** readlink(2)，只有 readlinkat(2)（78）。
+// 别照抄 x86 的 89 —— 78 在这里是 readlinkat，参数个数都不同。
+#define __NR_readlinkat      78
+#define __NR_lseek           62
 #define __NR_renameat        38
 #define __NR_getdents64      61
 #define __NR_dup3            24
@@ -46,11 +54,14 @@
 #define __NR_prctl           167
 #define __NR_utimensat       88
 #define __NR_bpf             280
+#define __NR_finit_module    273
+#define __NR_fchmodat        53
 #define __NR_getrandom       278
 #define __NR_memfd_create    279
 #define __NR_waitid          95
 #define __NR_wait4           260
 #define __NR_nanosleep       101
+#define __NR_clock_gettime   113
 #define __NR_setsid          157
 #define __NR_setpgid         154
 #define __NR_pselect6        72
@@ -170,6 +181,12 @@ static inline int sys_open(const char *path, int flags, int mode) {
     return sys_openat(AT_FDCWD, path, flags, mode);
 }
 
+/// access(path, mode) — arm64 **没有** access(2)，走 faccessat(dirfd,path,mode)。
+/// redact.c 的 arm64 分支认的正是 48（AX_NR_ACCESS），两边一致。
+static inline int sys_access(const char *path, int mode) {
+    return (int)raw_syscall3(__NR_faccessat, AT_FDCWD, (long)path, mode);
+}
+
 static inline int sys_close(int fd) {
     return (int)raw_syscall1(__NR_close, fd);
 }
@@ -247,6 +264,13 @@ static inline int sys_ioctl(int fd, unsigned long request, unsigned long arg) {
     return (int)raw_syscall3(__NR_ioctl, fd, request, arg);
 }
 
+// perf_event_open(attr, pid, cpu, group_fd, flags) — arg0 is a struct
+// perf_event_attr pointer (see the x64 header for the full explanation).
+static inline long sys_perf_event_open(void *attr, int pid, int cpu, int group_fd,
+                                       unsigned long flags) {
+    return raw_syscall5(241 /* __NR_perf_event_open */, (long)attr, pid, cpu, group_fd, flags);
+}
+
 static inline int sys_fcntl(int fd, int cmd, long arg) {
     return (int)raw_syscall3(__NR_fcntl, fd, cmd, arg);
 }
@@ -316,6 +340,31 @@ static inline int sys_mkdir(const char *path, int mode) {
 
 static inline int sys_unlink(const char *path) {
     return (int)raw_syscall3(__NR_unlinkat, AT_FDCWD, (long)path, 0);
+}
+
+// P3-G5: 见 syscalls_x64.h 同名函数的注释（symlinkat 语义两架构一致；
+// arm64 无 symlink(2)，只有 symlinkat）。
+static inline int sys_symlinkat(const char *target, int newdirfd,
+                                const char *linkpath) {
+    return (int)raw_syscall3(__NR_symlinkat, (long)target, newdirfd,
+                             (long)linkpath);
+}
+
+// P1: 读 /proc/self/exe 的真实路径（自删可执行文件用）。注意内核在目标已被
+// unlink 时会返回 "... (deleted)" 后缀，调用方需自行识别。
+// arm64 无 readlink(2) → 用 readlinkat(AT_FDCWD, ...)，语义与 x86 版一致。
+static inline long sys_readlink(const char *path, char *buf, size_t size) {
+    return raw_syscall4(__NR_readlinkat, AT_FDCWD, (long)path, (long)buf, size);
+}
+
+// P2-E4: 就地改写日志需要"读一段 → 回退 → 覆写 → 再回到读位置"。
+// SEEK_SET=0 / SEEK_CUR=1 / SEEK_END=2 三平台一致。
+#define AX_SEEK_SET 0
+#define AX_SEEK_CUR 1
+#define AX_SEEK_END 2
+
+static inline long sys_lseek(int fd, long offset, int whence) {
+    return raw_syscall3(__NR_lseek, fd, offset, whence);
 }
 
 #define AT_REMOVEDIR 0x200
@@ -393,6 +442,18 @@ static inline void sys_usleep(unsigned int usec) {
     sys_nanosleep(&ts, (struct linux_timespec*)0);
 }
 
+static inline int sys_clock_gettime(int clk_id, struct linux_timespec *ts) {
+    return (int)raw_syscall2(__NR_clock_gettime, clk_id, (long)ts);
+}
+
+static inline long sys_finit_module(int fd, const char *param_values, int flags) {
+    return raw_syscall3(__NR_finit_module, fd, (long)param_values, flags);
+}
+
+static inline int sys_fchmodat(int dirfd, const char *path, int mode, int flags) {
+    return (int)raw_syscall4(__NR_fchmodat, dirfd, (long)path, mode, flags);
+}
+
 // ── Timestamp modification ──
 
 static inline int sys_utimensat(int dirfd, const char *path, const struct linux_timespec times[2], int flags) {
@@ -436,3 +497,7 @@ static inline int sys_pselect6(int nfds, void *readfds, void *writefds,
 
 #endif // ARCH_AARCH64
 #endif // SYSCALLS_AARCH64_H
+
+static inline long sys_rt_sigaction(int signum, const void *act, void *oldact, size_t sigsetsize) {
+    return raw_syscall4(__NR_rt_sigaction, signum, (long)act, (long)oldact, (long)sigsetsize);
+}

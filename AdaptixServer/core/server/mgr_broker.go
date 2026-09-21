@@ -18,6 +18,10 @@ const (
 	SendBufferSize     = 4096
 	SyncBufferSize     = 8192
 	BroadcastQueueSize = 8192
+	// maxPreSyncEvents caps the per-client pre-sync event buffer. A normal
+	// sync handshake completes within a few events; a stuck client is
+	// disconnected instead of being allowed to grow memory unbounded.
+	maxPreSyncEvents = 8192
 
 	WriteTimeout      = 300 * time.Second
 	BackpressureWarn  = 0.75
@@ -703,6 +707,15 @@ func (ch *ClientHandler) BufferForSync(data interface{}, msgType int, stateKey s
 			ch.tmpStateStore[stateKey] = dataBytes
 		}
 	} else {
+		// Pre-sync buffer must stay bounded: a client that connects but never
+		// completes the sync handshake (suspended tab, half-open socket)
+		// would otherwise accumulate every broadcast event forever. Once the
+		// buffer proves the client is stuck, disconnect it — the browser will
+		// reconnect and re-sync.
+		if len(ch.tmpStore) >= maxPreSyncEvents {
+			ch.Close()
+			return
+		}
 		ch.tmpStore = append(ch.tmpStore, data)
 	}
 }

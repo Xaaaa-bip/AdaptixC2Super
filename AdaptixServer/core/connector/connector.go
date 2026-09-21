@@ -138,6 +138,7 @@ type Teamserver interface {
 	TsAxScriptUnloadUser(name string) error
 	TsAxScriptList() (string, error)
 	TsAxScriptCommands() (string, error)
+	TsAgentBuildSchema(agentName string, listenerType string) (string, error)
 	TsAxScriptResolveHooks(agentName string, agentId string, listenerRegName string, os int, cmdline string, args map[string]interface{}) (string, string, bool, error)
 	TsAxScriptIsServerHook(id string) bool
 	TsAxScriptParseAndExecute(agentId string, username string, cmdline string) error
@@ -381,6 +382,7 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 
 		api_group.GET("/agent/list", connector.TcAgentList)
 		api_group.POST("/agent/generate", connector.TcAgentGenerate)
+		api_group.POST("/agent/build/schema", connector.TcAgentBuildSchema)
 		api_group.POST("/agent/remove", connector.TcAgentRemove)
 
 		api_group.POST("/agent/command/file", connector.TcAgentCommandFile)

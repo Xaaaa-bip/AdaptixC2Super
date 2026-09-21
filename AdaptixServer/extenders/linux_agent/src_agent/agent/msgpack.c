@@ -370,7 +370,11 @@ int mp_read_str(mp_reader_t* r, const char** str, uint32_t* len) {
     }
     const uint8_t* p;
     if (*len > 0) {
-        if (read_bytes(r, &p, *len)) return -1;
+        if (read_bytes(r, &p, *len)) {   /* ★ 同 F4-bin：出参一起归零 */
+            *str = "";
+            *len = 0;
+            return -1;
+        }
         *str = (const char*)p;
     } else {
         *str = "";
@@ -397,7 +401,18 @@ int mp_read_bin(mp_reader_t* r, const uint8_t** data, uint32_t* len) {
         return -1;
     }
     if (*len > 0) {
-        if (read_bytes(r, data, *len)) return -1;
+        /* ★★ 收口点（ISS-078 家族）：原来这里是裸的 `return -1` ——
+         *   **`*len` 已经被写成声明长度，而 `*data` 一个字节都没写**。
+         *   调用方于是拿到 `data = NULL` + `len = 巨大值` 这对**不一致**的组合，
+         *   而这正是 `elf_bof.c` 的无守卫 `entry((char *)args, (int)args_size)`
+         *   最怕的形状。触发它**不需要**攻击者精巧构造：一个被截断的 msgpack
+         *   （bin 头声明 N 字节、实际只有 M < N 字节）就够了。
+         * 失败时把两个出参**一起**归零，调用方看到的就是一致的空值。 */
+        if (read_bytes(r, data, *len)) {
+            *data = (const uint8_t*)0;
+            *len = 0;
+            return -1;
+        }
     } else {
         *data = (const uint8_t*)0;
     }

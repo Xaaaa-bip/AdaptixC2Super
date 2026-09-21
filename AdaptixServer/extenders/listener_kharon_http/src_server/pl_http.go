@@ -72,18 +72,103 @@ func contains_hex_escapes(input string) bool {
 	return false
 }
 
-func (handler *HTTP) parse_json_callback(profileContent string) []Callback {
-	var jsonData map[string]interface{}
-	json.Unmarshal([]byte(profileContent), &jsonData)
+// resolve_profile_content turns the listener's `uploaded_file` field into the
+// profile JSON the callback parser needs.
+//
+// The field has three legitimate spellings and the UI and the Qt client each
+// assume a different one, so accept all of them rather than picking a side:
+//
+//   - a path to a file on the *server* (what the Web form's placeholder and
+//     hint tell the operator to enter);
+//   - base64 of the JSON (what the Qt file selector produces, and what
+//     Start() used to require silently);
+//   - the raw JSON itself.
+//
+// Resolution is ordered path -> base64 -> raw.  A base64 blob is not a valid
+// path and raw JSON is not valid base64, so the three cannot be confused in
+// practice; each branch is still validated before being accepted.
+//
+// Before this existed, Start() fed the field straight to base64.StdEncoding.
+// DecodeString and discarded the error: a path (the value the UI asks for)
+// decoded to garbage or to zero bytes, and the empty result then panicked in
+// parse_json_callback's unchecked type assertion, surfacing to the operator as
+// HTTP 500 with an empty body.
+func resolve_profile_content(raw string) ([]byte, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, errors.New("profile is empty: set `uploaded_file` to a profile path, base64 of the profile JSON, or the JSON itself")
+	}
 
-	callbacksRaw := jsonData["callbacks"].([]interface{})
+	// 1. A path on the server.  Cap the read: this field is operator-supplied
+	//    and a real profile is a few KiB, so anything larger is a mistake.
+	const maxProfileBytes = 1 << 20
+	if st, err := os.Stat(trimmed); err == nil && st.Mode().IsRegular() {
+		if st.Size() > maxProfileBytes {
+			return nil, fmt.Errorf("profile file %s is %d bytes (limit %d)", trimmed, st.Size(), maxProfileBytes)
+		}
+		content, err := os.ReadFile(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read profile file %s: %w", trimmed, err)
+		}
+		return content, nil
+	}
+
+	// 2. base64 of the JSON.
+	if decoded, err := base64.StdEncoding.DecodeString(trimmed); err == nil && looks_like_profile(decoded) {
+		return decoded, nil
+	}
+
+	// 3. Raw JSON.
+	if looks_like_profile([]byte(trimmed)) {
+		return []byte(trimmed), nil
+	}
+
+	return nil, errors.New("`uploaded_file` is neither a readable profile path, nor base64 of the profile JSON, nor the JSON itself")
+}
+
+// looks_like_profile reports whether content parses as a JSON object carrying a
+// `callbacks` array -- the one thing parse_json_callback actually requires.
+func looks_like_profile(content []byte) bool {
+	var probe struct {
+		Callbacks []json.RawMessage `json:"callbacks"`
+	}
+	if err := json.Unmarshal(content, &probe); err != nil {
+		return false
+	}
+	return probe.Callbacks != nil
+}
+
+// parse_json_callback parses a profile into callbacks.
+//
+// Every step is checked and every failure names what was wrong: the previous
+// version ignored both the Unmarshal error and used unchecked type assertions
+// (`jsonData["callbacks"].([]interface{})`), so any malformed profile -- an
+// empty one above all -- panicked the plugin inside gin's recovery middleware
+// and the operator got an empty HTTP 500 instead of a reason.
+func (handler *HTTP) parse_json_callback(profileContent string) ([]Callback, error) {
+	var jsonData map[string]interface{}
+	if err := json.Unmarshal([]byte(profileContent), &jsonData); err != nil {
+		return nil, fmt.Errorf("profile is not valid JSON: %w", err)
+	}
+
+	callbacksRaw, ok := jsonData["callbacks"].([]interface{})
+	if !ok {
+		return nil, errors.New("profile has no `callbacks` array")
+	}
+	if len(callbacksRaw) == 0 {
+		return nil, errors.New("profile `callbacks` array is empty")
+	}
+
 	var callbacks []Callback
 	var addresses []string
 
-	for _, callbackItem := range callbacksRaw {
-		callbackMap := callbackItem.(map[string]interface{})
+	for i, callbackItem := range callbacksRaw {
+		callbackMap, ok := callbackItem.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("callbacks[%d] is not an object", i)
+		}
 
-		userAgent := callbackMap["user_agent"].(string)
+		userAgent, _ := callbackMap["user_agent"].(string)
 
 		var serverError *ServerError
 		if seRaw, ok := callbackMap["server_error"].(map[string]interface{}); ok {
@@ -92,7 +177,11 @@ func (handler *HTTP) parse_json_callback(profileContent string) []Callback {
 				response = resp
 			}
 
-			fmt.Printf("[DEBUG] Error response: %s [%d]\n", response, int(seRaw["http_status"].(float64)))
+			httpStatus := 0
+			if v, ok := seRaw["http_status"].(float64); ok {
+				httpStatus = int(v)
+			}
+			fmt.Printf("[DEBUG] Error response: %s [%d]\n", response, httpStatus)
 
 			headers := make(map[string]string)
 			if headersRaw, ok := seRaw["headers"].(map[string]interface{}); ok {
@@ -104,7 +193,7 @@ func (handler *HTTP) parse_json_callback(profileContent string) []Callback {
 			}
 
 			serverError = &ServerError{
-				Status:   int(seRaw["http_status"].(float64)),
+				Status:   httpStatus,
 				Response: response,
 				Headers:  headers,
 			}
@@ -120,10 +209,20 @@ func (handler *HTTP) parse_json_callback(profileContent string) []Callback {
 			postMethod = parse_http_method(postRaw)
 		}
 
-		hostsRaw := callbackMap["hosts"].([]interface{})
+		hostsRaw, ok := callbackMap["hosts"].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("callbacks[%d] has no `hosts` array", i)
+		}
 		var hosts []string
 		for _, host := range hostsRaw {
-			hosts = append(hosts, host.(string))
+			h, ok := host.(string)
+			if !ok {
+				return nil, fmt.Errorf("callbacks[%d] has a non-string entry in `hosts`", i)
+			}
+			hosts = append(hosts, h)
+		}
+		if len(hosts) == 0 {
+			return nil, fmt.Errorf("callbacks[%d] `hosts` array is empty", i)
 		}
 
 		for _, host := range hosts {
@@ -146,7 +245,7 @@ func (handler *HTTP) parse_json_callback(profileContent string) []Callback {
 
 	handler.Config.Addresses = strings.Join(addresses, ",")
 
-	return callbacks
+	return callbacks, nil
 }
 
 func parse_http_method(methodData map[string]interface{}) *HTTPMethod {
@@ -154,7 +253,9 @@ func parse_http_method(methodData map[string]interface{}) *HTTPMethod {
 	serverHeaders := make(map[string]string)
 	if shRaw, ok := methodData["server_headers"].(map[string]interface{}); ok {
 		for key, value := range shRaw {
-			serverHeaders[key] = value.(string)
+			if s, ok := value.(string); ok {
+				serverHeaders[key] = s
+			}
 		}
 	}
 
@@ -162,7 +263,9 @@ func parse_http_method(methodData map[string]interface{}) *HTTPMethod {
 	clientHeaders := make(map[string]string)
 	if chRaw, ok := methodData["client_headers"].(map[string]interface{}); ok {
 		for key, value := range chRaw {
-			clientHeaders[key] = value.(string)
+			if s, ok := value.(string); ok {
+				clientHeaders[key] = s
+			}
 		}
 	}
 
@@ -181,7 +284,11 @@ func parse_http_method(methodData map[string]interface{}) *HTTPMethod {
 	uriConfigs := make(map[string]URIConfig)
 	if uriRaw, ok := methodData["uri"].(map[string]interface{}); ok {
 		for uriKey, uriData := range uriRaw {
-			uriMap := uriData.(map[string]interface{})
+			uriMap, ok := uriData.(map[string]interface{})
+			if !ok {
+				fmt.Printf("[!] kharon profile: skipping uri %q -- value is not an object\n", uriKey)
+				continue
+			}
 
 			// Split routes BEFORE parsing configs
 			routes := strings.FieldsFunc(uriKey, func(r rune) bool {
@@ -204,7 +311,10 @@ func parse_http_method(methodData map[string]interface{}) *HTTPMethod {
 					for _, cp := range cpRaw {
 						// Make deep copy of parameters
 						paramCopy := make(map[string]interface{})
-						paramMap := cp.(map[string]interface{})
+						paramMap, ok := cp.(map[string]interface{})
+						if !ok {
+							continue
+						}
 						for k, v := range paramMap {
 							paramCopy[k] = v
 						}
@@ -234,7 +344,10 @@ func parse_output_config(outputData interface{}) *OutputConfig {
 		return nil
 	}
 
-	outputMap := outputData.(map[string]interface{})
+	outputMap, ok := outputData.(map[string]interface{})
+	if !ok {
+		return nil
+	}
 	output := &OutputConfig{}
 
 	// Parse body
@@ -422,15 +535,18 @@ func (handler *HTTP) Start(ts Teamserver) error {
 
 	cfg := handler.Config
 
-	if cfg.ProfileContent == "" {
-		return fmt.Errorf("profile content is empty - cannot parse callback configuration")
+	fileContent, err := resolve_profile_content(cfg.ProfileContent)
+	if err != nil {
+		return err
 	}
+	fmt.Printf("[DEBUG] Kharon profile resolved: %d bytes\n", len(fileContent))
 
-	fileContent, err := base64.StdEncoding.DecodeString(cfg.ProfileContent)
-	fmt.Printf("callback file content %s\nlength: %d bytes\n", fileContent, len(fileContent))
+	callbacks, err := handler.parse_json_callback(string(fileContent))
+	if err != nil {
+		return fmt.Errorf("cannot parse profile: %w", err)
+	}
+	handler.Config.Callbacks = callbacks
 
-	handler.Config.Callbacks = handler.parse_json_callback(string(fileContent))
-	
 	fmt.Printf("[DEBUG] Parsed %d callbacks\n", len(handler.Config.Callbacks))
 
 	err = handler.validate_config_fmt(handler.Config) 

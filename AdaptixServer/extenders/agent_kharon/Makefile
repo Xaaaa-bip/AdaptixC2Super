@@ -1,8 +1,16 @@
 .PHONY: all plugin agent core beacon bundle clean help
 
+# 默认目标必须是 all，不是 plugin。本文件第一条真规则是 `plugin:`（下方），
+# 而 GNU make 的默认目标是「第一个不以点号开头的目标」—— .PHONY 不算。少了这行，
+# 裸 `make` 只构建 agent_kharon.so，`all: clean bundle` 中的 bundle 永不执行，
+# 于是 dist/ 里没有 src_beacon / src_loader / src_core / beacon_bin，
+# 运行期 LoadExtModule 与 pl_agent.go 的载荷路径全部读不到文件。
+# 与 beacon_agent/src_beacon/Makefile 的同名修复对称。
+.DEFAULT_GOAL := all
+
 GO := go
 GOFLAGS := -buildmode=plugin -ldflags="-s -w"
-GOEXPERIMENT := jsonv2,greenteagc
+GOEXPERIMENT :=
 DIST_DIR := dist
 SRC_SERVER := src_server
 SRC_BEACON := src_beacon

@@ -1,6 +1,7 @@
 package axscript
 
 import (
+	"AdaptixServer/core/utils/fsystem"
 	"AdaptixServer/core/utils/logs"
 	"encoding/base64"
 	"encoding/json"
@@ -51,6 +52,7 @@ type ScriptManager struct {
 	agentEngines       map[string]*ScriptEngine
 	userEngines        map[string]*ScriptEngine
 	axscriptEngines    map[string]*ScriptEngine
+	agentSchemas       map[string]map[string]interface{}
 	scriptInfos        []ScriptInfo
 	globalAllowedRoots []string
 }
@@ -63,6 +65,7 @@ func NewScriptManager(ts TeamserverBridge) *ScriptManager {
 		agentEngines:    make(map[string]*ScriptEngine),
 		userEngines:     make(map[string]*ScriptEngine),
 		axscriptEngines: make(map[string]*ScriptEngine),
+		agentSchemas:    make(map[string]map[string]interface{}),
 	}
 }
 
@@ -92,9 +95,11 @@ func (sm *ScriptManager) LoadAgentScript(agentName string, axScript string, list
 
 	for _, listenerType := range listeners {
 		sm.executeRegisterCommands(engine, agentName, listenerType)
+		sm.executeBuildSchema(engine, agentName, listenerType)
 	}
 	if len(listeners) == 0 {
 		sm.executeRegisterCommands(engine, agentName, "")
+		sm.executeBuildSchema(engine, agentName, "")
 	}
 	return nil
 }
@@ -279,6 +284,85 @@ func (sm *ScriptManager) executeRegisterCommands(engine *ScriptEngine, agentName
 	sm.extractCommandsFromResult(engine, agentName, listenerType, obj, "commands_windows", OsWindows)
 	sm.extractCommandsFromResult(engine, agentName, listenerType, obj, "commands_linux", OsLinux)
 	sm.extractCommandsFromResult(engine, agentName, listenerType, obj, "commands_macos", OsMac)
+}
+
+// executeBuildSchema reads the script's optional BuildSchema(listenerType) and
+// keeps the result as plain data.
+//
+// This exists because GenerateUI cannot be used server-side.  Every form.*
+// widget the engine hands out is a stub (bridge_stubs.go) whose value() returns
+// 0 and currentText() returns "" no matter what the operator typed, so a form
+// rendered from GenerateUI could never carry input back.  A function that
+// returns plain data has no such problem: goja exports it intact and it can be
+// sent to the browser as JSON.
+//
+// That is what lets the console render a build form without keeping a
+// hand-copied field table per agent -- the table is the thing that drifts out
+// of sync with the extenders.
+func (sm *ScriptManager) executeBuildSchema(engine *ScriptEngine, agentName string, listenerType string) {
+	engine.mu.Lock()
+	rt := engine.runtime
+
+	fn := rt.Get("BuildSchema")
+	if fn == nil || goja.IsUndefined(fn) {
+		engine.mu.Unlock()
+		// Not an error: an agent that has not migrated yet simply has no
+		// declaration, and the console falls back to its built-in table.
+		return
+	}
+
+	schemaFn, ok := goja.AssertFunction(fn)
+	if !ok {
+		engine.mu.Unlock()
+		logs.Error("", "BuildSchema is not a function in script for '%s'", agentName)
+		return
+	}
+
+	result, err := schemaFn(goja.Undefined(), rt.ToValue(listenerType))
+	engine.mu.Unlock()
+	if err != nil {
+		logs.Error("", "Error calling BuildSchema for '%s': %v", agentName, err)
+		return
+	}
+	if result == nil || goja.IsUndefined(result) || goja.IsNull(result) {
+		return
+	}
+
+	exported, ok := result.Export().(map[string]interface{})
+	if !ok {
+		logs.Error("", "BuildSchema for '%s' did not return an object", agentName)
+		return
+	}
+
+	sm.mu.Lock()
+	sm.agentSchemas[buildSchemaKey(agentName, listenerType)] = exported
+	sm.mu.Unlock()
+}
+
+func buildSchemaKey(agentName string, listenerType string) string {
+	return agentName + "|" + listenerType
+}
+
+// GetBuildSchemaJSON returns the build form an agent declared for a listener
+// type.  declared=false means the agent has not migrated to BuildSchema yet,
+// which is not an error -- the caller is expected to fall back.
+func (sm *ScriptManager) GetBuildSchemaJSON(agentName string, listenerType string) (jsonSchema string, declared bool, err error) {
+	sm.mu.RLock()
+	schema, ok := sm.agentSchemas[buildSchemaKey(agentName, listenerType)]
+	if !ok && listenerType != "" {
+		// A schema declared without a listener type covers every listener.
+		schema, ok = sm.agentSchemas[buildSchemaKey(agentName, "")]
+	}
+	sm.mu.RUnlock()
+
+	if !ok {
+		return "", false, nil
+	}
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return "", false, err
+	}
+	return string(data), true, nil
 }
 
 func (sm *ScriptManager) extractCommandsFromResult(engine *ScriptEngine, agentName string, listenerType string, obj *goja.Object, propName string, osType int) {
@@ -701,7 +785,34 @@ func (sm *ScriptManager) GetCommandsJSON() (string, error) {
 }
 
 // /---
-func (sm *ScriptManager) SetGlobalAllowedRoots(roots []string) {
+// SetGlobalAllowedRoots installs sandbox roots for file arguments
+// (addArgFile). Profile `extenders:`/`axscripts:` entries are FILE paths
+// (config.yaml / .axs) — the containing directory becomes the allowed root,
+// so an agent axs can read its own subdirectories (e.g. bofs/*.o).
+// Must be called BEFORE scripts are loaded (engines snapshot the roots).
+func (sm *ScriptManager) SetGlobalAllowedRoots(entries []string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	var roots []string
+	for _, e := range entries {
+		if e == "" {
+			continue
+		}
+		abs, err := filepath.Abs(e)
+		if err != nil {
+			continue
+		}
+		real := abs
+		if r, err := fsystem.ResolveRealPath(abs); err == nil {
+			real = r
+		}
+		root := real
+		if st, err := os.Stat(real); err == nil && !st.IsDir() {
+			root = filepath.Dir(real)
+		}
+		roots = append(roots, root)
+	}
 	sm.globalAllowedRoots = roots
 }
 

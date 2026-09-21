@@ -1,0 +1,3067 @@
+/* ============================================================
+   AdaptixWeb — 仪表皮肤：冷石墨底 + 青色强调 + 红色仅危险 + 绿仅状态点
+   ------------------------------------------------------------
+   配色全部来自 tokens.css，本文件只负责"把颜色放到哪个部件上"。
+   三条纪律（破坏它们界面就会重新变糊）：
+     1. 青 = 活的东西（实时 / 可交互 / 焦点）。不要拿它当装饰。
+     2. 红 = 危险，只此一职。选中态、强调态一律不用红。
+     3. 绿 = 状态点专用。绿是"机器在报状态"，不是"这个元素被高亮了"，
+        所以永远不做填充、不做边框、不做正文色。
+   终端绿（--term-ink / --term-ink-dim）只在 .term-out / .term-in 内部有效，
+   借到外壳上会变成"莫名其妙的绿"。
+   ------------------------------------------------------------
+   层叠说明（重要）：
+   @import 会被内联到 styles.css 顶部，因此本文件在构建产物中位于
+   tokens.css → motion.css → ops-hard.css 之后，但在 styles.css 主体规则
+   （即 OPS DECK 那段，见 styles.css 1543+）之前。也就是说：只靠“排在后面”
+   并不能赢下与 styles.css 主体同特异度的规则。
+   所以本文件所有选择器统一加前缀 `html:root[data-theme="dark"]`
+   （data-theme 恒为 dark，见 utils.ts loadTheme）：比 styles.css 里
+   `html[data-theme="dark"] X` 高一个层级、比裸选择器高两个层级，
+   无需滥用 !important 即可覆盖；仅在更早的层已对该属性用了
+   !important 时才镜像 !important（rail / lx-input / ops-search /
+   sdot.on 等）。
+   仅改颜色 / 背景 / 边框 / 阴影 / 辉光 / 透明度；布局尺寸一律不动。
+   新增装饰性伪元素只有两个：.ops::after（全壳 CRT 扫描线 + 暗角）、
+   .lx-card::after（登录卡扫描线 + 暗角）。
+   ============================================================ */
+
+/* ============================================================
+   1. 环境氛围 —— 冷色单色相晕（仅换色，保留原 keyframes）
+   ------------------------------------------------------------
+   上一版这里是红晕 + 绿晕两个互补色。互补色叠加会互相消色，
+   模糊之后出来就是一团浑浊的棕 —— 整页发闷的根因就在这两条。
+   现在只留同侧冷色相（青 + 蓝），深浅有别但不打架。
+   ============================================================ */
+
+html:root[data-theme="dark"] .ops > .ink-scape {
+  opacity: .8;
+}
+
+html:root[data-theme="dark"] .ink-wash {
+  filter: blur(56px);
+}
+
+html:root[data-theme="dark"] .ink-wash-a {
+  background: radial-gradient(circle at 30% 30%, var(--ambient-1), transparent 70%);
+}
+
+html:root[data-theme="dark"] .ink-wash-b {
+  background: radial-gradient(circle at 68% 62%, var(--ambient-2), transparent 72%);
+}
+
+html:root[data-theme="dark"] .ink-ridge {
+  background:
+    radial-gradient(120% 90% at 12% 100%, rgba(34, 211, 238, .12) 0%, transparent 55%),
+    radial-gradient(90% 80% at 48% 110%, rgba(56, 89, 140, .16) 0%, transparent 52%),
+    radial-gradient(110% 95% at 86% 100%, rgba(34, 211, 238, .1) 0%, transparent 58%);
+}
+
+html:root[data-theme="dark"] .ink-mist {
+  opacity: .28;
+  background:
+    linear-gradient(105deg,
+      transparent 28%,
+      rgba(56, 89, 140, .16) 46%,
+      rgba(34, 211, 238, .12) 58%,
+      transparent 72%);
+}
+
+/* 登录页氛围底 */
+html:root[data-theme="dark"] .lx-ambient {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(34, 211, 238, .16), transparent 62%),
+    radial-gradient(ellipse 40% 30% at 100% 100%, rgba(56, 89, 140, .2), transparent 55%),
+    radial-gradient(ellipse 48% 34% at 0% 100%, rgba(34, 211, 238, .1), transparent 58%);
+}
+
+/* ============================================================
+   2. 全壳 CRT 覆盖层（装饰伪元素 #1）
+   z-index 45：高于 .rail(30) / .ops-main(1)，低于 .mask(1000) /
+   .toast-host(2000) / .palette-mask(3000)，弹层不受影响。
+   ============================================================ */
+
+html:root[data-theme="dark"] .ops::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+  opacity: .5;
+  background-image:
+    repeating-linear-gradient(to bottom,
+      var(--crt-line) 0,
+      var(--crt-line) 1px,
+      transparent 1px,
+      transparent 3px),
+    radial-gradient(ellipse 118% 96% at 50% 50%, transparent 52%, rgba(0, 0, 0, .6) 100%);
+}
+
+/* ============================================================
+   3. 左侧轨道 .rail
+   ============================================================ */
+
+html:root[data-theme="dark"] .rail {
+  background: #0b0e13 !important;
+  color: var(--ink) !important;
+  border-right: 1px solid rgba(34, 211, 238, .14);
+}
+
+html:root[data-theme="dark"] .rail-brand {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(34, 211, 238, .16) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+}
+
+html:root[data-theme="dark"] .rail-brand:hover {
+  background: rgba(34, 211, 238, .07) !important;
+  border-color: rgba(34, 211, 238, .16) !important;
+  color: var(--accent) !important;
+}
+
+html:root[data-theme="dark"] .rail-brand-txt {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  transition: color .12s ease, text-shadow .12s ease;
+}
+
+html:root[data-theme="dark"] .rail-brand:hover .rail-brand-txt {
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(34, 211, 238, .55);
+}
+
+/* 轨道徽标载体（那个圆角方框）。里面的 >_ 字形由 1914 行那组统一管，
+   这里只管框本身。 */
+html:root[data-theme="dark"] .rail-mark {
+  background: #0a0d11;
+  border: 1px solid rgba(34, 211, 238, .45);
+  box-shadow: 0 0 10px rgba(34, 211, 238, .26), inset 0 0 6px rgba(0, 0, 0, .85);
+}
+
+html:root[data-theme="dark"] .rail-mark i {
+  background: linear-gradient(90deg, var(--accent) 50%, var(--glitch-m) 50%);
+  box-shadow: 0 0 6px rgba(34, 211, 238, .3);
+}
+
+html:root[data-theme="dark"] .rail-mark i::before {
+  background: var(--accent);
+}
+
+html:root[data-theme="dark"] .rail-mark i::after {
+  background: var(--accent);
+}
+
+html:root[data-theme="dark"] .rail-section.muted-sec {
+  opacity: .78;
+}
+
+html:root[data-theme="dark"] .rail-foot {
+  border-top: 1px solid rgba(34, 211, 238, .12);
+}
+
+/* 轨按钮 */
+html:root[data-theme="dark"] .rail .rail-item {
+  color: var(--ink-2) !important;
+  -webkit-text-fill-color: var(--ink-2) !important;
+  box-shadow: none !important;
+}
+
+html:root[data-theme="dark"] .rail .rail-item:hover {
+  background: rgba(34, 211, 238, .08) !important;
+  color: var(--ink) !important;
+  -webkit-text-fill-color: var(--ink) !important;
+}
+
+html:root[data-theme="dark"] .rail .rail-item.active {
+  background: rgba(34, 211, 238, .1) !important;
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent) !important;
+  box-shadow: inset 0 0 22px rgba(34, 211, 238, .09) !important;
+}
+
+/* 激活态左侧 2px 青条（原为白条，仅换色 + 辉光） */
+html:root[data-theme="dark"] .rail .rail-item.active::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(34, 211, 238, .75);
+}
+
+/* 轨图标（含内联 svg，原为写死 #f2f2f0） */
+html:root[data-theme="dark"] .rail-ico {
+  color: var(--ink-2) !important;
+  -webkit-text-fill-color: var(--ink-2) !important;
+}
+
+html:root[data-theme="dark"] .rail-ico svg {
+  stroke: var(--ink-2) !important;
+  color: var(--ink-2) !important;
+}
+
+html:root[data-theme="dark"] .rail-ico svg [fill="currentColor"] {
+  fill: var(--ink-2) !important;
+}
+
+html:root[data-theme="dark"] .rail-item:hover .rail-ico,
+html:root[data-theme="dark"] .rail-item:hover .rail-ico svg {
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent) !important;
+  stroke: var(--accent) !important;
+}
+
+html:root[data-theme="dark"] .rail-item:hover .rail-ico svg [fill="currentColor"] {
+  fill: var(--accent) !important;
+}
+
+html:root[data-theme="dark"] .rail-item.active .rail-ico,
+html:root[data-theme="dark"] .rail-item.active .rail-ico svg {
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent) !important;
+  stroke: var(--accent) !important;
+}
+
+html:root[data-theme="dark"] .rail-item.active .rail-ico svg [fill="currentColor"] {
+  fill: var(--accent) !important;
+}
+
+/* 角标：青描边 */
+html:root[data-theme="dark"] .rail-badge {
+  background: rgba(10, 13, 17, .92) !important;
+  border: 1px solid rgba(34, 211, 238, .55) !important;
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent) !important;
+  box-shadow: 0 0 8px rgba(34, 211, 238, .24) !important;
+  /* styles.css 里这个徽章写死 font-size: 9px / height: 14px。
+     9px 已经是"看得见但不打算让人读"的字号了，而它承载的是 454、70、5 这种
+     计数 —— 恰恰是操作员扫侧栏时唯一要读的东西。14px 高的盒子里再扣掉
+     上下各 1px 描边，实际字面只剩 12px。整条侧栏 16 个视图全都在，
+     所以这不是个别页面的毛病。抬到 10.5px / 15px：还是徽章的体量，
+     但能读了。line-height 跟着 height 走，免得 baseline 把字挤出圆角。 */
+  font-size: 10.5px !important;
+  height: 15px !important;
+  min-width: 15px !important;
+  line-height: 13px !important;
+}
+
+html:root[data-theme="dark"] .rail-label {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  letter-spacing: .02em !important;
+}
+
+/* ============================================================
+   4. 登录门 .lx
+   ============================================================ */
+
+html:root[data-theme="dark"] .lx {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .lx-card {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  border-top: 1px solid var(--accent);
+  box-shadow: var(--shadow-float);
+}
+
+/* 登录卡 CRT 扫描线 + 暗角（装饰伪元素 #2） */
+html:root[data-theme="dark"] .lx-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: .55;
+  background-image:
+    repeating-linear-gradient(to bottom,
+      var(--crt-line) 0,
+      var(--crt-line) 1px,
+      transparent 1px,
+      transparent 3px),
+    radial-gradient(ellipse 120% 100% at 50% 40%, transparent 55%, rgba(0, 0, 0, .5) 100%);
+}
+
+html:root[data-theme="dark"] .lx-mark {
+  background: #0a0d11;
+  border: 1px solid rgba(34, 211, 238, .45);
+  box-shadow: 0 0 14px rgba(34, 211, 238, .24), inset 0 0 8px rgba(0, 0, 0, .85);
+}
+
+html:root[data-theme="dark"] .lx-mark span {
+  background: linear-gradient(90deg, var(--accent) 50%, var(--glitch-m) 50%);
+}
+
+html:root[data-theme="dark"] .lx-mark span::before {
+  background: var(--accent);
+}
+
+html:root[data-theme="dark"] .lx-mark span::after {
+  background: var(--accent);
+}
+
+html:root[data-theme="dark"] .lx-name {
+  font-family: var(--mono);
+  letter-spacing: .06em;
+  color: var(--ink);
+  text-shadow: 0 0 12px rgba(34, 211, 238, .35);
+}
+
+html:root[data-theme="dark"] .lx-sub {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  letter-spacing: .1em;
+}
+
+html:root[data-theme="dark"] .lx-label {
+  font-family: var(--mono);
+  color: var(--ink-2);
+  letter-spacing: .04em;
+}
+
+html:root[data-theme="dark"] .lx-input {
+  background: #0e1117 !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+  caret-color: var(--accent);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .lx-input::placeholder {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .lx-input:focus {
+  border-color: rgba(34, 211, 238, .6) !important;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, .35) !important;
+}
+
+html:root[data-theme="dark"] .lx-textbtn {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+html:root[data-theme="dark"] .lx-textbtn:hover {
+  color: var(--accent);
+  background: rgba(34, 211, 238, .1);
+}
+
+/* 「服务器设置」是个折叠按钮，但它的样式和上面的字段标签（用户名/密码）
+   完全一样 —— 用户看不出这里能点。加一个 ▸/▾ 折角标记，并让它只占
+   文字宽度，这样点区跟着文字走，不会有一条隐形的整行热区。
+   展开态用 :has(.lx-advbox) 读；不支持 :has() 的浏览器会退化成
+   折角不翻转，但标记本身还在，不会更糟。 */
+html:root[data-theme="dark"] .lx-textbtn.lx-adv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  padding: 0 8px;
+  color: var(--ink-2);
+}
+html:root[data-theme="dark"] .lx-textbtn.lx-adv::before {
+  content: "▸";
+  font-size: 9px;
+  line-height: 1;
+  color: var(--accent);
+}
+html:root[data-theme="dark"] .lx-form:has(.lx-advbox) .lx-adv::before {
+  content: "▾";
+}
+html:root[data-theme="dark"] .lx-textbtn.lx-adv:hover {
+  color: var(--accent);
+  background: rgba(34, 211, 238, .08);
+}
+
+html:root[data-theme="dark"] .lx-submit {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  letter-spacing: .12em;
+  box-shadow: 0 0 18px rgba(34, 211, 238, .24);
+}
+
+html:root[data-theme="dark"] .lx-submit:hover:not(:disabled) {
+  background: #67e8f9;
+  border-color: #67e8f9;
+  color: var(--accent-ink);
+  box-shadow: 0 0 26px rgba(34, 211, 238, .42);
+}
+
+html:root[data-theme="dark"] .lx-err {
+  /* 报错文本。这里被批量换色脚本刷成过青色 —— 错误永远用红。 */
+  color: var(--danger);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .lx-foot {
+  border-top: 1px solid var(--line-2);
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .lx-foot kbd {
+  background: #0b0e13;
+  border: 1px solid var(--line);
+  color: var(--accent);
+}
+
+/* ============================================================
+   5. 顶栏 / 标签 / 底栏 / 连接芯片
+   ============================================================ */
+
+html:root[data-theme="dark"] .ops-top {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+html:root[data-theme="dark"] .ops-title,
+html:root[data-theme="dark"] .ops-page {
+  font-family: var(--mono);
+  color: var(--ink);
+  letter-spacing: .01em;
+}
+
+html:root[data-theme="dark"] .ops-target {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .ops-search {
+  background: #0e1117 !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink-3) !important;
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .ops-search:hover {
+  border-color: rgba(34, 211, 238, .45) !important;
+  color: var(--ink-2) !important;
+}
+
+html:root[data-theme="dark"] .ops-pill {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html:root[data-theme="dark"] .ops-pill .signal {
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(34, 211, 238, .45);
+}
+
+html:root[data-theme="dark"] .ops-pill .dim {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .ops-user {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+/* 顶栏幽灵按钮 hover：红调 */
+html:root[data-theme="dark"] .ops-top button.ghost:hover,
+html:root[data-theme="dark"] .ops-tabs button.ghost:hover,
+html:root[data-theme="dark"] .ops-status button.ghost:hover {
+  background: rgba(34, 211, 238, .1);
+  color: var(--accent);
+}
+
+/* 连接芯片 */
+html:root[data-theme="dark"] .conn-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+
+html:root[data-theme="dark"] .conn-chip .conn-title {
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .conn-chip .conn-sub {
+  color: var(--ink-3);
+}
+
+/* 实时连接胶囊。
+   原来这里外框是青的、标题也是青的，只有中间那个点是绿的 ——
+   同一个"实时"状态在一个胶囊里用了两种颜色，读起来是打架的。
+   改成指示灯的逻辑：外壳中性，状态完全由那个绿点表达
+   （点外面那圈扩散环也是绿的，不再用青色）。
+   青不再出现在这里，是因为"活"这件事已经由绿点说清楚了，
+   再说一遍只是噪音。 */
+html:root[data-theme="dark"] .conn-chip.is-live {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-live .conn-dot {
+  background: var(--live);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-live .conn-dot::after {
+  border-color: rgba(52, 211, 153, .3);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-live .conn-title {
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-live .conn-sub {
+  /* 这里原来用的是 --term-ink-dim（终端绿）。终端绿是"输出文本"的语义，
+     借到顶栏小字上就成了又一处莫名的绿。次要文字用中性灰。 */
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-rest,
+html:root[data-theme="dark"] .conn-chip.is-sync {
+  background: rgba(255, 184, 77, .1);
+  border-color: rgba(255, 184, 77, .35);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-rest .conn-title,
+html:root[data-theme="dark"] .conn-chip.is-sync .conn-title {
+  color: var(--warn);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-rest .conn-sub,
+html:root[data-theme="dark"] .conn-chip.is-sync .conn-sub {
+  color: rgba(255, 184, 77, .75);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-off {
+  background: var(--surface-2);
+  border-color: rgba(255, 77, 94, .22);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-off .conn-dot {
+  background: transparent;
+  border: 1.5px solid var(--accent);
+}
+
+html:root[data-theme="dark"] .conn-chip.is-off .conn-title {
+  color: var(--ink-3);
+}
+
+/* 页签：激活红下划线 */
+html:root[data-theme="dark"] .ops-tabs {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+html:root[data-theme="dark"] .ops-tab {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .ops-tab:hover {
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .ops-tab.active {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .ops-tab.active::after {
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(34, 211, 238, .55);
+}
+
+html:root[data-theme="dark"] .ops-tab .x {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .ops-tab .x:hover {
+  background: rgba(34, 211, 238, .16);
+  color: var(--accent);
+}
+
+/* 底栏状态条 */
+html:root[data-theme="dark"] .ops-status {
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .ops-status .vsep {
+  background: rgba(34, 211, 238, .2);
+}
+
+html:root[data-theme="dark"] .ops-status .ok {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .ops-status .warn {
+  color: var(--warn);
+}
+
+html:root[data-theme="dark"] .ops-status-note {
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .ops-status-counts {
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .chord-hint {
+  color: var(--accent);
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .28);
+}
+
+/* ============================================================
+   6. 终端
+   ============================================================ */
+
+html:root[data-theme="dark"] .term {
+  background: var(--term-bg);
+  color: var(--term-ink);
+  border: 1px solid rgba(34, 211, 238, .16);
+}
+
+html:root[data-theme="dark"] .term-tabs {
+  background: #0b0e13;
+  border-bottom: 1px solid rgba(34, 211, 238, .16);
+}
+
+html:root[data-theme="dark"] .term-tabs .t {
+  color: var(--ink-3);
+  border-right: 1px solid rgba(34, 211, 238, .1);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+html:root[data-theme="dark"] .term-tabs .t:hover {
+  color: var(--term-ink);
+}
+
+html:root[data-theme="dark"] .term-tabs .t.active {
+  background: var(--term-bg);
+  color: var(--term-ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+html:root[data-theme="dark"] .term-tabs .t .x {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .term-tabs .t .x:hover {
+  color: var(--accent);
+  background: rgba(34, 211, 238, .2);
+}
+
+html:root[data-theme="dark"] .term-out {
+  background-color: var(--term-bg);
+  /* 终端内扫描线用背景层实现，不再新增第三个伪元素 */
+  background-image:
+    repeating-linear-gradient(to bottom,
+      var(--crt-line) 0,
+      var(--crt-line) 1px,
+      transparent 1px,
+      transparent 3px);
+  color: var(--term-ink);
+  font-family: var(--mono);
+  text-shadow: 0 0 6px rgba(134, 239, 172, .16);
+}
+
+html:root[data-theme="dark"] .term-out .ln.local {
+  color: var(--term-ink-dim);
+}
+
+html:root[data-theme="dark"] .term-out .ln.ok {
+  color: var(--term-ink);
+}
+
+html:root[data-theme="dark"] .term-out .ln.err {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .term-out .ln.task {
+  color: #67e8f9;
+}
+
+html:root[data-theme="dark"] .term-out .ln.info {
+  color: #8ba3c7;
+}
+
+html:root[data-theme="dark"] .term-out .muted {
+  color: var(--term-ink-dim);
+}
+
+html:root[data-theme="dark"] .term-out ::selection {
+  background: rgba(134, 239, 172, .2);
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] ::selection {
+  background: rgba(34, 211, 238, .24);
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .term-in {
+  background: #0b0e13;
+  border-top: 1px solid rgba(34, 211, 238, .16);
+}
+
+html:root[data-theme="dark"] .term-in .ps1 {
+  color: var(--live);
+  font-family: var(--mono);
+  text-shadow: 0 0 8px rgba(34, 211, 238, .35);
+}
+
+html:root[data-theme="dark"] .term-in input {
+  background: #0e1117;
+  border-color: rgba(34, 211, 238, .2);
+  color: var(--term-ink);
+  caret-color: var(--term-ink);
+}
+
+html:root[data-theme="dark"] .term-in input::placeholder {
+  color: var(--term-ink-dim);
+}
+
+html:root[data-theme="dark"] .term-in input:focus {
+  border-color: rgba(34, 211, 238, .55);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, .22);
+}
+
+/* 终端快捷条 */
+html:root[data-theme="dark"] .term-quick button {
+  background: rgba(34, 211, 238, .05);
+  border: 1px solid rgba(34, 211, 238, .22);
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .term-quick button:hover {
+  background: rgba(34, 211, 238, .13);
+  border-color: rgba(34, 211, 238, .45);
+  color: var(--term-ink);
+}
+
+html:root[data-theme="dark"] .term-resizer:hover,
+html:root[data-theme="dark"] .term-resizer.active {
+  background: rgba(34, 211, 238, .4);
+}
+
+/* PTY 宿主底色 */
+html:root[data-theme="dark"] .pty-host {
+  background: var(--term-bg);
+}
+
+html:root[data-theme="dark"] .pty-foot {
+  background: var(--surface);
+  border-top: 1px solid var(--line-2);
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .vnc-frame {
+  background: #0a0d11;
+}
+
+/* ============================================================
+   7. 按钮
+   ============================================================ */
+
+html:root[data-theme="dark"] button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: 0 0 14px rgba(34, 211, 238, .2);
+}
+
+html:root[data-theme="dark"] button.primary:hover:not(:disabled) {
+  background: #67e8f9;
+  border-color: #67e8f9;
+  color: var(--accent-ink);
+  box-shadow: 0 0 22px rgba(34, 211, 238, .38);
+}
+
+/* 危险按钮：这里就该是实心红。
+   确认框里的"删除"是需要被看见的破坏性动作，做弱反而危险。
+   注意别被批量改色脚本刷成青的 —— 青是"活的"，红是"会出事的"，
+   这两个语义不能混。 */
+html:root[data-theme="dark"] button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+  font-weight: 600;
+  box-shadow: 0 0 14px rgba(255, 77, 94, .3);
+}
+
+html:root[data-theme="dark"] button.danger:hover:not(:disabled) {
+  background: #ff6b7a;
+  border-color: #ff6b7a;
+  color: var(--danger-ink);
+  box-shadow: 0 0 22px rgba(255, 77, 94, .5);
+}
+
+html:root[data-theme="dark"] button.ghost {
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] button.ghost:hover {
+  background: rgba(34, 211, 238, .1);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+html:root[data-theme="dark"] button.ghost.danger,
+html:root[data-theme="dark"] button.danger.ghost {
+  color: var(--danger);
+}
+
+html:root[data-theme="dark"] button.ghost.danger:hover,
+html:root[data-theme="dark"] button.danger.ghost:hover {
+  background: rgba(255, 77, 94, .12);
+  color: var(--danger);
+}
+
+html:root[data-theme="dark"] button:disabled {
+  opacity: .38;
+}
+
+html:root[data-theme="dark"] .home-actions button {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .home-actions button:hover {
+  background: var(--row-hover);
+  border-color: rgba(34, 211, 238, .35);
+}
+
+/* 表单控件底色 / 焦点
+   :where() 让 :not() 不参与特异度 —— 保证 .term-in input / .palette-input-row input
+   等更具体的局部规则仍能覆盖这里（选择器仍强于 styles.css 的裸 input 规则）。 */
+html:root[data-theme="dark"] input:where(:not([type="checkbox"]):not([type="radio"])),
+html:root[data-theme="dark"] select,
+html:root[data-theme="dark"] textarea {
+  background: #0e1117;
+  border-color: var(--line);
+  color: var(--ink);
+  caret-color: var(--accent);
+}
+
+html:root[data-theme="dark"] input:where(:not([type="checkbox"]):not([type="radio"])):focus,
+html:root[data-theme="dark"] select:focus,
+html:root[data-theme="dark"] textarea:focus {
+  border-color: rgba(34, 211, 238, .5);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .18);
+}
+
+html:root[data-theme="dark"] input[type="checkbox"],
+html:root[data-theme="dark"] input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* ============================================================
+   8. 表格
+   ============================================================ */
+
+html:root[data-theme="dark"] th {
+  background: var(--th-bg);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+
+html:root[data-theme="dark"] .sess-table th,
+html:root[data-theme="dark"] .fm-table th,
+html:root[data-theme="dark"] .pm-table th {
+  background: var(--th-bg);
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .fm-table th.sortable:hover {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+html:root[data-theme="dark"] .fm-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+html:root[data-theme="dark"] tbody tr.selected td,
+html:root[data-theme="dark"] .fm-table tbody tr.selected td {
+  background: var(--row-selected);
+}
+
+html:root[data-theme="dark"] tbody tr.selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* 在线 / 离线 指示点
+   ─────────────────────────────────────────────────────────
+   原来这里是两个"双色"的点，两个都读错：
+
+   .sdot.on   绿芯 + 青色光晕。一个状态用了两个色相 —— 跟 .conn-chip.is-live
+              一模一样的毛病，而且它用更高的特异度盖掉了 motion.css 里
+              本来就写对的绿色光晕。现在统一成绿：光晕只让绿点"发亮"，
+              不引入第二个颜色。
+
+   .sdot.off  半透明红填充 + 1.5px 青色描边。7px 的圆，描边两边各吃掉
+              1.5px，只剩 4px 填色，实际渲染出来是"青圈套一个暗红心"，
+              糊成一团（放大看才认得出）。语义也是反的：
+                青 = 活的东西，却套在"离线"上；
+                红 = 危险，可这台机器上 454 个主机里 453 个是离线的 ——
+                离线是常态不是事故。铺 453 个红点只会让人对红色脱敏，
+                真出事的时候那个红反而没人看。
+              所以离线 = "活的"的反面 = 不带颜色：中性灰、不发光、不描边。
+              扫描列表时绿点自己会跳出来，这就够了。
+
+   .sdot.late 心跳迟到的机器 —— 这个才真值得报警，给琥珀色。
+              顺便把硬编码的 #b8860b 换成 --warn：原来那个太暗，
+              7px 的点摆在深底上基本看不见。 */
+html:root[data-theme="dark"] .sdot {
+  background: var(--ink-3);
+  border: 0;
+  box-shadow: none;
+}
+
+html:root[data-theme="dark"] .sdot.on {
+  background: var(--live) !important;
+  box-shadow: 0 0 0 3px var(--live-soft), 0 0 8px rgba(52, 211, 153, .45) !important;
+}
+
+html:root[data-theme="dark"] .sdot.off {
+  background: var(--ink-3);
+  opacity: .55;
+  border: 0;
+  box-shadow: none;
+}
+
+html:root[data-theme="dark"] .sdot.late {
+  background: var(--warn) !important;
+  border: 0;
+  box-shadow: 0 0 0 3px var(--warn-soft) !important;
+}
+
+html:root[data-theme="dark"] .dot.on {
+  background: var(--live) !important;
+  box-shadow: 0 0 0 3px var(--live-soft) !important;
+}
+
+/* ============================================================
+   9. 弹层 / 提示 / 右键菜单
+   ============================================================ */
+
+html:root[data-theme="dark"] .mask {
+  background: rgba(3, 7, 5, .72);
+}
+
+html:root[data-theme="dark"] .dlg {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-float);
+}
+
+html:root[data-theme="dark"] .dlg h2,
+html:root[data-theme="dark"] .dlg-hd h2 {
+  font-family: var(--mono);
+  color: var(--ink);
+  letter-spacing: .02em;
+  border-left: 2px solid var(--accent);
+  padding-left: 9px;
+}
+
+html:root[data-theme="dark"] .dlg-foot {
+  border-top: 1px solid var(--line-2);
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .kv .k {
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .detail-box {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .detail-box .detail-hd {
+  color: var(--ink-2);
+  border-bottom-color: var(--line-2);
+}
+
+html:root[data-theme="dark"] .ctx {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-float);
+}
+
+html:root[data-theme="dark"] .ctx button {
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .ctx button:hover {
+  background: rgba(34, 211, 238, .1);
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .ctx .danger,
+html:root[data-theme="dark"] .ctx button.danger {
+  color: var(--danger);
+}
+
+html:root[data-theme="dark"] .ctx .danger:hover,
+html:root[data-theme="dark"] .ctx button.danger:hover {
+  background: rgba(255, 77, 94, .12);
+  color: var(--danger);
+}
+
+html:root[data-theme="dark"] .ctx .sep {
+  background: var(--line-2);
+}
+
+html:root[data-theme="dark"] .ctx-subhd {
+  color: var(--ink-3);
+}
+
+/* Toast：左色条 */
+html:root[data-theme="dark"] .toast {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  box-shadow: var(--shadow-float);
+}
+
+html:root[data-theme="dark"] .toast.ok {
+  border-left-color: var(--live);
+}
+
+html:root[data-theme="dark"] .toast.err {
+  border-left-color: var(--accent);
+}
+
+html:root[data-theme="dark"] .toast.warn {
+  border-left-color: var(--warn);
+}
+
+html:root[data-theme="dark"] .toast.info {
+  border-left-color: var(--accent-2);
+}
+
+html:root[data-theme="dark"] .toast .toast-text {
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .toast .toast-x {
+  color: var(--ink-3);
+}
+
+/* 空态 */
+html:root[data-theme="dark"] .empty {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .empty .big {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .empty-mark {
+  background: linear-gradient(90deg, var(--accent) 50%, var(--glitch-m) 50%);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, .3), 0 0 12px rgba(34, 211, 238, .22);
+}
+
+html:root[data-theme="dark"] .empty-mark::before {
+  background: var(--accent);
+}
+
+html:root[data-theme="dark"] .empty-mark::after {
+  background: var(--accent);
+}
+
+html:root[data-theme="dark"] .home-empty,
+html:root[data-theme="dark"] .sess-empty,
+html:root[data-theme="dark"] .fm-empty,
+html:root[data-theme="dark"] .fm-loading,
+html:root[data-theme="dark"] .vnc-empty {
+  color: var(--ink-3);
+}
+
+/* ============================================================
+   10. 状态片 / 快捷键 / 提示条
+   ============================================================ */
+
+html:root[data-theme="dark"] .st {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .st.on {
+  color: var(--live);
+  background: var(--live-soft);
+  border-color: rgba(34, 211, 238, .45);
+}
+
+html:root[data-theme="dark"] .st.off {
+  color: var(--ink-3);
+  background: rgba(255, 77, 94, .06);
+  border-color: rgba(255, 77, 94, .28);
+}
+
+html:root[data-theme="dark"] .tag.online {
+  color: var(--live);
+  background: var(--live-soft);
+  border-color: rgba(34, 211, 238, .35);
+}
+
+html:root[data-theme="dark"] .tag.offline {
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .tag.listen {
+  color: var(--accent);
+  background: var(--accent-soft);
+  /* styles.css:217 这条本来就是 border-color: transparent，
+     这里被写成了 rgba(255,77,94,.3) —— 一个和危险色同色的边框，
+     配在"运行中"的青色徽章上。红色在这一格不承载任何语义：
+     Listen 是正常状态，不是事故。改回透明，和 .tag.online 的处理对齐。 */
+  border-color: transparent;
+}
+
+/* 监听器操作列。
+   原来这格的布局写在 JSX 的 inline style 里（display:flex; gap:6; flexWrap:wrap），
+   现在挪到这里，顺便给它一个可选择的类名 —— 下面那条 danger 规则需要一个作用域，
+   不能全局改 button.danger（弹窗里的确认按钮还要保持实心红）。 */
+html:root[data-theme="dark"] .lst-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* 「停止」不再常驻实心红。
+   一行一个实心红块，5 行就是 5 块 —— 红色从"这里有危险"退化成
+   "表格右端的装饰条"，跟之前把离线点从红色改掉是同一个道理：
+   铺满的红会让人对红脱敏，真出事时那个红反而没人看。
+   这一页真正的危险分级是 暂停(可恢复) < 停止(不可逆)，只有停止该带红。
+   做法沿用本文件里 .ctx .danger 已经用过的：默认只给红描边 + 红字，
+   指针移上去才填实。危险等级还在，但不再靠一整列实心块喊。 */
+html:root[data-theme="dark"] .lst-actions button.danger {
+  background: transparent;
+  border-color: rgba(255, 77, 94, .45);
+  color: var(--danger);
+}
+html:root[data-theme="dark"] .lst-actions button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+
+/* 表格行内的破坏性操作：全局停用实心红。
+   ─────────────────────────────────────────────────────────
+   上面那条 .lst-actions 规则只修了监听器一页，但同一个毛病在
+   下载(Downloads:142) / 隧道(Tunnels:207) / 截图(Screenshots:132) /
+   凭据(Credentials:79) / 目标(Targets:72) 都在 —— 一行一个实心红块，
+   红色从"这里有危险"退化成"表格右端的装饰条"。只修一页等于让同一个
+   抱怨在另外四页重新出现一次，所以这里修的是**不变量**：
+   「表格行内的破坏性操作不该是实心红」。
+
+   作用域选 tbody td 是有依据的，不是图省事：
+   弹窗确认按钮（.mask > .dlg）和右键菜单（.ctx）必须保持实心红 —— 它们是
+   「确认这个不可逆动作」的最后一道闸，红色在那里是有效的。实测这几个页面里
+   两类按钮的 DOM 位置正好分得开：**所有** .dlg/.ctx 的 danger 按钮都渲染在
+   </table> 之后（Downloads:163、Hosts:421 等），不在任何 tbody 里。
+   所以 tbody td 这个作用域能精确命中行内按钮、且碰不到闸门按钮。 */
+html:root[data-theme="dark"] .ops table tbody td button.danger {
+  background: transparent;
+  border-color: rgba(255, 77, 94, .45);
+  color: var(--danger);
+}
+html:root[data-theme="dark"] .ops table tbody td button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+
+html:root[data-theme="dark"] .tag.warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: rgba(255, 184, 77, .3);
+}
+
+/* 任务状态的两种常态。
+   done    —— 任务完成。这是绝大多数行的状态（实测一屏 47 行全是它）。
+              常态不上色：一旦给常态一个颜色，颜色就不再是信号，
+              需要跳出来的那一行反而看不见了。
+   running —— 执行中。青 = 活的/进行中，跟全站"焦点/实时"用同一个色；
+              原来用的是 .tag.warn（琥珀），可"正在跑"不是警告，
+              琥珀该留给真正的异常。 */
+html:root[data-theme="dark"] .tag.done {
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+html:root[data-theme="dark"] .tag.running {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+html:root[data-theme="dark"] .kbd {
+  background: #0b0e13;
+  border: 1px solid var(--line);
+  color: var(--accent);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .6);
+}
+
+html:root[data-theme="dark"] .hint {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .hint code {
+  font-family: var(--mono);
+  color: var(--accent);
+  background: transparent;
+  border: none;
+}
+
+html:root[data-theme="dark"] .hint.muted-hint {
+  background: var(--surface);
+  border-color: var(--line);
+  border-left-color: rgba(34, 211, 238, .3);
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .hint.warn-hint {
+  background: rgba(255, 184, 77, .08);
+  border-color: rgba(255, 184, 77, .28);
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+html:root[data-theme="dark"] .result-box {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .result-box.ok {
+  background: rgba(34, 211, 238, .1);
+  border-color: rgba(34, 211, 238, .3);
+  color: var(--live);
+}
+
+html:root[data-theme="dark"] .result-box.err {
+  background: rgba(255, 77, 94, .1);
+  border-color: rgba(255, 77, 94, .3);
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .field-hint,
+html:root[data-theme="dark"] .cell-sub,
+html:root[data-theme="dark"] .fm-appsub,
+html:root[data-theme="dark"] .fm-crumb-sep {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .fm-crumb-btn:hover,
+html:root[data-theme="dark"] .fm-tree-caret:hover {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .fm-tree-item:hover {
+  background: var(--row-hover);
+}
+
+html:root[data-theme="dark"] .fm-tree-item.active {
+  background: var(--row-selected);
+}
+
+html:root[data-theme="dark"] .fm-path,
+html:root[data-theme="dark"] .fm-kv span {
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .fm-detail-ico {
+  background: rgba(34, 211, 238, .08);
+  border-color: var(--line-2);
+}
+
+html:root[data-theme="dark"] .fm-preview-body {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .pm-search,
+html:root[data-theme="dark"] .sess-search {
+  background: #0e1117;
+  border-color: var(--line);
+}
+
+/* ============================================================
+   11. 滚动条（webkit）
+   ============================================================ */
+
+html:root[data-theme="dark"] ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html:root[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0b0e13;
+}
+
+html:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  /* 原来是 #1e2430，压在 #0b0e13 的轨道上 —— 对比度约 1.3:1，等于隐形。
+     后果是 BOF/日志/任务这些真的会滚的页面，操作员唯一"下面还有内容"的
+     线索就是"最后一行被切了一半"；滚动条存在但看不见，等于没有。
+     滚动条是 UI 组件，WCAG 1.4.11 要 3:1；#5b6675 对轨道实测 3.25:1，
+     在深色控制台里仍是克制的一根，但能看见了。 */
+  background: #5b6675;
+  border-radius: 5px;
+}
+
+html:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, .4);
+}
+
+html:root[data-theme="dark"] ::-webkit-scrollbar-corner {
+  background: #0b0e13;
+}
+
+html:root[data-theme="dark"] .term-out::-webkit-scrollbar-track,
+html:root[data-theme="dark"] .term-tabs::-webkit-scrollbar-track {
+  background: var(--term-bg);
+}
+
+html:root[data-theme="dark"] .term-out::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, .22);
+}
+
+html:root[data-theme="dark"] .term-out::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, .45);
+}
+
+/* ============================================================
+   12. 命令面板 / 快捷键面板
+   ============================================================ */
+
+html:root[data-theme="dark"] .palette-mask {
+  background: rgba(3, 7, 5, .68);
+}
+
+html:root[data-theme="dark"] .palette {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-float);
+}
+
+html:root[data-theme="dark"] .palette-input-row {
+  border-bottom: 1px solid var(--line-2);
+}
+
+html:root[data-theme="dark"] .palette-ico {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .palette-input-row input {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  caret-color: var(--accent);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .palette-input-row input:focus {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+html:root[data-theme="dark"] .palette-input-row input::placeholder {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .palette-group {
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .palette-item {
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .palette-item:hover,
+html:root[data-theme="dark"] .palette-item.active {
+  background: rgba(34, 211, 238, .12);
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] .palette-hint {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .palette-empty {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .palette-foot {
+  border-top: 1px solid var(--line-2);
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .shortcut-row {
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+
+html:root[data-theme="dark"] .shortcut-desc {
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .shortcut-keys .dim {
+  color: var(--ink-3);
+}
+
+/* ============================================================
+   13. 杂项：卡片 / 工具栏 / 链接 / 焦点 / 拓扑 / 聊天
+   ============================================================ */
+
+html:root[data-theme="dark"] .card,
+html:root[data-theme="dark"] .dash-panel,
+html:root[data-theme="dark"] .stat,
+html:root[data-theme="dark"] .dash-wide,
+html:root[data-theme="dark"] .form-card,
+html:root[data-theme="dark"] .log-page,
+html:root[data-theme="dark"] .home-panel {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .home-phd {
+  background: var(--surface);
+  border-bottom-color: var(--line-2);
+}
+
+html:root[data-theme="dark"] .toolbar,
+html:root[data-theme="dark"] .browser-page > .toolbar {
+  background: var(--surface);
+  border-color: var(--line-2);
+}
+
+html:root[data-theme="dark"] .page > .toolbar {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .page > .table-wrap,
+html:root[data-theme="dark"] .browser-page > .table-wrap {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .page-shell-title {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .toolbar .stats,
+html:root[data-theme="dark"] .home-desc,
+html:root[data-theme="dark"] .home-row .sub,
+html:root[data-theme="dark"] .home-row .time,
+html:root[data-theme="dark"] .sess-item .ip,
+html:root[data-theme="dark"] .sess-item .tick {
+  color: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .sess-table-wrap,
+html:root[data-theme="dark"] .sess-main,
+html:root[data-theme="dark"] .home,
+html:root[data-theme="dark"] .ops-body.content,
+html:root[data-theme="dark"] .ops-main {
+  background: var(--paper);
+}
+
+html:root[data-theme="dark"] .sess-list,
+html:root[data-theme="dark"] .sess-bar {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .sess-item.active {
+  background: var(--row-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+html:root[data-theme="dark"] .home-row .pill.ok {
+  color: var(--live);
+  background: transparent;
+  border-color: rgba(52, 211, 153, 0.32);
+}
+
+html:root[data-theme="dark"] .home-row .pill.warn {
+  color: var(--warn);
+  background: transparent;
+  border-color: rgba(245, 165, 36, 0.34);
+}
+
+html:root[data-theme="dark"] .hm-s em,
+html:root[data-theme="dark"] .sess-count .signal {
+  color: var(--accent);
+}
+
+/* 链接 */
+html:root[data-theme="dark"] a {
+  color: var(--accent);
+}
+
+html:root[data-theme="dark"] a:hover {
+  color: #67e8f9;
+}
+
+html:root[data-theme="dark"] a.buttonish {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] a.buttonish:hover {
+  border-color: rgba(34, 211, 238, .4);
+  color: var(--accent);
+}
+
+/* 焦点环 */
+html:root[data-theme="dark"] :focus-visible {
+  outline: 2px solid rgba(34, 211, 238, .45);
+  outline-offset: 1px;
+}
+
+html:root[data-theme="dark"] button:focus-visible {
+  outline: none;
+  border-color: rgba(34, 211, 238, .5);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .28);
+}
+
+/* 拓扑图：在线绿 / 离线红 */
+html:root[data-theme="dark"] .graph-svg {
+  color: var(--ink-2);
+}
+
+html:root[data-theme="dark"] .graph-edge line {
+  stroke: var(--accent);
+  stroke-opacity: .22;
+}
+
+html:root[data-theme="dark"] .graph-edge-label {
+  fill: var(--ink-3);
+}
+
+html:root[data-theme="dark"] .graph-node circle {
+  fill: var(--surface);
+  stroke: currentColor;
+}
+
+html:root[data-theme="dark"] .graph-node.live .graph-dot {
+  fill: var(--live);
+}
+
+html:root[data-theme="dark"] .graph-node.dead .graph-dot {
+  fill: var(--accent);
+}
+
+html:root[data-theme="dark"] .graph-node.dead circle {
+  stroke: var(--accent);
+  stroke-opacity: .5;
+}
+
+html:root[data-theme="dark"] .graph-label {
+  fill: var(--ink);
+}
+
+html:root[data-theme="dark"] .graph-sub,
+html:root[data-theme="dark"] .graph-hint {
+  fill: var(--ink-3);
+  color: var(--ink-3);
+}
+
+/* 协作聊天 */
+html:root[data-theme="dark"] .chat-meta {
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+html:root[data-theme="dark"] .chat-bubble {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+html:root[data-theme="dark"] .chat-row.mine .chat-bubble {
+  background: var(--accent-soft);
+  border-color: rgba(34, 211, 238, .28);
+}
+
+html:root[data-theme="dark"] .chat-compose {
+  border-top-color: var(--line);
+}
+
+/* 生成页预设 / 监听器选中态 */
+html:root[data-theme="dark"] .gen-preset,
+html:root[data-theme="dark"] .gen-count {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「2. 监听器」标题右侧的计数：显示 N / 共 M。
+   margin-left:auto 把计数推到标题行右端（和 .toolbar .stats 同一套读法），
+   它回答的是"我是不是漏看了几个监听器" —— 这正是原来被当成 bug 报上来的那个疑问。
+   用 tabular-nums 是因为这个数字会随平台切换跳动，等宽数字不会让右边的说明文字左右抖。
+   ★ 2026-09-19：这条 auto 外边距必须**单独成规则**，绝不能并进上面那条逗号选择器。
+   它原先就并在里面，于是 auto 外边距也落到了 .gen-preset 上；而预设卡片是栅格项，
+   `width:auto` 一旦配上 `margin-left:auto`，就不再 stretch 成整列，而是退化为
+   fit-content 并被推到列尾 ⇒ 内容比列窄的卡片自己缩小、右贴边，换行到第二行的卡片
+   也不再与第一行左对齐。把浏览器窗口缩窄、列被撑宽时最明显（报上来的就是这条）。
+   卡片只该继承上面那条的字号/颜色，不该吃到这条外边距。 */
+html:root[data-theme="dark"] .gen-count {
+  margin-left: auto;
+}
+
+html:root[data-theme="dark"] .gen-listener {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+html:root[data-theme="dark"] .gen-preset:hover,
+html:root[data-theme="dark"] .gen-listener:hover {
+  border-color: rgba(34, 211, 238, .4);
+}
+
+html:root[data-theme="dark"] .gen-preset.active,
+html:root[data-theme="dark"] .gen-listener.active {
+  border-color: rgba(34, 211, 238, .55);
+  background: rgba(34, 211, 238, .1);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, .22);
+}
+
+html:root[data-theme="dark"] .result-box pre,
+html:root[data-theme="dark"] .wd-cmd {
+  font-family: var(--mono);
+}
+
+/* ── .field 的"标签在上、控件在下"变体 ──
+   `.field` 默认是 `grid-template-columns: 100px 1fr`（标签在左），
+   这在表单里没问题：控件是个框，从 x=110 铺到右边，眼睛读作"标签 → 框"。
+   但两类东西不该这么排：
+     1. 复选框 —— 控件本体只有 14px，却要站在 x=110，跟 x=0~60 的标签
+        中间空一格，读起来是断的；
+     2. 命令框 —— 100px 的标签列在窄栏里等于直接砍掉四成宽度。
+   加 .field-flat 让这两类回到单列。 */
+html:root[data-theme="dark"] .field-flat {
+  display: block;
+}
+
+/* ── 投递命令块 ── */
+html:root[data-theme="dark"] .wd-block + .wd-block {
+  margin-top: 10px;
+}
+html:root[data-theme="dark"] .wd-block-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+html:root[data-theme="dark"] .wd-block-hd > label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .wd-copy {
+  flex: none;
+  height: 22px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+/* 命令只在词边界折行，且盒子高度跟着内容长。
+   这些命令是 130~330 字符的一行式命令行，里面有 URL 和引号括起来的长串。
+   原来 `.wd-cmd` 是 `white-space: pre-wrap; word-break: break-all`，配合当时
+   140px 宽的框 = 一行只放得下约 20 字符 —— 于是 `powershell -nop -w hi` /
+   `dden -c "..."` 这种断法，URL 被从中间劈开、引号配对完全看不出来，
+   操作员没法核对"我复制走的到底是哪条命令"，而这正是他看这块的唯一目的。
+   两处一起改：框先加宽（.gen-layout 的列宽 + 去掉 .field 的 100px 标签列），
+   再让断行只发生在空格处。break-word 是兜底：URL 这种超长 token 放不下时
+   仍然要断，但只断它自己，不会把前后文一起搅乱。
+   高度由 CmdBlock 的 useLayoutEffect 按 scrollHeight 写死，所以这里不要滚动条
+   —— 盒子永远刚好装下内容。min-height 必须归零，否则会被
+   `.field textarea { min-height: 64px }` 顶成三行高的空盒子。 */
+html:root[data-theme="dark"] .wd-cmd {
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  min-height: 0;
+  height: auto;
+  resize: none;
+  line-height: 1.5;
+}
+
+/* ── PageTips 每页操作提示 ── */
+html:root[data-theme="dark"] .tips-btn {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+html:root[data-theme="dark"] .tips-btn:hover {
+  background: var(--live-soft);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.25);
+}
+html:root[data-theme="dark"] .page-tips {
+  margin: 8px 0;
+  background: var(--panel-elevated);
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+  animation: tips-in 0.18s ease-out;
+}
+@keyframes tips-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+html:root[data-theme="dark"] .page-tips-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+html:root[data-theme="dark"] .page-tips-head .ghost {
+  margin-left: auto;
+  color: var(--ink-3);
+  border: none;
+}
+html:root[data-theme="dark"] .page-tips-body {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+html:root[data-theme="dark"] .page-tips-body p { margin: 4px 0; }
+html:root[data-theme="dark"] .page-tips-body code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+html:root[data-theme="dark"] .page-tips-body b { color: var(--ink); }
+
+/* ── BOF 模块页 ── */
+html:root[data-theme="dark"] .bof-wrap {
+  padding: 8px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+html:root[data-theme="dark"] .bof-cat {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin: 0 0 8px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html:root[data-theme="dark"] .bof-cat::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  /* 原来这里是 青→透明 的渐变。青色按纪律只表「活的/可交互/焦点」，
+     用在纯装饰的分隔线上属于语义挪用；而且这一屏已经有卡片描边、卡片间距、
+     分组间距三重分隔，这条线本来就只是收个尾。换成中性发丝线：
+     分隔作用保留，不再花掉一个语义色。 */
+  background: var(--line);
+}
+html:root[data-theme="dark"] .bof-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px;
+}
+html:root[data-theme="dark"] .bof-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s;
+}
+html:root[data-theme="dark"] .bof-card:hover {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.06);
+}
+html:root[data-theme="dark"] .bof-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 卡片头一行塞了 名字 + 文件路径 + 最多两个状态徽标 + 异步勾选，
+     而卡片最小宽度只有 340px。原来不给换行，空间不够时浏览器就把
+     每个元素压到「内容宽度以下」——中文没有可断词，于是被逐字竖排：
+     「源码已改」变成四行、「异步 -a」折在「异/步」之间，同一个徽标
+     在同一屏里出现横排/折行/竖排三种形态，扫视时根本没法比对卡片状态。
+     允许换行 + 每个元素 nowrap：装不下就整块挪到第二行，而不是拆字。 */
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+html:root[data-theme="dark"] .bof-card-head > * {
+  white-space: nowrap;
+}
+/* 文件路径是头部唯一「可以放弃」的信息：让它吃剩余宽度并省略，
+   而不是把旁边的状态徽标挤变形。 */
+html:root[data-theme="dark"] .bof-card-head > .dim.mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html:root[data-theme="dark"] .bof-name {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 13.5px;
+}
+html:root[data-theme="dark"] .bof-desc { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+html:root[data-theme="dark"] .bof-param { display: flex; align-items: center; gap: 8px; }
+html:root[data-theme="dark"] .bof-param label {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  min-width: 76px;
+}
+html:root[data-theme="dark"] .bof-param input {
+  flex: 1;
+  background: #0e1117;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 4px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+html:root[data-theme="dark"] .bof-param input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25);
+}
+html:root[data-theme="dark"] .bof-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+/* 「复制命令 / 重编 / 执行」三个按钮原来没有 flex:none，而同一行的
+   .bof-usage 先占走 max-width:42%，剩余宽度不够时按钮被压到内容宽度以下，
+   中文逐字竖排：「复制命/令」「重/编」「执/行」。主操作「执行」被拆成两行，
+   第一眼读不出来。按钮是不该被压缩的元素，锁死尺寸让它自己换行。 */
+html:root[data-theme="dark"] .bof-card-foot > button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* .o / .c 两条产物流水
+   ─────────────────────────────────────────────────────────
+   原来是一段连续文字：`.o 12.3 KB · 时间 · sha256　.c 9.5 KB · 时间`，
+   两条记录之间只隔一个全角空格。两个后果：
+     1. 操作员会把 .o 的 sha256 误读成 .c 的 —— 判断要不要重编靠的就是这两条；
+     2. 数字和单位被从中间折断（`9.5` 在行尾、`KB` 到下一行），
+        因为整段没有 nowrap 边界。
+   拆成两个各自 nowrap 的 span，用真实间距分开，两个问题一起没有。
+   字号 10.5 → 11px，颜色 --ink-3 全不透明。 */
+html:root[data-theme="dark"] .bof-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+html:root[data-theme="dark"] .bof-meta span { white-space: nowrap; }
+html:root[data-theme="dark"] .bof-usage {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42%;
+}
+html:root[data-theme="dark"] .bof-async {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  user-select: none;
+}
+html:root[data-theme="dark"] .bof-base {
+  background: #0e1117;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 5px 8px;
+}
+html:root[data-theme="dark"] .bof-base:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.25);
+}
+
+/* ── 修复批次 2026-09-13 ── */
+
+/* BOF 页可滚动（.page 为 flex column，bof-wrap 需吃掉剩余高度） */
+html:root[data-theme="dark"] .bof-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ── BOF 实战用法（notes）──────────────────────────────────────
+   这张卡上现在有三种文字，职责必须一眼分得开：
+
+     .bof-desc   这个模块**是什么**         12.5px --ink-2  一行
+     .bof-notes  什么时候能跑 / 会怎样      11.5px --ink-3  竖排若干条
+     .bof-meta   .o/.c 的大小与时间戳       11px   mono     机器读的
+
+   三条约束：
+
+   1. **它不能跟说明文字抢注意力。** notes 是「跑之前该知道的事」，不是卖点：
+      比 desc 更小、更暗，且用一条左轴线把整块圈成一个整体，视觉上退到
+      输入框后面。字号再小一级（11.5），行高给足（1.6）保证中文不挤。
+
+   2. **卡片最小宽度只有 340px，中文必须能换行。** 单条 note 动辄三四十字，
+      nowrap 会直接顶破卡片；overflow-wrap 兜住长路径 / 长单元名这类
+      没有空格可断的串。
+
+   3. **★ 项按颜色区分，不按字号。** 已经是最小字号了，再缩就看不清；
+      而 ★ 项恰恰是「忽略了会静默出错或不可逆」的那一条，必须能扫到。
+      用 --warn 上色 + 左轴线同色，字号与其余条目一致。 */
+/* 目标表：短字段列收缩到内容宽，富余留给「备注」。
+   ─────────────────────────────────────────────────────────
+   实测（scripts/probe_batch8.mjs）：7 列平分 1518px，而每列内容只有 14~130px，
+   逐列死区 152 / 153 / 171 / 267 / 189 / 160 / 57 —— 读数要从表格最左扫到
+   最右去对一行，眼睛得横跨整个屏幕。
+
+   width:1% 配合 table-layout:auto 是让列"收缩到内容宽"的标准写法
+   （百分比极小时浏览器按最小内容宽处理），再加 nowrap 把"最小宽"钉在
+   "不换行时的宽"，于是短字段列只占它真正需要的宽度。
+   「备注」是自由文本、可长可短，**不给宽度**让它自然吃掉剩下的空间 ——
+   死区于是从"每列一份"集中成"一列一份"，数据列彼此相邻、可以竖着扫。
+   不给固定像素宽是因为这些字段长度不由页面决定（主机名/IP 都可能很长），
+   写死宽度在长内容上会截断。 */
+html:root[data-theme="dark"] .tgt-table th,
+html:root[data-theme="dark"] .tgt-table td {
+  width: 1%;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .tgt-table th:nth-child(6),
+html:root[data-theme="dark"] .tgt-table td:nth-child(6) {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+html:root[data-theme="dark"] .bof-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 9px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+html:root[data-theme="dark"] .bof-notes > li {
+  position: relative;
+  padding-left: 11px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+html:root[data-theme="dark"] .bof-notes > li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--line-2);
+  /* 项目符号只是「这是一条独立约束」的分隔符，不参与阅读 */
+}
+html:root[data-theme="dark"] .bof-notes > li.hot { color: var(--warn); }
+html:root[data-theme="dark"] .bof-notes > li.hot::before { color: var(--warn); }
+html:root[data-theme="dark"] .bof-hot-mark { color: var(--warn); font-weight: 700; }
+
+/* 「未登记」：服务端有这个 .o、本地 META 没有条目。原来这个状态是靠**分类名**
+   （「未登记 / 上传」）表达的，意味着它既是一个分类又不是一个分类 ——
+   而分类名描述的是「这是什么模块」，跟「有没有登记」根本不是一回事。
+   现在每张卡自带徽标，用 --warn 描边而不是实心：它是提示，不是错误。 */
+html:root[data-theme="dark"] .bof-unknown {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--warn);
+  border: 1px solid rgba(245, 165, 36, 0.4);
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 15px;
+}
+
+/* 参数编码徽标（多个 / NUL 连接 / 整数）。
+   这三个词回答的是「这个框怎么被编码进参数流」——多值拆成 N 个字段、
+   多值合成 1 个字段、还是裸 4 字节整数。打包方式不同、错了还不报错，
+   所以必须写在参数旁边，而不是折叠进说明里。 */
+html:root[data-theme="dark"] .bof-hint {
+  margin-left: 5px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 14px;
+}
+
+/* 开关型参数（--unlink / --keep）。
+   单独一个类名是必须的：`.bof-param input` 是 flex:1 的暗色文本框，
+   复选框套上去会被拉满整行（这正是批次 1 在全站修过的
+   `input{height:30px}` 那类坑，只是换了个地方）。 */
+html:root[data-theme="dark"] .bof-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+  user-select: none;
+}
+html:root[data-theme="dark"] .bof-flag code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+/* 带徽标之后标签会变长（「要隐藏的名 * 多个」）。原来 min-width:76px + nowrap
+   意味着它只增不减地把输入框挤窄，最长的「目标机 ELF 路径 *」会把输入框
+   压到 150px 以下。给个上限并允许换行：装不下是标签换行，不是输入框变窄。 */
+html:root[data-theme="dark"] .bof-param label {
+  max-width: 46%;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* 右键菜单 danger 项：默认普通色，仅 hover 变红（删除主机不再常驻红色） */
+html:root[data-theme="dark"] .ctx .danger,
+html:root[data-theme="dark"] .ctx button.danger {
+  color: var(--ink-2);
+}
+html:root[data-theme="dark"] .ctx .danger:hover,
+html:root[data-theme="dark"] .ctx button.danger:hover {
+  background: rgba(255, 77, 94, .12);
+  color: var(--danger);
+}
+
+/* 操作提示：右下角浮动面板，避免被卡片 overflow 裁剪。
+
+   右下角是三个东西抢的位置，得排好（自下而上）：
+     .ops-status  底部状态栏，占 var(--status-h)
+     .toast-host  通知堆栈，底距 var(--toast-lane)，单条实测 ~41px 高
+     .page-tips   本面板
+   原来这里是 bottom:20px —— 跟 toast 同一个角落，于是首次进页面时
+   （提示面板自动展开 + 一条"同步完成"通知同时出现，这是最常见的开局）
+   toast 正好盖住面板最后一行的右半截；而且 20px 也压在状态栏上。
+   现在整条右下角由 tokens.css 的两个变量统一决定：--status-h 定底栏、
+   --toast-lane 定通知车道，本面板再叠一条 toast 的高度上去。
+   面板是常驻的、toast 是飘过的，常驻的给飘过的让位。
+
+   +52px = 一条 toast 实测 41px + 8px 间隙 + 一点余量。 */
+html:root[data-theme="dark"] .page-tips {
+  position: fixed;
+  bottom: calc(var(--toast-lane) + 52px);
+  right: 20px;
+  width: min(400px, calc(100vw - 40px));
+  max-height: min(55vh, calc(100vh - 120px));
+  overflow-y: auto;
+  z-index: 350;
+  margin: 0;
+  background: var(--panel-elevated);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-left: 3px solid var(--accent);
+  box-shadow: var(--shadow-float);
+}
+
+/* 主机列表标签分组头 */
+html:root[data-theme="dark"] .sess-tag-g {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 2px 18px;
+  font-size: 11px;
+  color: var(--warn);
+  letter-spacing: 0.04em;
+  border-top: 1px dashed var(--line-2);
+  margin-top: 2px;
+}
+html:root[data-theme="dark"] .sess-tag-g .n {
+  color: var(--ink-3);
+  font-size: 10px;
+}
+
+/* ── 拓扑页重建（节点卡片 + 贝塞尔连线 + 网格底） ── */
+html:root[data-theme="dark"] .graph-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(34, 211, 238, 0.05), transparent 55%),
+    radial-gradient(ellipse at 85% 90%, rgba(34, 211, 238, 0.05), transparent 55%),
+    #0b0e13;
+}
+/* 滚动交给这一层，不交给 .graph-wrap。
+   .graph-legend 是 .graph-wrap 的绝对定位子元素，如果让 .graph-wrap 自己滚，
+   图例会被画布内容带着滚出视口 —— 452 台主机时画布约 2700px 高，
+   滚到下面就再也看不到"哪种颜色是在线"了。 */
+html:root[data-theme="dark"] .graph-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  border-radius: inherit;
+}
+/* width/height 由 SVG 属性给（等于 viewBox 尺寸），CSS 不参与 ——
+   原来是 width/height:100% + viewBox 1100×620，默认 preserveAspectRatio
+   会把内容等比缩放塞进容器：画布再大也只是整体缩小，永远不产生滚动。
+   现在渲染尺寸与 viewBox 一一对应，是 1:1，装不下就真出滚动条。 */
+html:root[data-theme="dark"] .graph-svg {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+}
+
+html:root[data-theme="dark"] .graph-node-bg {
+  fill: #11151c;
+  stroke: rgba(34, 211, 238, 0.35);
+  stroke-width: 1.2;
+  transition: stroke 0.15s;
+}
+html:root[data-theme="dark"] .graph-node.dead .graph-node-bg {
+  fill: #0e1117;
+  stroke: rgba(255, 77, 94, 0.28);
+}
+/* pivot 的虚线框。选择器原来是 `.graph-node.pivot .graph-node-bg` ——
+   但 TSX 把 pivot 类加在 <rect className="graph-node-bg pivot"> 上，
+   而 `.graph-node` 是外层 <g>，后代选择器要求 pivot 和 graph-node 同在
+   祖先链上，于是这条规则从来没有匹配过任何元素，虚线框一直是死的。
+   改成直接命中 rect 本身。 */
+html:root[data-theme="dark"] .graph-node-bg.pivot {
+  stroke-dasharray: 5 3;
+}
+html:root[data-theme="dark"] .graph-node.hl .graph-node-bg {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+html:root[data-theme="dark"] .graph-dot {
+  fill: var(--live);
+  opacity: 0.95;
+}
+html:root[data-theme="dark"] .graph-node.dead .graph-dot {
+  fill: #7d3540;
+  filter: none !important;
+  opacity: 0.75;
+}
+html:root[data-theme="dark"] .graph-label {
+  fill: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+html:root[data-theme="dark"] .graph-sub {
+  fill: var(--ink-2);
+  font-size: 10.5px;
+  font-family: var(--mono);
+}
+html:root[data-theme="dark"] .graph-listener {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+/* agent 短 ID：卡片上唯一的唯一标识，所以给它比监听器略高的可读性 ——
+   监听器名只是分组提示，ID 是"我要点的是哪一台"的答案。 */
+html:root[data-theme="dark"] .graph-sid {
+  fill: var(--ink-2);
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+html:root[data-theme="dark"] .graph-pivot-tag {
+  fill: var(--warn);
+  font-size: 9px;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+}
+/* 层标与层分隔线。原来只有三条等距虚线（COL_X 硬编码的 x-8），
+   跟实际节点位置无关 —— 节点全挤在第一列时，另外两条虚线还立在那儿，
+   看起来像"这两列本该有东西"。现在每层一条，位置跟着层走，
+   层标顺带写出这一层有多少台，操作员不用数。 */
+html:root[data-theme="dark"] .graph-layer-label {
+  fill: var(--ink-3);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+}
+html:root[data-theme="dark"] .graph-layer-rule {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+html:root[data-theme="dark"] .graph-empty-title {
+  fill: var(--ink-3);
+  font-size: 15px;
+  font-family: var(--mono);
+}
+html:root[data-theme="dark"] .graph-empty-hint {
+  fill: var(--ink-3);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+html:root[data-theme="dark"] .graph-edge-path {
+  fill: none;
+  stroke: rgba(34, 211, 238, 0.35);
+  stroke-width: 1.6;
+}
+html:root[data-theme="dark"] .graph-edge-flow {
+  fill: none;
+  stroke: rgba(34, 211, 238, 0.9);
+  stroke-width: 2;
+  stroke-dasharray: 6 14;
+  animation: graph-flow 1.2s linear infinite;
+}
+html:root[data-theme="dark"] .graph-edge.hl .graph-edge-path {
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
+@keyframes graph-flow {
+  from { stroke-dashoffset: 20; }
+  to { stroke-dashoffset: 0; }
+}
+/* 连线标签：**不画外框**，文字直接压在线上，用画布底色给字描一圈边把线挖断。
+   paint-order: stroke ⇒ 先描边后填字，那圈底色只会出现在字的外沿，
+   不会糊住笔画本身。底色取 .graph-wrap 的基底 #0b0e13（那两层 5% 的青色
+   径向渐晕在 4px 宽的描边里看不出来）。
+   原来的做法是一颗带边框的圆角胶囊 —— 那是"贴在图上的一颗按钮"，
+   不是图自己的标注，而且两条线汇聚到同一父节点时两个胶囊会上下叠着。
+   基线偏移用 dy=3.5 在 TSX 里给，把 10px 的字在曲线上做视觉居中。
+   ★ opacity 必须显式写 1：styles.css:1709 的基线规则给了 .55，
+     深色下没人覆盖它；而描边一旦半透明，线就会从字底下透出来。 */
+html:root[data-theme="dark"] .graph-edge-label {
+  fill: var(--ink-2);
+  opacity: 1;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  paint-order: stroke;
+  stroke: #0b0e13;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+html:root[data-theme="dark"] .graph-legend {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  background: rgba(15, 18, 24, 0.75);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+html:root[data-theme="dark"] .graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
+html:root[data-theme="dark"] .lgd { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+/* 图例的"在线"必须和节点圆点同色。
+   圆点是 `--live`（#34d399 绿），图例原来画的是 `--accent`（#22d3ee 青）——
+   图例存在的唯一理由是解释颜色，结果它自己说的是另一个颜色。
+   顺带：绿在本界面里是"机器状态"的专属语义（见 .tag.online），
+   青是交互/进行中语义，所以这里该跟圆点走而不是跟强调色走。 */
+html:root[data-theme="dark"] .lgd-live { background: var(--live); box-shadow: 0 0 6px rgba(52, 211, 153, 0.7); }
+html:root[data-theme="dark"] .lgd-dead { background: #7d3540; }
+html:root[data-theme="dark"] .lgd-pivot { border-radius: 2px; width: 14px; height: 3px; background: rgba(34, 211, 238, 0.5); }
+
+/* ── 拓扑页：缩放 / 手工设备 / 手工连线 ──
+   本节全部是**新增**规则。上面 .graph-wrap / .graph-scroll / .graph-svg 三条
+   一个字都没动 —— .graph-scroll 的 position:absolute;inset:0 和
+   .graph-svg 的 width:auto 是上一轮特意调的（前者让图例不被滚走，后者让
+   渲染尺寸与 viewBox 一一对应），改它们会同时打破图例定位和滚动。 */
+
+/* .graph-zoom 只负责撑出滚动范围（宽高 = 内容 × 缩放），本身不画东西。
+   cursor 用 `.graph-page .graph-scroll` 这个**新选择器**给，而不是往上面
+   那条既有规则里塞 —— 同选择器追加属性会让"这条规则没被改过"这句话变成假的。 */
+html:root[data-theme="dark"] .graph-page .graph-scroll { cursor: grab; }
+html:root[data-theme="dark"] .graph-page .graph-scroll.panning { cursor: grabbing; }
+html:root[data-theme="dark"] .graph-zoom { position: relative; }
+
+/* 手工设备卡片：形状沿用 agent 卡片，靠**颜色**和图标说明它不是一台有 beacon 的机器。
+   已控 = 青（和交互色同族），未控 = 灰（中性，表示"还没打下来"）。 */
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-node-bg {
+  fill: #0c1a20;
+  stroke: rgba(34, 211, 238, 0.72);
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-node-bg {
+  fill: #12151b;
+  stroke: rgba(148, 163, 184, 0.42);
+  stroke-dasharray: 3 4;
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-dot {
+  fill: var(--accent);
+  opacity: 1;
+  filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.8));
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-dot {
+  fill: #64748b;
+  filter: none !important;
+  opacity: 0.9;
+}
+/* 图标是 stroke=currentColor 的，所以"给 <g> 一个颜色"就够，不必逐条画。
+   ★ 这条也是设备卡片能一眼分辨已控/未控的一半原因（另一半是描边）。 */
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-dev-ico { color: var(--accent); }
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-dev-ico { color: #8b98a9; }
+html:root[data-theme="dark"] .graph-node.graph-dev.unctrl .graph-label { fill: var(--ink-2); }
+html:root[data-theme="dark"] .graph-node.graph-dev .graph-dev-state {
+  fill: var(--ink-3);
+  font-size: 9.5px;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+}
+html:root[data-theme="dark"] .graph-node.graph-dev.ctrl .graph-dev-state { fill: rgba(34, 211, 238, 0.85); }
+
+/* 手工设备卡片上的地址行（IP:PORT，非必须；没填就不渲染这个 <text>）。
+   比 .graph-sub 再暗一档、再小半号 —— 它是第三行，且地址本身有固定形状
+   （点、冒号、数字），小一号照样一眼认得出，不必跟设备名抢注意力。 */
+html:root[data-theme="dark"] .graph-node.graph-dev .graph-dev-addr {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+
+/* agent 卡片右上角的「角色」图标（来自 a_tags）。别跟 PIVOT 标签打架 ——
+   TSX 里有图标时会把 PIVOT 往左让 24px。 */
+html:root[data-theme="dark"] .graph-role-ico { color: rgba(34, 211, 238, 0.8); pointer-events: none; }
+
+/* 手工连线：中性灰虚线 + 实心箭头，和 pivot 的青色流动虚线一眼分得开。 */
+html:root[data-theme="dark"] .graph-edge-manual {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.75);
+  stroke-width: 1.8;
+  stroke-dasharray: 7 5;
+}
+/* 点击热区：1.8px 的线本身几乎点不中，用一条 12px 的透明线罩在上面。
+   pointer-events:stroke ⇒ 只有描到线的地方可点，包围盒不算。 */
+html:root[data-theme="dark"] .graph-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+html:root[data-theme="dark"] .graph-edge-manual-g.sel .graph-edge-manual {
+  stroke: var(--accent);
+  stroke-width: 2.6;
+  stroke-dasharray: none;
+}
+html:root[data-theme="dark"] .lgd-ctrl { background: var(--accent); box-shadow: 0 0 6px rgba(34, 211, 238, 0.7); }
+html:root[data-theme="dark"] .lgd-unctrl { background: #64748b; }
+html:root[data-theme="dark"] .lgd-manual {
+  border-radius: 2px; width: 14px; height: 0;
+  border-top: 2px dashed rgba(148, 163, 184, 0.85);
+}
+
+/* 「添加设备」/「连线到…」两个面板。它们是 .graph-wrap 的绝对定位子元素
+   （不是 .ctx 的固定定位）：面板要贴着画布左上角，跟着窗口走，
+   而 .graph-scroll 里的内容滚动时它们不该动。 */
+html:root[data-theme="dark"] .graph-pop {
+  position: absolute;
+  z-index: 40;
+  left: 14px;
+  top: 14px;
+  width: 276px;
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  padding: 7px;
+  font-size: 12px;
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+}
+html:root[data-theme="dark"] .graph-pop .ctx-hd {
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 4px 6px 6px;
+  letter-spacing: 0.04em;
+}
+html:root[data-theme="dark"] .graph-pop .sep { height: 1px; background: var(--line-2); margin: 6px 4px; }
+html:root[data-theme="dark"] .graph-pop button {
+  width: 100%;
+  justify-content: flex-start;
+  background: transparent;
+  border: none;
+  height: 30px;
+  color: var(--ink-2);
+  border-radius: 6px;
+}
+html:root[data-theme="dark"] .graph-pop button:hover { background: rgba(34, 211, 238, 0.1); color: var(--accent); }
+html:root[data-theme="dark"] .graph-pop button.danger { color: var(--danger); }
+html:root[data-theme="dark"] .graph-pop button.danger:hover { background: rgba(255, 77, 94, 0.12); color: var(--danger); }
+
+/* 14 种设备类型的选择格。4 列 × 4 行，比一个 14 项的竖排下拉短一半。 */
+html:root[data-theme="dark"] .graph-kind-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+html:root[data-theme="dark"] .graph-pop .graph-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: auto;
+  padding: 7px 2px;
+  font-size: 10.5px;
+  border: 1px solid transparent;
+}
+html:root[data-theme="dark"] .graph-pop .graph-kind:hover { border-color: rgba(34, 211, 238, 0.35); }
+html:root[data-theme="dark"] .graph-kind-ico { color: currentColor; }
+
+/* 「连线到…」的目标列表：主机可能上百台，必须能滚，否则远处的节点根本选不到。 */
+html:root[data-theme="dark"] .graph-pop-link { width: 300px; }
+html:root[data-theme="dark"] .graph-link-list { overflow: auto; flex: 1; min-height: 0; }
+html:root[data-theme="dark"] .graph-pop .graph-link-list button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+}
+html:root[data-theme="dark"] .graph-link-ico { color: var(--ink-3); flex-shrink: 0; }
+html:root[data-theme="dark"] .graph-link-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* 右键菜单里的角色/类型列表最长 13 项，超过视口高度要能滚。 */
+html:root[data-theme="dark"] .graph-ctx { max-height: 72vh; overflow: auto; }
+
+/* ── 终端现代化：显式可选中 + 双击复制行 ── */
+html:root[data-theme="dark"] .term-out,
+html:root[data-theme="dark"] .term-out .ln {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+html:root[data-theme="dark"] .term-out .ln {
+  transition: background 0.12s;
+  border-left: 2px solid transparent;
+  padding-left: 8px;
+}
+html:root[data-theme="dark"] .term-out .ln:hover {
+  background: rgba(134, 239, 172, 0.06);
+  border-left-color: rgba(34, 211, 238, 0.4);
+}
+html:root[data-theme="dark"] .term-out .ln.err {
+  border-left-color: rgba(255, 77, 94, 0.5);
+}
+html:root[data-theme="dark"] .term-out ::selection {
+  background: rgba(134, 239, 172, 0.22);
+  color: var(--ink);
+}
+
+/* ── 终端时间戳 + Tab 补全候选条 ── */
+html:root[data-theme="dark"] .term-out .ln-time {
+  /* 这是终端里的时间戳，属于终端内容 —— 保留终端绿，不要换成中性灰 */
+  color: var(--term-ink-dim);
+  font-size: 10.5px;
+  margin-right: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* ── 命令补全候选弹层（.cmd-suggest）──
+   Term 与「执行命令」对话框共用一个组件。原来是 .term-suggest 的横向 chip 流：
+   候选一多就换行成一坨，而且**只显示名字** —— 服务端明明把 description /
+   example 一起发过来了（core/axscript/types.go 的 CommandDef），白白丢掉。
+   改成纵向列表，一行一条：名字 + 说明 + 示例。 */
+html:root[data-theme="dark"] .cmd-suggest {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--term-bg);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow: hidden;
+}
+/* 降级披露条：只在服务端命令表拿不到时出现。
+   浅底 + --warn 描边，不用实心 —— 它是提示，不是错误（同 .bof-unknown）。 */
+html:root[data-theme="dark"] .cmd-suggest .cs-warn {
+  padding: 4px 9px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+/* ★ 必须重置全局 button（styles.css:20-32：height:30px / background:var(--surface)
+   / border:1px solid var(--line) / padding:0 12px / display:inline-flex）。
+   少了这一段，每一行候选都会被撑成一个 30px 高的带框按钮，
+   整个列表看起来像一排按钮而不是一个候选列表（Bofs.tsx:840 记过同一个坑）。 */
+html:root[data-theme="dark"] .cmd-suggest .cs-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-item:hover,
+html:root[data-theme="dark"] .cmd-suggest .cs-item.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-name {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: var(--ink);
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-item.active .cs-name,
+html:root[data-theme="dark"] .cmd-suggest .cs-item:hover .cs-name {
+  color: var(--accent);
+}
+/* 说明用 --ink-2 而不是更弱一级：它说的是这条命令**是什么**，是内容不是装饰。
+   一律截断不换行 —— 弹层高度必须可预测，否则会把输入框顶走。 */
+html:root[data-theme="dark"] .cmd-suggest .cs-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-eg {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 产物比源码旧（stale）的标记。**只标注、不隐藏** —— 服务端不下架、
+   前端也不拦：「旧」不等于「错」，操作员可能就是要跑那个版本。
+   用 warn 色而不是 err 色：这是「值得看一眼」，不是「这条坏了」。
+   原因在 title 上（悬浮可见），不占行 —— 弹层高度必须可预测。 */
+html:root[data-theme="dark"] .cmd-suggest .cs-stale {
+  margin-right: 4px;
+  color: var(--warn);
+  cursor: help;
+}
+/* 弹层底部操作行：目前只有「刷新候选」。
+   存在的理由：BOF 清单是**服务端目录**的映射，而目录会变 ——
+   操作员可能在别的终端编译、或往 _bin 里丢了个新 .o。
+   没有这个按钮，他只能等或刷新整页。 */
+html:root[data-theme="dark"] .cmd-suggest .cs-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 6px 2px;
+  border-top: 1px solid var(--line-2);
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-refresh {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+html:root[data-theme="dark"] .cmd-suggest .cs-refresh:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* ★ 终端里的弹层必须**脱离文档流**浮在输入行上方。
+   这不是审美取舍，是修一个把内容整个吃掉的布局缺陷。
+
+   `.term` 是 `grid-template-rows: 34px 1fr 34px`（styles.css:220），按**三个**
+   子项写死的：页签 → 输出区(1fr) → 输入行。补全弹层是后来加的**可选第 4 个子项**，
+   留在流里就会顶掉输入行那个 34px 的固定格子，把输入行挤进隐式行，
+   自己再被 `.term` 的 `overflow: hidden` 裁掉。
+
+   实测（2026-09-19，线上 index-E4b2skgb）：弹层被压到 28px、`.cs-list` 计算高度 **0px**，
+   而 60 条 `.cs-item`（各 25px）全都在 DOM 里 —— 界面上就是
+   「敲 `execute bof ` 按 Tab，弹层出来了，但列表是空的」。
+   数据链路（/api/bofs/exec 的 entries / note / capable）当时完全正常，
+   纯粹是布局把内容吃了：候选有 166 条也照样显示为空。
+
+   浮起来之后输出区与输入行都不动（实测 211px / 34px 恒定），终端拖多高都稳。 */
+html:root[data-theme="dark"] .term {
+  position: relative;                  /* 弹层的定位参照 */
+}
+html:root[data-theme="dark"] .term > .cmd-suggest {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 40px;                        /* 输入行 34px + 6px 间距 */
+  z-index: 6;                          /* 盖住输出区；页签行是 static，越不过它 */
+  margin: 0;
+  /* 上限跟着终端高度走：终端被拖矮时，弹层不能顶穿到页签栏外面去。
+     列表本身另有 240px 上限（见上面 .cs-list），两个取小。 */
+  max-height: calc(100% - 80px);       /* 页签 34 + 输入 34 + 上下各 6 */
+}
+
+/* ── leet 品牌标识：>_ 提示符 ──
+   这里原先用的是纯 CRT 绿 #00ff66 + 绿辉光。那是"黑客风"最典型的
+   一个陈词，而且和终端正文的绿撞语义（终端绿 = 机器在输出）。
+   品牌标识归强调色管：青。 */
+html:root[data-theme="dark"] .lx-mark,
+html:root[data-theme="dark"] .rail-mark {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(34, 211, 238, .5);
+  line-height: 1;
+}
+html:root[data-theme="dark"] .lx-mark { font-size: 24px; }
+html:root[data-theme="dark"] .rail-mark { font-size: 13px; }
+/* 旧版的太极子元素（.lx-mark span / .rail-mark i）已废弃 —— 下面这组
+   display:none 之后，本文件里给它们写的青/品红渐变全是死代码。
+   保留这条是为了防止旧 DOM 或第三方样式把它们重新露出来。 */
+html:root[data-theme="dark"] .lx-mark span,
+html:root[data-theme="dark"] .lx-mark span::before,
+html:root[data-theme="dark"] .lx-mark span::after,
+html:root[data-theme="dark"] .rail-mark i,
+html:root[data-theme="dark"] .rail-mark i::before,
+html:root[data-theme="dark"] .rail-mark i::after {
+  display: none !important;
+}
+/* 闪烁光标 */
+html:root[data-theme="dark"] .lx-mark::after,
+html:root[data-theme="dark"] .rail-mark::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 1.1em;
+  margin-left: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(34, 211, 238, .8);
+  animation: caret-blink 1.1s steps(1) infinite;
+}
+html:root[data-theme="dark"] .rail-mark::after { width: 5px; }
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+/* ── 登录页品牌行：`> 4-T34M OPS CONSOLE▊` 整行逐字打出 ──────────────
+   刻意**不叫** `.lx-mark`：本文件里有一组 `.lx-mark span{display:none
+   !important}`（旧太极子元素留下的守卫），而本行要按 span 分段配色，
+   套那个类会被整条藏掉。也刻意**不加框** —— 原来那圈深底 + 青边看着
+   跟下面的输入框一个样。
+   逐字显现用 clip-path 切自身盒子，**不用** width:0→Nch：Nch 成立的前提
+   是等宽字体真的等宽，字体没加载/回退到比例字体时 Nch ≠ 实际字宽，
+   会留一段空隙或者切掉最后一个字。clip-path 按元素自身宽度的百分比切，
+   不赌字体度量。
+   ★ 整行必须**同字重、同字距**：粗体等宽字体的字宽未必等于常规体，
+   一旦不等宽，steps(18) 就不落在字边界上，会切在字的中间。分色可以，
+   分字重不行。 */
+html:root[data-theme="dark"] .lx-brandline {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1.2;
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(34, 211, 238, .45);
+}
+html:root[data-theme="dark"] .lx-brandline-prompt { margin-right: 4px; opacity: .72; }
+html:root[data-theme="dark"] .lx-brandline-sub { color: var(--ink-3); text-shadow: none; }
+/* 光标挂在 typing 上，**不能**挂在 text 上：text 带 clip-path，
+   会把子孙一起裁掉，光标整段消失。 */
+html:root[data-theme="dark"] .lx-brandline-typing {
+  position: relative;
+  display: inline-block;
+}
+html:root[data-theme="dark"] .lx-brandline-text {
+  display: inline-block;
+  white-space: nowrap;
+  clip-path: inset(0 100% 0 0);
+  animation: lx-brandline-type 1.8s steps(18, end) .25s forwards;
+}
+@keyframes lx-brandline-type {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+/* 光标跟着打字往前走：left 从 0 到 100%（= 文本整宽），用**同样的**
+   steps(18) 和时长 ⇒ 每一格正好一个字的宽度，与上面 clip-path 的 18 格
+   一一对应，光标始终贴在最后一个已显字之后。
+   ★ 用 left 而不是 transform：translate 的百分比是**光标自己**的宽度
+   （8px）而不是文本宽度，那样只能挪 8px，走不到头。
+   ★ 两个动画分别管 left 和 opacity，属性不冲突，可以并存。 */
+html:root[data-theme="dark"] .lx-brandline-typing::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 1.05em;
+  margin-left: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(34, 211, 238, .8);
+  animation:
+    lx-caret-ride 1.8s steps(18, end) .25s forwards,
+    caret-blink 1.1s steps(1) 1.1s infinite;
+}
+@keyframes lx-caret-ride {
+  from { left: 0; }
+  to   { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:root[data-theme="dark"] .lx-brandline-text { animation: none; clip-path: none; }
+  html:root[data-theme="dark"] .lx-brandline-typing::after { animation: none; left: 100%; }
+}
+html:root[data-theme="dark"] .rail-brand-txt {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Extension-Kit 命令总览（ExtKit.tsx / 导航「扩展命令」G X）
+   ------------------------------------------------------------
+   这一页是**只读清单**：分组 → 命令卡 → 参数表 + 示例。
+   布局刻意不用写死行数的 grid —— 同族已经踩过三次（见 ops-hard.css
+   的 .field 与 .gen-preset 记录）：卡片里的可选子项（描述/子命令/参数表/
+   示例）在写死轨道里缺失时会静默塌成 0 高或被压进邻列。这里一律用
+   flex column，纵向自然堆叠，少哪一项都不影响其它项。
+   唯一用 grid 的是 .xkit-arg（三列固定：开关 / 类型 / 说明），三列都必给。
+   ════════════════════════════════════════════════════════════════════ */
+html:root[data-theme="dark"] .xkit-title {
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+html:root[data-theme="dark"] .xkit-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+}
+html:root[data-theme="dark"] .xkit-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+html:root[data-theme="dark"] .xkit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-chip:hover {
+  color: var(--ink);
+  border-color: var(--accent-2);
+}
+html:root[data-theme="dark"] .xkit-chip.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-2);
+}
+html:root[data-theme="dark"] .xkit-search {
+  width: 200px;
+  margin-right: 8px;
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, .3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+html:root[data-theme="dark"] .xkit-search:focus {
+  outline: none;
+  border-color: var(--accent-2);
+}
+/* 扩展命令页可滚动（同 .bof-wrap：.page 是 flex column，内层要吃掉剩余高度并自己滚）
+   ★ 少了这三行的后果不是「滚起来别扭」而是**整页不可达**：body 是 overflow:hidden，
+   .page 是 height:100%，内容却可以是它自己的 6 倍高（「全部 62」实测 7463px / 1107px），
+   于是滚轮、滚动条、键盘全都到不了下半页 —— 看着像「卡片没渲染出来」。 */
+html:root[data-theme="dark"] .xkit-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+html:root[data-theme="dark"] .xkit-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .015);
+  overflow: hidden;
+  /* ★ 必须禁止收缩，否则「全部」仍然是坏的（只是坏法变了）：
+     .xkit-wrap 一旦成为滚动容器，这 15 个分组就是它的 flex 项；而 flex 项的
+     自动最小尺寸在 `overflow` 非 visible 时按规范取 0 —— 这里正好是 hidden
+     （为了圆角裁掉表头底色）。于是它们不溢出、只**被压扁**：实测第 1 组
+     62px 高装 538px 内容，卡片全被裁掉且 scrollHeight 恒等于 clientHeight，
+     连滚动条都不出现。overflow-x 同理，别再往回加。 */
+  flex: 0 0 auto;
+}
+html:root[data-theme="dark"] .xkit-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, .03);
+  border-bottom: 1px solid var(--line);
+}
+html:root[data-theme="dark"] .xkit-group-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+html:root[data-theme="dark"] .xkit-group-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+html:root[data-theme="dark"] .xkit-group-desc {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-src {
+  font-size: 11px;
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+html:root[data-theme="dark"] .xkit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+html:root[data-theme="dark"] .xkit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, .18);
+}
+html:root[data-theme="dark"] .xkit-card:hover {
+  border-color: var(--accent-2);
+}
+html:root[data-theme="dark"] .xkit-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+html:root[data-theme="dark"] .xkit-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+html:root[data-theme="dark"] .xkit-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-badge.hook {
+  color: var(--warn);
+  border-color: rgba(245, 165, 36, .35);
+  background: var(--warn-soft);
+}
+html:root[data-theme="dark"] .xkit-badge.warn {
+  color: var(--danger);
+  border-color: rgba(255, 77, 94, .35);
+  background: var(--cinnabar-soft);
+}
+html:root[data-theme="dark"] .xkit-desc {
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+html:root[data-theme="dark"] .xkit-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+html:root[data-theme="dark"] .xkit-sub {
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, .04);
+  border-radius: var(--radius-sm);
+}
+html:root[data-theme="dark"] .xkit-args {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--line);
+  background: rgba(0, 0, 0, .2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+html:root[data-theme="dark"] .xkit-arg {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 52px 1fr;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+html:root[data-theme="dark"] .xkit-arg-k {
+  font-family: var(--mono);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-arg-k.req {
+  color: var(--ink);
+  font-weight: 700;
+}
+html:root[data-theme="dark"] .xkit-arg-t {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+html:root[data-theme="dark"] .xkit-arg-d {
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html:root[data-theme="dark"] .xkit-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+/* 卡片页脚是 flex 行，按钮默认会被压缩并把中文标题折成两行（「下/发」）。
+   按钮一律不缩、不折行，余量全给左边的示例；示例自己 min-width:0 才能被压缩。 */
+html:root[data-theme="dark"] .xkit-foot > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+html:root[data-theme="dark"] .xkit-ex {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--term-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}

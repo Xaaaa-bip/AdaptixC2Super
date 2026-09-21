@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	adaptix "github.com/Adaptix-Framework/axc2"
@@ -196,11 +198,76 @@ func (ts *Teamserver) TsAxScriptList() (string, error) {
 }
 
 // /---
+// TsAxScriptDirs 返回本部署已加载的 axscript 所在目录（去重、已排序）。
+//
+// 存在的理由：extender 需要知道「这台服务器实际把脚本与 BOF 放在哪」。此前
+// linux_agent 只能按 ModuleDir 去猜相对路径（../../Extension-Kit 之类），换一台
+// 服务器部署就猜不中 —— 而服务端本来就知道真值，就是下面这些已加载文件的所在目录。
+// 能问的地方不应该去猜。
+//
+// 只取 ScriptType == "axscript"：agent / user 型的 ScriptInfo 根本没有 Path
+// （manager.go:429），"axscript" 型的 Path 才是 filepath.Abs 过的（manager.go:153,220）。
+// 通过 ax.script_load 动态加载的子脚本同样是 "axscript" 且带自己的绝对路径，
+// 所以「新写好的脚本」不改 profile 也会出现在返回值里 —— 这正是动态注册要的效果。
+//
+// ★ 声明了 `nosave: true` 的脚本**不在** ListScripts 里（manager.go:138 直接 return，
+//   根本不登记 ScriptInfo），于是它的目录也不会出现在返回值里。这不是丢数据：
+//   本部署的 Extension-Kit 就是两级 nosave 装载器（extension-kit.axs → 各分类
+//   xxx.axs / ad-services.axs → 真正注册的子脚本），所以 profile 里唯一那一行
+//   axscripts 指向的目录本身反而不在结果中，而 10 个分类目录在。
+//   判据是「这个目录下**确实有已登记的脚本**」，nosave 装载器不满足，理应不报。
+//   往 profile 的 axscripts 加一行仍然是有效的加根方式 —— 只要那个脚本不是 nosave。
+//
+// ★ 这里**不做父子折叠**：返回的每个目录都确实有已加载的脚本，都是真话；
+//   而「嵌套目录会让递归扫描重复列出同一批产物」是**扫描方**才知道的事。
+//   折叠放在 linux_agent 的 bofsFoldDirs（消费侧），那里也是它唯一能被单测覆盖的地方。
+func (ts *Teamserver) TsAxScriptDirs() []string {
+	if ts.ScriptManager == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var dirs []string
+	for _, info := range ts.ScriptManager.ListScripts() {
+		if info.ScriptType != "axscript" || info.Path == "" {
+			continue
+		}
+		dir := filepath.Dir(info.Path)
+		if dir == "" || dir == "." || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+
+	sort.Strings(dirs)
+	return dirs
+}
+
+// /---
 func (ts *Teamserver) TsAxScriptCommands() (string, error) {
 	if ts.ScriptManager == nil {
 		return "{}", nil
 	}
 	return ts.ScriptManager.GetCommandsJSON()
+}
+
+// /---
+// TsAgentBuildSchema returns the build form an agent declared for one listener
+// type, as JSON.  "{}" means the agent declared none, which is not an error:
+// the console keeps its built-in fallback for agents that have not migrated.
+func (ts *Teamserver) TsAgentBuildSchema(agentName string, listenerType string) (string, error) {
+	if ts.ScriptManager == nil {
+		return "{}", nil
+	}
+	schema, declared, err := ts.ScriptManager.GetBuildSchemaJSON(agentName, listenerType)
+	if err != nil {
+		return "", err
+	}
+	if !declared {
+		return "{}", nil
+	}
+	return schema, nil
 }
 
 // /---

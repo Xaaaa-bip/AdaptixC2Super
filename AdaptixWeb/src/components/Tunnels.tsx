@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { isLinuxAgent } from '../utils'
+import { PageTips } from './PageTips'
 
 type TunnelRow = {
   p_tunnel_id?: string
@@ -60,6 +62,8 @@ export function Tunnels() {
   const [pass, setPass] = useState('')
 
   const agentOptions = useMemo(() => Object.values(agents), [agents])
+  // 当前（新建隧道表单里选中的）主机是否 Linux：RPF 插件未实现
+  const linuxSelected = isLinuxAgent(agents[agentId])
 
   async function refresh() {
     try {
@@ -143,6 +147,11 @@ export function Tunnels() {
         <button className="primary" onClick={() => setShow(true)}>+ 新建隧道</button>
         <button onClick={() => refresh()}>刷新</button>
         <div className="stats"><span>{list.length} 条隧道</span></div>
+        <PageTips id="tunnels">
+          <p>新建隧道：SOCKS4/SOCKS5 代理、本地/远程端口转发。</p>
+          <p>SOCKS5 支持用户名密码认证。</p>
+          <p><b>Linux 主机暂不支持 RPF 反向转发</b>（选项自动禁用）。</p>
+        </PageTips>
       </div>
       <div className="table-wrap">
         {list.length === 0 ? (
@@ -240,9 +249,12 @@ export function Tunnels() {
                 <option value="socks5">SOCKS5</option>
                 <option value="socks4">SOCKS4</option>
                 <option value="lportfwd">本地端口转发 LPF</option>
-                <option value="rportfwd">远程端口转发 RPF</option>
+                <option value="rportfwd" disabled={linuxSelected}>远程端口转发 RPF</option>
               </select>
             </div>
+            {linuxSelected && (
+              <div className="hint warn-hint">RPF 反向转发暂不支持 Linux 主机（插件未实现）</div>
+            )}
             <div className="field"><label>描述</label><input value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
             {(kind === 'socks5' || kind === 'socks4' || kind === 'lportfwd') && (
               <>
@@ -281,7 +293,7 @@ export function Tunnels() {
             <div className="hint">隧道监听在 Teamserver 侧（listen=true）。停止后配置保留，可再启用；删除才会移除。</div>
             <div className="btns">
               <button disabled={busy} onClick={() => setShow(false)}>取消</button>
-              <button className="primary" disabled={busy || !agentId} onClick={async () => {
+              <button className="primary" disabled={busy || !agentId || (linuxSelected && kind === 'rportfwd')} onClick={async () => {
                 setBusy(true)
                 try {
                   let path = ''

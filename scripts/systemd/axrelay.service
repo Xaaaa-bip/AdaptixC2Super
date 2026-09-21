@@ -1,0 +1,23 @@
+[Unit]
+Description=axrelay libp2p relay for AdaptixC2 (tcp/4446)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ad/dist
+# 参数与 2026-09-20 手启那次逐个一致（已用 `axrelay -h` 核实默认值）。
+# ★ -key 必须绝对路径：换 key 就换 peer id，已发出去的 agent 地址会全废。
+ExecStart=/home/ad/dist/axrelay -listen /ip4/0.0.0.0/tcp/4446 -key /etc/axrelay/relaynode.key -limit-data 1073741824 -limit-duration 1h -max-circuits 512 -max-reservations 512 -reservation-ttl 2h
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
+StandardOutput=append:/home/ad/dist/axrelay.log
+StandardError=append:/home/ad/dist/axrelay.log
+
+[Install]
+WantedBy=multi-user.target

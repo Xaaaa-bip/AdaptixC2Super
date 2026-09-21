@@ -5,11 +5,11 @@ service_name: "webdelivery"
 service_config: |
   script_route: "/deliver"
   payload_route: "/deliver/payload"
-  listener: "http"
+  listener: "http1"          # 必须是实际存在的 listener 名；"http" 不存在 ⇒ /api/deliver/payload 直接 500
   agent_name: "beacon"
   format: "Exe"
   arch: ""
   sleep: "5s"
   jitter: 20
   cache_ttl_min: 30
-  c2_host_url: "https://110.41.87.17:8080/api"
+  c2_host_url: ""            # 留空 = 用请求的 Host 推导（publicBaseURL），不再写死上游作者的 IP

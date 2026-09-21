@@ -15,6 +15,15 @@ type TransportConfig struct {
 	EncryptKey string `json:"encrypt_key"`
 
 	Protocol string `json:"protocol"`
+
+	// Reverse pivot (opt-in): the parent callback addresses the generated
+	// agent should dial instead of listening.  This has to be a struct field
+	// -- not merely a key in the incoming JSON -- because GetProfile()
+	// re-encodes this struct to build the agent profile, and json.Unmarshal
+	// silently drops any key without a field here.  That is exactly how the
+	// key used to vanish between listener creation and agent generation.
+	// Empty/nil => original listen-only behaviour (byte-identical profile).
+	CallbackAddresses []string `json:"callback_addresses,omitempty"`
 }
 
 type TransportTCP struct {

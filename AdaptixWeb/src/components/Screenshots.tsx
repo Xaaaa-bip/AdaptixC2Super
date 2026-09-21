@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { EmptyState } from './ui'
+import { PageTips } from './PageTips'
 
 /** 对齐服务端 ScreenData JSON 字段 */
 function screenId(s: any): string {
@@ -102,11 +103,15 @@ export function Screenshots() {
         <input type="search" placeholder="搜索截图 / 主机 / 用户" value={q} onChange={(e) => setQ(e.target.value)} />
         <button onClick={() => refresh()}>刷新</button>
         <div className="stats"><span>{view.length} 张截图</span></div>
+        <PageTips id="screens">
+          <p>截图来源：Windows 主机在终端/右键执行 <code>screenshot_bof</code>。</p>
+          <p><b>Linux 主机无截图能力</b>，此页不会出现 Linux 截图。</p>
+        </PageTips>
       </div>
       <div className="screen-layout" style={{ display: 'grid', gridTemplateColumns: preview ? '1fr 1fr' : '1fr', minHeight: 0, flex: 1, gap: 0 }}>
         <div className="table-wrap" style={{ borderRadius: preview ? '0 0 0 10px' : undefined }}>
           {view.length === 0 ? (
-            <EmptyState icon="⧉" title="暂无截图" hint="在主机终端或右键菜单下发 screenshot_bof" />
+            <EmptyState icon="⧉" title="暂无截图" hint="截图来自 Windows 主机（终端/右键 screenshot_bof）；Linux 主机无截图能力。" />
           ) : (
             <table>
               <thead>

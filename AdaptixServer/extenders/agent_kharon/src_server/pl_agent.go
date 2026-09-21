@@ -57,6 +57,111 @@ func AgentGenerateProfile(agentConfig string, listenerWM string, listenerMap map
 	return nil, nil
 }
 
+// resolve_profile_content turns the listener's `uploaded_file` field into the
+// malleable profile JSON the build needs.
+//
+// The field has three legitimate spellings and the Qt client and the Web UI
+// each assume a different one, so accept all of them rather than picking a
+// side:
+//   - a path to a file on the *server* (what the Web UI asks the operator for);
+//   - base64 of the JSON (what the Qt file selector produces);
+//   - the raw JSON itself.
+// Resolution is ordered path -> base64 -> raw.
+//
+// Before this existed the field went straight to base64.StdEncoding.DecodeString
+// and nothing else was accepted.  A listener created with a profile *path* --
+// the only spelling the Web UI offers -- therefore started fine and then failed
+// every single payload generation with "illegal base64 data at input byte N",
+// an error naming neither the field nor the file.  listener_kharon_http
+// resolves the same field the same way; the two sides must agree, or a listener
+// can come up and never produce a working payload.
+// maxBofObjectBytes 是单个 BOF 对象的上限，一条**读文件前**的守卫：
+// 实参可能是敲错的路径（"/var/log/syslog"），没有上限就会把整个文件读进内存
+// 再塞进任务包 —— 服务端 1.9G，这类手误不该有放大器。
+const maxBofObjectBytes = 16 << 20 // 16 MiB
+
+// resolveBofObject 把 `execute bof` 的实参解析成对象字节。
+//
+// ★ 为什么必须先试路径：本命令在命令树里的示例一直是
+//   `execute bof /home/user/whoami.o`（ax_config.axs:233），WebUI 的补全也按
+//   服务端绝对路径给候选，而这里原本**只认 base64** —— 操作员从候选里选一个，
+//   得到 `illegal base64 data at input byte 4`，完全看不出「其实要贴 base64」。
+//   linux_agent 早已是「先路径、后 base64」，这里补齐，四个 extender 行为一致。
+//
+// ★ 调用点在本文件里做了一次 kharon_replace_folder 替换（把占位符展开成
+//   src_modules 的绝对路径），所以到这里 v 已经是服务端路径 —— 正是本函数
+//   第一分支要处理的情形。**顺序不能颠倒**：先替换、再解析。
+//
+// ★ 路径按**进程 cwd** 解析（服务端 cwd = <dist>，如 /home/ad/dist），
+//   所以补全给的是绝对路径；相对路径能用只是巧合，不要依赖。
+func resolveBofObject(v string) ([]byte, error) {
+	if v == "" {
+		return nil, errors.New("bof object is empty")
+	}
+
+	if st, statErr := os.Stat(v); statErr == nil && !st.IsDir() {
+		if st.Size() > maxBofObjectBytes {
+			return nil, fmt.Errorf("bof object %s is too large (%d bytes, max %d)", v, st.Size(), maxBofObjectBytes)
+		}
+		b, readErr := os.ReadFile(v)
+		if readErr != nil {
+			return nil, fmt.Errorf("cannot read bof object %s: %v", v, readErr)
+		}
+		if len(b) == 0 {
+			return nil, fmt.Errorf("bof object %s is empty", v)
+		}
+		return b, nil
+	}
+
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("bof object %q is neither a readable file on the teamserver nor valid base64 data", v)
+	}
+	if len(b) == 0 {
+		return nil, fmt.Errorf("bof object %q decoded to 0 bytes", v)
+	}
+	return b, nil
+}
+
+func resolve_profile_content(raw any) (string, error) {
+	trimmed := strings.TrimSpace(fmt.Sprint(raw))
+	if trimmed == "" || trimmed == "<nil>" {
+		return "", errors.New("listener has no malleable profile: set `uploaded_file` to a profile path, base64 of the profile JSON, or the JSON itself")
+	}
+
+	const maxProfileBytes = 1 << 20
+	if st, err := os.Stat(trimmed); err == nil && st.Mode().IsRegular() {
+		if st.Size() > maxProfileBytes {
+			return "", fmt.Errorf("profile file %s is %d bytes (limit %d)", trimmed, st.Size(), maxProfileBytes)
+		}
+		content, err := os.ReadFile(trimmed)
+		if err != nil {
+			return "", fmt.Errorf("cannot read profile file %s: %w", trimmed, err)
+		}
+		return string(content), nil
+	}
+
+	if decoded, err := base64.StdEncoding.DecodeString(trimmed); err == nil && looks_like_profile(decoded) {
+		return string(decoded), nil
+	}
+	if looks_like_profile([]byte(trimmed)) {
+		return trimmed, nil
+	}
+	return "", fmt.Errorf("`uploaded_file` is neither a readable profile path, nor base64 of the profile JSON, nor the JSON itself (got %d bytes)", len(trimmed))
+}
+
+// looks_like_profile reports whether content parses as a JSON object carrying a
+// non-empty `callbacks` array -- the one thing BuildMalleableHTTPBytes requires.
+func looks_like_profile(content []byte) bool {
+	var probe struct {
+		Callbacks []json.RawMessage `json:"callbacks"`
+	}
+	if err := json.Unmarshal(content, &probe); err != nil {
+		return false
+	}
+	return len(probe.Callbacks) > 0
+}
+
 func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map[string]any) ([]byte, string, error) {
 	fmt.Println("=== AgentGenerateBuild START ===")
 	fmt.Printf("DEBUG: agentConfig length: %d bytes\n", len(agentConfig))
@@ -69,13 +174,12 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 		return nil, "", fmt.Errorf("failed to parse agentConfig: %v", err)
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(fmt.Sprint(listenerMap["uploaded_file"]))
+	malleable_str, err := resolve_profile_content(listenerMap["uploaded_file"])
 	if err != nil {
-		fmt.Printf("ERROR: failed decode base64: %v\n", err)
+		fmt.Printf("ERROR: cannot resolve malleable profile: %v\n", err)
 		return nil, "", err
 	}
-	malleable_str := string(decoded)
-	fmt.Printf("DEBUG: Malleable profile decoded (%d bytes)\n", len(malleable_str))
+	fmt.Printf("DEBUG: Malleable profile resolved (%d bytes)\n", len(malleable_str))
 
 	// Build malleable HTTP bytes
 	malleableBytes, callbackCount, err := BuildMalleableHTTPBytes(malleable_str)
@@ -85,6 +189,17 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 	}
 	fmt.Printf("DEBUG: Malleable bytes generated (%d bytes)\n", len(malleableBytes))
 	fmt.Printf("DEBUG: HTTP Callback count: %d\n", callbackCount)
+
+	// An empty blob is not a smaller blob: bytes_to_hexstr turns it into
+	// `{ }`, which compiles to a zero-length array, and the beacon then reads
+	// its callback count out of whatever follows it in memory.  Refusing the
+	// build here names the problem; building anyway produced a payload that
+	// hung inside the allocator with no clue why.
+	if len(malleableBytes) == 0 || callbackCount <= 0 {
+		err = fmt.Errorf("malleable profile produced an empty callback list (0 bytes, count %d)", callbackCount)
+		fmt.Printf("ERROR: %v\n", err)
+		return nil, "", err
+	}
 
 	// Get working directory
 	wd, err := os.Getwd()
@@ -270,8 +385,20 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 
 		fmt.Sprintf("KH_BOF_HOOK_ENABLED=%d", bool_to_int(cfg.BofApiProxy)),
 
-		// Malleable HTTP bytes como array C entre aspas
-		fmt.Sprintf("HTTP_MALLEABLE_BYTES=\"%s\"", bytes_to_hexstr(malleableBytes)),
+		// A bare C initialiser list, never a quoted string.  bytes_to_hexstr
+		// already returns `{ 0x01, 0x02, ... }`, and Config.cc pastes this
+		// straight into `BYTE HttpConfig[] = HTTP_MALLEABLE_BYTES;`.  Quoting
+		// it made that a string literal, so the array held the *characters*
+		// `{`, ` `, `0`, `x`, ... instead of the bytes, and the beacon's first
+		// read of it -- `Psr->Int32`, which takes the first four bytes as the
+		// callback count -- returned 0x7830207b = 2017187963.  Config.cc then
+		// allocates CallbackCount * sizeof( HTTP_CALLBACKS ) per callback
+		// (2.5 GB) and the beacon wedges inside ntdll's allocator before it
+		// ever reaches the network.  The Makefile adds no quotes of its own
+		// (compare KH_GUARDRAILS_USER, which it does quote), and make receives
+		// these as argv rather than through a shell, so the quotes survived
+		// into the compiler's -D.
+		fmt.Sprintf("HTTP_MALLEABLE_BYTES=%s", bytes_to_hexstr(malleableBytes)),
 		fmt.Sprintf("HTTP_CALLBACK_COUNT=%d", callbackCount),
 	}
 
@@ -746,7 +873,14 @@ func CreateAgent(initialData []byte) (ax.AgentData, ax.ExtenderAgent, error) {
 	khcfg.Session.ThreadId = uint32(packer.ParseInt32())
 	fmt.Printf("TID: %v\n", khcfg.Session.ThreadId)
 
-	khcfg.Ps.Spawnto = string(packer.ParseBytes())
+	// Spawnto arrives as a WIDE string, ForkPipe right below as a narrow one --
+	// the beacon sends them with different packers (Transport.cc:76 Wstr vs :77
+	// Str) and declares Spawnto as WCHAR* (Evasion/Beacon.cc:310).  Keeping the
+	// raw bytes here left the UTF-16LE NULs embedded in the Go string, so the
+	// value read "C\0:\0\\\0..." and every later comparison against the
+	// operator's plain-ASCII spawnto failed -- the single most visible symptom
+	// being an empty spawnto in the config view and fork&run never matching.
+	khcfg.Ps.Spawnto = ConvertWCharBytesToUTF8(packer.ParseBytes())
 	fmt.Printf("Spawnto: %v\n", khcfg.Ps.Spawnto)
 
 	khcfg.Ps.ForkPipe = string(packer.ParseBytes())
@@ -1838,7 +1972,7 @@ func CreateTask(ts Teamserver, agent ax.AgentData, args map[string]any) (ax.Task
 			}
 
 			var bofContent []byte
-			bofContent, err = base64.StdEncoding.DecodeString(bofFile)
+			bofContent, err = resolveBofObject(bofFile)
 			if err != nil {
 				goto RET
 			}

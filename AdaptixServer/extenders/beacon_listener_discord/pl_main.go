@@ -61,6 +61,16 @@ func (p *PluginListener) Create(name string, config string, customData []byte) (
 		}
 
 	} else {
+		// ★ 恢复路径也必须校验。原来这里直接 Unmarshal 就用，跳过了 validConfig：
+		// 操作员在编辑表单里清空「轮询间隔」→ Number('') === 0 → 0 被写进 CustomData
+		// → 重启时从这里恢复 → pollLoop 的 time.NewTicker(0) **直接 panic**，
+		// panic 发生在 goroutine 里 ⇒ 整个 teamserver 进程死掉。
+		// 也就是说「编辑时手滑清空一个数字框」等于「下次重启必崩」，且崩在启动阶段，
+		// 现场只有一行 NewTicker 的 panic，看不出跟哪个监听器有关。
+		if err = validConfig(string(customData)); err != nil {
+			return nil, listenerData, customdData, fmt.Errorf("stored listener config is invalid: %w", err)
+		}
+
 		err = json.Unmarshal(customData, &conf)
 		if err != nil {
 			return nil, listenerData, customdData, err
@@ -122,16 +132,60 @@ func (l *Listener) Edit(config string) (adaptix.ListenerData, []byte, error) {
 		return listenerData, customdData, err
 	}
 
+	// ★ 编辑同样必须校验，理由见 Create 恢复分支的注释：poll_interval=0 会让
+	// 重启时的 time.NewTicker(0) panic 掉整个进程。编辑是唯一能把 0 写进去的入口。
+	if err = validConfig(config); err != nil {
+		return listenerData, customdData, err
+	}
+
 	/// START CODE HERE
 
+	// ★ 提交上来的 7 个字段必须**全部**落到 listener.Config 上。
+	//
+	// 原来这里只同步了 WebhookUrl / PollInterval / Cleanup 三个，而 WebUI 的编辑
+	// 表单（Listeners.tsx 的 BeaconDiscord 分支）暴露的是 7 个：bot_token /
+	// channel_beacon / channel_tasks / webhook_url / poll_interval / cleanup /
+	// encrypt_key。于是**改 bot token、换频道 ID、换加密密钥全部静默失效**：
+	// 界面提示成功，配置一个字段都没变；又因为回写的 customData 也是从没变过的
+	// listener.Config 序列化出来的，**重启之后依然不会变**。
+	// 这与 listener_kharon_http 那个已修的 Edit 是同一类 bug。
+	l.transport.Config.BotToken = conf.BotToken
+	l.transport.Config.ChannelBeacon = conf.ChannelBeacon
+	l.transport.Config.ChannelTasks = conf.ChannelTasks
 	l.transport.Config.WebhookUrl = conf.WebhookUrl
 	l.transport.Config.PollInterval = conf.PollInterval
 	l.transport.Config.Cleanup = conf.Cleanup
+
+	// encrypt_key 是 hex 字符串，真正参与 RC4 的是派生出来的 encryptKeyBytes。
+	// 只改字符串不重算字节数组 ⇒ 界面显示新密钥、实际仍用旧密钥加密，
+	// 而且重启后（走 Create 的 customData 分支）会用**新**字符串重算 —— 也就是
+	// 「不重启是旧的、重启后是新的」，同一个监听器前后两套密钥。
+	if conf.EncryptKey != "" && conf.EncryptKey != l.transport.Config.EncryptKey {
+		keyBytes, err := hex.DecodeString(conf.EncryptKey)
+		if err != nil {
+			return listenerData, customdData, fmt.Errorf("invalid encrypt_key hex: %v", err)
+		}
+		l.transport.Config.EncryptKey = conf.EncryptKey
+		l.transport.Config.encryptKeyBytes = keyBytes
+	}
+
+	// 轮询间隔只影响 pollLoop 里那个 ticker，而 ticker 是 Start() 时建好的 ——
+	// 不重启循环的话，改了间隔要等下次重启才生效（操作员看到的又是一次"改了没用"）。
+	// 这里就地重建循环，让编辑立刻生效。
+	if l.transport.Active {
+		if err = l.transport.Stop(); err != nil {
+			return listenerData, customdData, err
+		}
+		if err = l.transport.Start(l.transport.ts); err != nil {
+			return listenerData, customdData, err
+		}
+	}
 
 	listenerData = adaptix.ListenerData{
 		BindHost:  "discord",
 		BindPort:  "0",
 		AgentAddr: l.transport.Config.WebhookUrl,
+		Protocol:  "discord",
 		Status:    "Listen",
 	}
 	if !l.transport.Active {

@@ -15,7 +15,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// buildMu serializes per-payload compilation. Each build forks ~80 gcc
+// processes (agent C sources + mbedtls); concurrent builds on a small VPS
+// exhaust CPU/RAM and turn a 1-2 min build into a 10+ min pile-up whose
+// orphaned compilers keep running even after the HTTP client times out.
+var buildMu sync.Mutex
+
 func (ts *Teamserver) TsAgentBuildSyncOnce(agentName string, config string, listenersName []string) ([]byte, string, error) {
+	buildMu.Lock()
+	defer buildMu.Unlock()
 
 	conf := adaptix.BuildProfile{
 		BuilderId:   "",

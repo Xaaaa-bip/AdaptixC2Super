@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { EmptyState, PageShell } from './ui'
+import { PageTips } from './PageTips'
 
 export function Targets() {
   const api = useStore((s) => s.api)
@@ -42,15 +43,19 @@ export function Targets() {
             <input type="search" placeholder="搜索计算机 / IP / 标签" value={q} onChange={(e) => setQ(e.target.value)} />
             <button onClick={() => refresh()}>刷新</button>
             <div className="stats"><span>{view.length} 个目标</span></div>
+            <PageTips id="targets">
+              <p>目标资产登记：计算机名/域/地址/标签/备注。</p>
+              <p>仅团队服务器侧记录，与 agent 无关。</p>
+            </PageTips>
           </>
         }
       >
         {view.length === 0 ? (
           <EmptyState icon="◎" title="暂无目标" hint="可记录内网资产与备注" />
         ) : (
-          <table>
+          <table className="tgt-table">
             <thead>
-              <tr><th>计算机</th><th>域</th><th>地址</th><th>系统</th><th>标签</th><th>备注</th><th style={{ width: 70 }}></th></tr>
+              <tr><th>计算机</th><th>域</th><th>地址</th><th>系统</th><th>标签</th><th>备注</th><th></th></tr>
             </thead>
             <tbody>
               {view.map((t: any, i) => {
@@ -64,13 +69,19 @@ export function Targets() {
                     <td>{t.t_tag || t.tag || ''}</td>
                     <td>{t.t_info || t.info || ''}</td>
                     <td>
-                      <button className="danger" onClick={async () => {
+                      {/* 按钮文案原来是「删」一个字 —— 它既是按钮文字又是这一格唯一的标签，
+                          而表头那格又是空的，整个操作列在页面上没有名字。补全文案，
+                          并用 title 说清删的是什么（兼作无障碍名）。 */}
+                      <button
+                        className="danger"
+                        title="从目标列表移除（只删团队服务器侧的登记，不影响主机）"
+                        onClick={async () => {
                         if (!id || !confirm('删除目标？')) return
                         try {
                           await api.post('/api/targets/remove', { target_id_array: [id] })
                           await refresh()
                         } catch (e: any) { pushLog('err', e.message || String(e)) }
-                      }}>删</button>
+                      }}>删除</button>
                     </td>
                   </tr>
                 )

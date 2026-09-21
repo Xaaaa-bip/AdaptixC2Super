@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { isAgentOnline } from '../utils'
 import { ensureXterm } from '../lib/xtermLoader'
 import { openTerminalChannel, randomTerminalId } from '../api/channel'
+import { PageTips } from './PageTips'
 
 function isNixAgent(agent: any): boolean {
   const os = String(agent?.a_os_desc || agent?.a_os || '').toLowerCase()
@@ -266,6 +267,11 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
           } catch { /* */ }
         }}>适配</button>
         <button className="ghost" onClick={() => closeUiTab(`pty:${agentId}` as any)}>关闭</button>
+        <PageTips id="pty">
+          <p>交互式 PTY 终端：预设 bash/sh 或自定义程序。</p>
+          <p>WebSocket 建立后需等待 agent 下一次回连完成通道握手。</p>
+          <p>关闭页签即结束会话；页签切换会保持会话存活。</p>
+        </PageTips>
       </div>
       {err && <div className="banner warn">{err}</div>}
       <div className="pty-host" ref={hostRef} />

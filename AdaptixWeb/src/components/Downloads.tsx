@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { copyText, fmtSize } from '../utils'
 import { EmptyState, PageShell } from './ui'
+import { PageTips } from './PageTips'
 
 function buildCurl(url: string) {
   return `curl -k -L -o payload.bin "${url}"`
@@ -91,6 +92,10 @@ export function Downloads() {
           <input type="search" placeholder="搜索文件名 / 主机 / 用户" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="stats"><span>{list.length} 个文件</span></div>
           <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
+          <PageTips id="downloads">
+            <p>agent 回传的文件在此统一管理；「同步到本机」下载到浏览器。</p>
+            <p>右键可复制 <code>curl/wget</code> 下载命令（含 file_id 说明）。</p>
+          </PageTips>
         </>
       }
     >

@@ -263,6 +263,18 @@ func (dbms *DBMS) DatabaseExists() bool {
 	return dbms.exists
 }
 
+// DbTableCount returns the row count of one table.
+//
+// The allowlist exists because the table name is concatenated into the query,
+// so it must not come from an untrusted caller. It has to name *every* table a
+// caller asks about, though: a name that is missing silently returns 0, which
+// reads as "the table is empty" rather than "you asked the wrong question".
+//
+// "Listeners" and "Agents" were missing, and the startup banner asks for both
+// (server.go:151 prints DbTableCount("Listeners") as "Restored N listeners").
+// So the banner reported "Restored 0 listeners" while eight listeners were
+// present and about to be started, which sent a restore investigation down the
+// wrong path.
 func (dbms *DBMS) DbTableCount(table string) int {
 	if !dbms.exists {
 		return 0
@@ -270,6 +282,7 @@ func (dbms *DBMS) DbTableCount(table string) int {
 	allowed := map[string]bool{
 		"Screenshots": true, "Tasks": true, "Consoles": true,
 		"Downloads": true, "Credentials": true, "Targets": true, "Chat": true,
+		"Listeners": true, "Agents": true, "Pivots": true, "ExtenderData": true,
 	}
 	if !allowed[table] {
 		return 0

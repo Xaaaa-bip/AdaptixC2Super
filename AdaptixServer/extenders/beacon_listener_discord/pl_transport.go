@@ -38,12 +38,31 @@ type TransportDiscord struct {
 	stopChan chan struct{}
 	client   *http.Client
 	mu       sync.Mutex
+
+	// ts is kept so Edit can rebuild the poll loop (the ticker is built in Start,
+	// so without it a changed poll_interval would not take effect until restart).
+	ts Teamserver
+
+	// botUserId is our own Discord user id, learned from GET /users/@me at Start.
+	// Empty means we could not identify ourselves -- see pollMessages: in that
+	// state we must not delete anything, because we cannot tell our messages
+	// apart from anyone else's.
+	botUserId string
+
+	// ownerAgentId is the single agent this listener has been serving. See
+	// processMessage for why a second agent is refused rather than served.
+	ownerAgentId string
 }
 
 // Discord API message structure
 type DiscordMessage struct {
 	Id      string `json:"id"`
 	Content string `json:"content"`
+	Author  struct {
+		Id   string `json:"id"`
+		Bot  bool   `json:"bot"`
+		Name string `json:"name"`
+	} `json:"author"`
 }
 
 // Discord API send message body
@@ -68,13 +87,37 @@ func (t *TransportDiscord) Start(ts Teamserver) error {
 	}
 
 	// Decode encrypt key
-	var err error
 	if len(t.Config.encryptKeyBytes) == 0 {
 		return errors.New("encrypt key not initialized")
 	}
 
+	// pollLoop builds time.NewTicker(PollInterval) -- and NewTicker **panics** on a
+	// non-positive interval, inside a goroutine, which takes the whole teamserver
+	// down. validConfig already rejects this on both the create and the restore
+	// path; this is the last line of defence for a transport built any other way.
+	if t.Config.PollInterval < 1 {
+		return fmt.Errorf("poll_interval must be >= 1 (got %d)", t.Config.PollInterval)
+	}
+
+	t.ts = ts
+
+	// A fresh Start is a fresh engagement: release the previous owner so a rebuilt
+	// payload (new agent id) is not locked out by the agent this listener used to
+	// serve. Ownership is re-claimed by the first agent that beats.
+	t.ownerAgentId = ""
+
 	t.client = &http.Client{
 		Timeout: 30 * time.Second,
+	}
+
+	// Learn our own Discord user id so pollMessages can tell our own messages
+	// apart from everything else posted in the channel. Failing here is not
+	// fatal, but it does disable deletion (see pollMessages/processMessage).
+	t.botUserId = ""
+	if id, err := t.whoAmI(); err != nil {
+		fmt.Printf("[discord:%s] WARNING: cannot identify own bot user (%v); message cleanup is disabled\n", t.Name, err)
+	} else {
+		t.botUserId = id
 	}
 
 	t.stopChan = make(chan struct{})
@@ -83,10 +126,40 @@ func (t *TransportDiscord) Start(ts Teamserver) error {
 	fmt.Printf("   Started listener '%s': discord (beacon=%s, tasks=%s, poll=%ds)\n",
 		t.Name, t.Config.ChannelBeacon, t.Config.ChannelTasks, t.Config.PollInterval)
 
-	go t.pollLoop(ts)
+	go t.pollLoop(ts, t.stopChan)
 
-	_ = err
 	return nil
+}
+
+// whoAmI returns our own Discord user id (GET /users/@me).
+func (t *TransportDiscord) whoAmI() (string, error) {
+	req, err := http.NewRequest("GET", discordAPIBase+"/users/@me", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bot "+t.Config.BotToken)
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("discord API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var me struct {
+		Id string `json:"id"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&me); err != nil {
+		return "", err
+	}
+	if me.Id == "" {
+		return "", errors.New("discord returned an empty user id")
+	}
+	return me.Id, nil
 }
 
 func (t *TransportDiscord) Stop() error {
@@ -103,13 +176,18 @@ func (t *TransportDiscord) Stop() error {
 	return nil
 }
 
-func (t *TransportDiscord) pollLoop(ts Teamserver) {
+// pollLoop runs until the given channel is closed. The channel is a parameter
+// rather than a read of t.stopChan on purpose: Edit rebuilds the loop by calling
+// Stop() then Start(), and Start installs a fresh t.stopChan. A loop that read
+// t.stopChan each iteration could pick up the *new* channel and never observe the
+// close of the old one, leaving two poll loops running against one listener.
+func (t *TransportDiscord) pollLoop(ts Teamserver, stop <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(t.Config.PollInterval) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-t.stopChan:
+		case <-stop:
 			return
 		case <-ticker.C:
 			t.pollMessages(ts)
@@ -130,22 +208,38 @@ func (t *TransportDiscord) pollMessages(ts Teamserver) {
 			continue
 		}
 
-		t.processMessage(ts, msg)
+		// Only look at messages this bot posted. Without this check ANY message in
+		// the channel is fed to decryptBeat -- and, with cleanup on, deleted. A
+		// webhook alert, an operator's note, or another integration sharing the
+		// channel would be destroyed by us, and every non-beat message produced a
+		// garbage decrypt that went on to TsAgentCreate.
+		if t.botUserId != "" && msg.Author.Id != t.botUserId {
+			continue
+		}
+
+		// Delete only what we actually consumed. Deleting on a parse/decrypt
+		// failure threw away evidence and, more importantly, deleted messages we
+		// had not understood.
+		if t.processMessage(ts, msg) && t.Config.Cleanup && t.botUserId != "" {
+			time.Sleep(apiDelay)
+			if err := t.deleteMessage(t.Config.ChannelBeacon, msg.Id); err != nil {
+				fmt.Printf("[discord:%s] Failed to delete message %s: %v\n", t.Name, msg.Id, err)
+			}
+		}
 
 		// Rate limit delay between processing messages
 		time.Sleep(apiDelay)
 	}
 }
 
-func (t *TransportDiscord) processMessage(ts Teamserver, msg DiscordMessage) {
+// processMessage handles one beacon message and reports whether it was fully
+// processed. The caller deletes only messages that return true.
+func (t *TransportDiscord) processMessage(ts Teamserver, msg DiscordMessage) bool {
 	content := strings.TrimSpace(msg.Content)
 
 	// The beacon sends messages as: base64(beat_data) + "|" + base64(body_data)
 	// Using | separator instead of \n (newline breaks JSON content)
 	parts := strings.SplitN(content, "|", 2)
-	if len(parts) == 0 {
-		return
-	}
 
 	beatB64 := strings.TrimSpace(parts[0])
 	var bodyB64 string
@@ -157,71 +251,92 @@ func (t *TransportDiscord) processMessage(ts Teamserver, msg DiscordMessage) {
 	beatCrypt, err := base64.StdEncoding.DecodeString(beatB64)
 	if err != nil || len(beatCrypt) < 5 {
 		fmt.Printf("[discord:%s] Failed to decode beat from message %s: %v\n", t.Name, msg.Id, err)
-		goto CLEANUP
+		return false
 	}
 
-	{
-		agentType, agentId, beat, err := t.decryptBeat(beatCrypt)
+	agentType, agentId, beat, err := t.decryptBeat(beatCrypt)
+	if err != nil {
+		fmt.Printf("[discord:%s] Failed to decrypt beat from message %s: %v\n", t.Name, msg.Id, err)
+		return false
+	}
+
+	// ★ One listener serves exactly one agent.
+	//
+	// The tasks channel is per-listener (Config.ChannelTasks) and the task blob
+	// posted into it carries **no agent id** -- it is the raw
+	// TsAgentGetHostedAll(agentId) output, base64'd. A beacon concatenates every
+	// chunk it finds in that channel and decodes the result, so with two agents on
+	// one listener each would decode the other's task pack and run the other's
+	// commands. That cannot be fixed without changing the wire format, and the
+	// beacon lives outside this tree -- so refuse the second agent loudly rather
+	// than silently cross-delivering commands.
+	t.mu.Lock()
+	if t.ownerAgentId == "" {
+		t.ownerAgentId = agentId
+		fmt.Printf("[discord:%s] Agent %s now owns this listener's tasks channel; other agents will be refused.\n", t.Name, agentId)
+	}
+	owner := t.ownerAgentId
+	t.mu.Unlock()
+
+	if agentId != owner {
+		fmt.Printf("[discord:%s] REFUSING agent %s: listener '%s' already serves agent %s. "+
+			"Discord task delivery cannot tell agents apart (one shared tasks channel, no agent id in the payload), "+
+			"so serving both would make each execute the other's commands. Use one Discord listener per agent.\n",
+			t.Name, agentId, t.Name, owner)
+		return false
+	}
+
+	// Decode body data if present
+	var bodyData []byte
+	if bodyB64 != "" {
+		bodyData, err = base64.StdEncoding.DecodeString(bodyB64)
 		if err != nil {
-			fmt.Printf("[discord:%s] Failed to decrypt beat from message %s: %v\n", t.Name, msg.Id, err)
-			goto CLEANUP
-		}
-
-		// Decode body data if present
-		var bodyData []byte
-		if bodyB64 != "" {
-			bodyData, err = base64.StdEncoding.DecodeString(bodyB64)
-			if err != nil {
-				fmt.Printf("[discord:%s] Failed to decode body from message %s: %v\n", t.Name, msg.Id, err)
-				goto CLEANUP
-			}
-		}
-
-		// Create agent if new
-		if !Ts.TsAgentIsExists(agentId) {
-			_, err = Ts.TsAgentCreate(agentType, agentId, beat, t.Name, "discord", true)
-			if err != nil {
-				fmt.Printf("[discord:%s] Failed to create agent %s: %v\n", t.Name, agentId, err)
-				goto CLEANUP
-			}
-		}
-
-		// Update tick
-		_ = Ts.TsAgentSetTick(agentId, t.Name)
-
-		// Process body data
-		if len(bodyData) > 0 {
-			_ = Ts.TsAgentProcessData(agentId, bodyData)
-		}
-
-		// Get pending tasks for this agent
-		responseData, err := Ts.TsAgentGetHostedAll(agentId, 0x1900000) // 25 MB
-		if err != nil {
-			fmt.Printf("[discord:%s] Failed to get tasks for agent %s: %v\n", t.Name, agentId, err)
-			goto CLEANUP
-		}
-
-		// Send tasks back via tasks channel
-		if len(responseData) > 0 {
-			encoded := base64.StdEncoding.EncodeToString(responseData)
-
-			// Discord messages have a 2000 char limit, split if needed
-			err = t.sendChunkedMessage(t.Config.ChannelTasks, encoded)
-			if err != nil {
-				fmt.Printf("[discord:%s] Failed to send tasks to agent %s: %v\n", t.Name, agentId, err)
-			}
+			fmt.Printf("[discord:%s] Failed to decode body from message %s: %v\n", t.Name, msg.Id, err)
+			return false
 		}
 	}
 
-CLEANUP:
-	// Delete the processed message if cleanup is enabled
-	if t.Config.Cleanup {
-		time.Sleep(apiDelay)
-		err := t.deleteMessage(t.Config.ChannelBeacon, msg.Id)
+	// Create agent if new
+	if !Ts.TsAgentIsExists(agentId) {
+		// The 5th argument is ExternalIP. It used to be the literal string
+		// "discord", which is not an address -- it showed up verbatim in the
+		// console's ExternalIP column. Every other listener passes the real peer
+		// address, or "" when there is no peer (beacon_listener_dns does the same);
+		// Discord has no peer address, so "".
+		_, err = Ts.TsAgentCreate(agentType, agentId, beat, t.Name, "", true)
 		if err != nil {
-			fmt.Printf("[discord:%s] Failed to delete message %s: %v\n", t.Name, msg.Id, err)
+			fmt.Printf("[discord:%s] Failed to create agent %s: %v\n", t.Name, agentId, err)
+			return false
 		}
 	}
+
+	// Update tick
+	_ = Ts.TsAgentSetTick(agentId, t.Name)
+
+	// Process body data
+	if len(bodyData) > 0 {
+		_ = Ts.TsAgentProcessData(agentId, bodyData)
+	}
+
+	// Get pending tasks for this agent
+	responseData, err := Ts.TsAgentGetHostedAll(agentId, 0x1900000) // 25 MB
+	if err != nil {
+		fmt.Printf("[discord:%s] Failed to get tasks for agent %s: %v\n", t.Name, agentId, err)
+		return false
+	}
+
+	// Send tasks back via tasks channel
+	if len(responseData) > 0 {
+		encoded := base64.StdEncoding.EncodeToString(responseData)
+
+		// Discord messages have a 2000 char limit, split if needed
+		if err = t.sendChunkedMessage(t.Config.ChannelTasks, encoded); err != nil {
+			fmt.Printf("[discord:%s] Failed to send tasks to agent %s: %v\n", t.Name, agentId, err)
+			return false
+		}
+	}
+
+	return true
 }
 
 func (t *TransportDiscord) decryptBeat(ciphertext []byte) (string, string, []byte, error) {

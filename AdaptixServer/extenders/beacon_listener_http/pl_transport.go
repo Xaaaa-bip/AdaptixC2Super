@@ -452,6 +452,12 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		goto ERR
 	} else {
 		html := []byte(strings.ReplaceAll(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>", string(responseData)))
+		// Explicit Content-Length: without it net/http flushes >4KB bodies
+		// early and falls back to chunked encoding, which the agent's
+		// https_recv cannot parse — large task responses were silently lost.
+		ctx.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ctx.Writer.Header().Set("Content-Length", strconv.Itoa(len(html)))
+		ctx.Writer.WriteHeader(http.StatusOK)
 		_, err = ctx.Writer.Write(html)
 		if err != nil {
 			fmt.Printf("[listener %s] beacon response write error: %v\n", t.Name, err)

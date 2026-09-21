@@ -372,12 +372,29 @@ func ConnRead(conn net.Conn, size int) ([]byte, error) {
 	return message, nil
 }
 
+// maxRecvMsgSize 是收包长度的上界。
+//
+// 长度前缀是 4 字节大端，对端（或一条错位的流）可以把它写成 4 GB，而 ConnRead 第一件事
+// 就是 make([]byte, 0, size) ⇒ 长度直接变成一次 4 GB 的分配，之后还会按 1 KB 的块一直
+// 读到那个长度为止（那是永远读不满的：实际表现是要么内存被撑爆让系统杀掉，要么永久卡在
+// 循环里不再回连）。合法流量远小于此：服务端给这类 agent 的上传分片是 0x500000（5 MB，
+// gopher / macos / linux 三处一致），其余消息都在百 KB 量级。取 64 MB 是 12 倍余量，
+// 只用来把明显不可能的包长挡在分配之前 —— 正常的包一字节都不受影响。
+//
+// ★ 本函数与 macos_agent/src_macos/functions/functions.go 的同名函数**逐字节相同**。
+// 苹果那份 2026-09-19 先修（§6.19），本处是同一缺陷的第二份，随 ② 收尾一并修（§6.20）。
+// 两份若再分叉，请一起改。
+const maxRecvMsgSize = 64 << 20
+
 func RecvMsg(conn net.Conn) ([]byte, error) {
 	bufLen, err := ConnRead(conn, 4)
 	if err != nil {
 		return nil, err
 	}
 	msgLen := binary.BigEndian.Uint32(bufLen)
+	if msgLen > maxRecvMsgSize {
+		return nil, fmt.Errorf("message too large: %d bytes (max %d)", msgLen, maxRecvMsgSize)
+	}
 
 	return ConnRead(conn, int(msgLen))
 }

@@ -64,6 +64,10 @@ uint8_t *gopher_encrypt(const uint8_t *plaintext, size_t plaintext_len,
 
 /// Decrypt with Gopher protocol: double-RC4 overlay then AES-128-GCM.
 /// key can be 16 or 32 bytes. Caller frees output. Returns NULL on auth failure.
+uint8_t *gopher_encrypt_nogcm(const uint8_t *data, size_t data_len,
+                          const uint8_t *key, size_t key_len, size_t *out_len);
+uint8_t *gopher_decrypt_nogcm(const uint8_t *data, size_t data_len,
+                          const uint8_t *key, size_t key_len, size_t *out_len);
 uint8_t *gopher_decrypt(const uint8_t *data, size_t data_len,
                         const uint8_t *key, size_t key_len,
                         size_t *out_len);

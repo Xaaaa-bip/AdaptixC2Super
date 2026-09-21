@@ -341,7 +341,29 @@ def inject_valid_rich_header(data):
     if b"Rich" in data[0x40:e_lfanew]:
         return data, 0
 
+    # Never clobber a real DOS stub message.
+    #
+    # GNU ld (MinGW) emits "This program cannot be run in DOS mode.\r\r\n$" into
+    # the DOS stub, exactly like link.exe does -- verified on a trivial
+    # x86_64-w64-mingw32-gcc build (e_lfanew 0x80, stub present, no Rich header).
+    # This block is 48 bytes and MinGW's e_lfanew is 0x80, so writing at 0x40
+    # overwrites only the FRONT of the message and leaves a dangling tail
+    # ("mode.\r\r\n$" at 0x70): a stub truncated mid-string with a Rich header
+    # spliced through it. No toolchain produces that. A plain MinGW binary with
+    # no Rich header is ordinary; a mutilated one is a forgery tell, and the
+    # CompIds below do not match real MSVC output anyway (see --no-rich).
+    if b"This program cannot be run in DOS mode" in data[0x40:e_lfanew]:
+        return data, 0
+
     # VS 2019 (14.29.30133, build 30133) toolchain — real CompId/Count pairs.
+    #
+    # NOTE: these product IDs are from the VS6-era table (1=Cvtomf, 3=Linker,
+    # 6=C++ compiler, 9=C compiler). Genuine VS2019/VS2022 binaries use the
+    # modern 0x7809 / 0x8170 / 0x8179 range instead, and each tool carries its
+    # own build number. Measured on 5 system binaries (notepad, spoolsv,
+    # svchost, where, cmd): all prodids in 0x78xx/0x81xx, builds varying
+    # 253-264 per tool. Four different prodids sharing ONE build is not
+    # something a real toolchain emits.
     build = 30133  # 0x75B5
     pairs = [
         ((build << 16) | 0x0003, 0x0000000C),  # Linker,       12 invocations
@@ -1327,6 +1349,8 @@ Examples:
                         help='Disable fake section injection')
     parser.add_argument('--no-rename-sections', action='store_true',
                         help='Disable section name randomization (recommended: random names on a multi-section mingw binary are an anomaly)')
+    parser.add_argument('--no-rich', action='store_true',
+                        help='Disable Rich header injection (recommended: a forged MSVC Rich header on a MinGW-linked binary is itself an anomaly -- wrong product-ID era, one build number shared across four tools, and it splices through the DOS stub message that GNU ld emits and that every genuine binary carries)')
     parser.add_argument('--normalize', action='store_true', default=True,
                         help='Normalize optional header fields')
     parser.add_argument('--no-normalize', action='store_true',
@@ -1373,6 +1397,7 @@ Examples:
     # Resolve feature toggles
     do_fake_sections = args.add_fake_sections and not args.no_fake_sections
     do_rename_sections = not args.no_rename_sections
+    do_rich = not args.no_rich
     do_normalize = args.normalize and not args.no_normalize
     do_ep_trampoline = args.ep_trampoline and not args.no_ep_trampoline
     do_fake_cert = args.fake_cert and not args.no_fake_cert
@@ -1425,12 +1450,16 @@ Examples:
         print(f"[2/10] [-] Section names: none renamed")
 
     # 3. Inject valid Rich Header
-    data, rich_injected = inject_valid_rich_header(data)
+    if do_rich:
+        data, rich_injected = inject_valid_rich_header(data)
+    else:
+        rich_injected = 0
     if rich_injected:
         print(f"[3/10] [+] Rich Header: valid MSVC-style header injected")
         changes_applied += 1
     else:
-        print(f"[3/10] [-] Rich Header: skipped (no room / not enough header slack)")
+        print(f"[3/10] [-] Rich Header: skipped (disabled, already present, "
+              f"would clobber the DOS stub message, or no header slack)")
 
     # 4. Checksum calculation
     if do_checksum:

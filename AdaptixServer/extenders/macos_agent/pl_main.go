@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/rc4"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -12,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	mrand "math/rand/v2"
 	"os"
 	"strconv"
@@ -276,6 +276,11 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		if err != nil {
 			return nil, err
 		}
+		// 监听器密钥（hex 32 字符 = 16 字节）同时是**内嵌 profile 的加密密钥**：
+		// 前 16 字节当 AES 密钥、salt 补零。长度不对则生成出来的 agent 必然连不上。
+		if len(encryptKey) != 16 {
+			return nil, fmt.Errorf("invalid encrypt_key: need 32 hex characters (16 bytes), got %d bytes", len(encryptKey))
+		}
 
 		reconnectTimeout, err := parseDurationToSeconds(generateConfig.ReconnectTimeout)
 		if err != nil {
@@ -338,7 +343,13 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		}
 
 		extHandler := ExtenderAgent{}
-		profileData, _ = extHandler.Encrypt(profileData, encryptKey)
+		// ★ 这里原先丢弃了 Encrypt 的错误（`profileData, _ = …`）：一旦加密失败，
+		// 内嵌的就退化成**裸 16 字节密钥**，agent 侧按"密钥+salt"去切 ⇒ 解不开、
+		// 且报错点离现场很远。必须把错误传出去。
+		profileData, err = extHandler.Encrypt(profileData, encryptKey)
+		if err != nil {
+			return nil, err
+		}
 		profileData = append(encryptKey, profileData...)
 
 		profileString := ""
@@ -750,10 +761,12 @@ func (p *PluginAgent) CreateAgent(beat []byte) (adaptix.AgentData, adaptix.Exten
 		return agentData, nil, errors.New("macOS agent received non-darwin OS")
 	}
 
-	// Generate random salt for AES-GCM + RC4 overlay (matching gopher_agent)
-	salt := make([]byte, 16)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return adaptix.AgentData{}, nil, fmt.Errorf("failed to generate salt: %w", err)
+	// ★ session key = EncryptKey || TransportSalt，两半都由 **agent** 提供
+	// （见 macos_agent/src_macos/main.go 的 CreateInfo）。原实现由服务端随机造
+	// salt，agent 无从得知 ⇒ 注册后双向密文全部解不开（首包能进、之后全哑）。
+	salt := sessionInfo.TransportSalt
+	if len(salt) != 16 {
+		salt = make([]byte, 16)
 	}
 	if len(sessionInfo.EncryptKey) != 16 {
 		return adaptix.AgentData{}, nil, errors.New("invalid macos session encrypt key length")
@@ -774,7 +787,16 @@ func (p *PluginAgent) CreateAgent(beat []byte) (adaptix.AgentData, adaptix.Exten
 
 /// AGENT HANDLER
 
-// AES-GCM + RC4 overlay encryption (matching gopher_agent)
+// AES-GCM + ChaCha20 double overlay encryption.
+//
+// ★★ 与 gopher_agent/session_crypto.go 的 GopherSession{Encrypt,Decrypt} 逐字节等价，
+// 线格式 = cnonce(12) || overlay(gcm.Seal(nonce, nonce, data))。
+//
+// 原实现是 **双 RC4 overlay、线上无 nonce**，而 teamserver 的 GopherTCP listener
+// 客户端（macos_agent/src_macos/utils/crypt.go）与 gopher agent 都已是 ChaCha20：
+// 版本不一致 ⇒ profile blob 解不开、会话密文互相解不开。
+// ★ 本文件与 src_macos/utils/crypt.go 是**同层对应物，必须同时改**（同一份协议
+// 在 extender 与 agent 各写一份，只改一侧就是**静默失联**）。
 func deriveTransportSubkey(sk, salt []byte) []byte {
 	out := make([]byte, 16)
 	for i := 0; i < 16; i++ {
@@ -783,41 +805,105 @@ func deriveTransportSubkey(sk, salt []byte) []byte {
 	return out
 }
 
-func rc4Stream(data, key []byte) ([]byte, error) {
-	c, err := rc4.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]byte, len(data))
-	c.XORKeyStream(out, data)
-	return out, nil
+// ---- ChaCha20 (128-bit key variant, 96-bit nonce) ----
+// ★ 不是 RFC 8439 的 256 位密钥版（"expand 32-byte k"），不能用 x/crypto/chacha20 替代。
+func chachaQr(a, b, c, d *uint32) {
+	*a += *b
+	*d ^= *a
+	*d = bits.RotateLeft32(*d, 16)
+	*c += *d
+	*b ^= *c
+	*b = bits.RotateLeft32(*b, 12)
+	*a += *b
+	*d ^= *a
+	*d = bits.RotateLeft32(*d, 8)
+	*c += *d
+	*b ^= *c
+	*b = bits.RotateLeft32(*b, 7)
 }
 
-func transportOverlay(buf []byte, sk, salt []byte, decrypt bool) ([]byte, error) {
+func chacha20Block(key [4]uint32, nonce [3]uint32, counter uint32) [64]byte {
+	state := [16]uint32{
+		0x61707865, 0x3320646e, 0x79622d32, 0x6b206574, // "expand 16-byte k"
+		key[0], key[1], key[2], key[3],
+		key[0], key[1], key[2], key[3],
+		counter,
+		nonce[0], nonce[1], nonce[2],
+	}
+	working := state
+	for r := 0; r < 10; r++ {
+		chachaQr(&working[0], &working[4], &working[8], &working[12])
+		chachaQr(&working[1], &working[5], &working[9], &working[13])
+		chachaQr(&working[2], &working[6], &working[10], &working[14])
+		chachaQr(&working[3], &working[7], &working[11], &working[15])
+		chachaQr(&working[0], &working[5], &working[10], &working[15])
+		chachaQr(&working[1], &working[6], &working[11], &working[12])
+		chachaQr(&working[2], &working[7], &working[8], &working[13])
+		chachaQr(&working[3], &working[4], &working[9], &working[14])
+	}
+	var out [64]byte
+	for i := 0; i < 16; i++ {
+		binary.LittleEndian.PutUint32(out[4*i:], working[i]+state[i])
+	}
+	return out
+}
+
+func chacha20Xor(key16, nonce12, data []byte) []byte {
+	if len(key16) != 16 || len(nonce12) != 12 {
+		return nil
+	}
+	var key [4]uint32
+	for i := 0; i < 4; i++ {
+		key[i] = binary.LittleEndian.Uint32(key16[4*i:])
+	}
+	var nonce [3]uint32
+	for i := 0; i < 3; i++ {
+		nonce[i] = binary.LittleEndian.Uint32(nonce12[4*i:])
+	}
+	out := make([]byte, len(data))
+	var counter uint32
+	for off := 0; off < len(data); off += 64 {
+		block := chacha20Block(key, nonce, counter)
+		n := len(data) - off
+		if n > 64 {
+			n = 64
+		}
+		for i := 0; i < n; i++ {
+			out[off+i] = data[off+i] ^ block[i]
+		}
+		counter++
+	}
+	return out
+}
+
+func transportOverlay(buf []byte, sk, salt []byte, nonce []byte, decrypt bool) []byte {
 	sub := deriveTransportSubkey(sk, salt)
 	if decrypt {
-		x, err := rc4Stream(buf, sub)
-		if err != nil {
-			return nil, err
-		}
-		return rc4Stream(x, sk)
+		x := chacha20Xor(sub, nonce, buf)
+		return chacha20Xor(sk, nonce, x)
 	}
-	x, err := rc4Stream(buf, sk)
-	if err != nil {
-		return nil, err
+	x := chacha20Xor(sk, nonce, buf)
+	return chacha20Xor(sub, nonce, x)
+}
+
+// splitExtSessionMaterial: 32 字节及以上取 key[:16] 作 AES 密钥、key[16:32] 作 salt；
+// **16 字节时 salt 补零** —— 生成 payload 时内嵌 profile 用的就是监听器密钥（16 字节）。
+func splitExtSessionMaterial(key []byte) (aesKey, salt []byte, err error) {
+	if len(key) >= 32 {
+		return append([]byte(nil), key[:16]...), append([]byte(nil), key[16:32]...), nil
 	}
-	return rc4Stream(x, sub)
+	if len(key) == 16 {
+		return key, make([]byte, 16), nil
+	}
+	return nil, nil, fmt.Errorf("session material: need at least 16 bytes, got %d", len(key))
 }
 
 func (ext *ExtenderAgent) Encrypt(data []byte, key []byte) ([]byte, error) {
-	// Split key: first 16 bytes = AES key, last 16 bytes = salt
-	if len(key) < 32 {
-		return nil, fmt.Errorf("key too short: need 32 bytes, got %d", len(key))
+	aesKey, salt, err := splitExtSessionMaterial(key)
+	if err != nil {
+		return nil, err
 	}
-	aesKey := key[:16]
-	salt := key[16:32]
 
-	// AES-GCM encrypt
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil, err
@@ -827,31 +913,36 @@ func (ext *ExtenderAgent) Encrypt(data []byte, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	nonce := make([]byte, gcm.NonceSize())
-	_, err = io.ReadFull(rand.Reader, nonce)
-	if err != nil {
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
 	inner := gcm.Seal(nonce, nonce, data, nil)
 
-	// RC4 overlay
-	return transportOverlay(inner, aesKey, salt, false)
+	cnonce := make([]byte, 12)
+	if _, err = io.ReadFull(rand.Reader, cnonce); err != nil {
+		return nil, err
+	}
+	out := transportOverlay(inner, aesKey, salt, cnonce, false)
+
+	res := make([]byte, 12+len(out))
+	copy(res, cnonce)
+	copy(res[12:], out)
+	return res, nil
 }
 
 func (ext *ExtenderAgent) Decrypt(data []byte, key []byte) ([]byte, error) {
-	// Split key: first 16 bytes = AES key, last 16 bytes = salt
-	if len(key) < 32 {
-		return nil, fmt.Errorf("key too short: need 32 bytes, got %d", len(key))
-	}
-	aesKey := key[:16]
-	salt := key[16:32]
-
-	// RC4 overlay decrypt
-	inner, err := transportOverlay(append([]byte(nil), data...), aesKey, salt, true)
+	aesKey, salt, err := splitExtSessionMaterial(key)
 	if err != nil {
 		return nil, err
 	}
+	if len(data) < 12 {
+		return nil, errors.New("ciphertext too short")
+	}
+	cnonce := data[:12]
+	body := data[12:]
 
-	// AES-GCM decrypt
+	inner := transportOverlay(body, aesKey, salt, cnonce, true)
+
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil, err
@@ -862,14 +953,10 @@ func (ext *ExtenderAgent) Decrypt(data []byte, key []byte) ([]byte, error) {
 	}
 	nonceSize := gcm.NonceSize()
 	if len(inner) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+		return nil, errors.New("ciphertext too short")
 	}
 	nonce, ciphertext := inner[:nonceSize], inner[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, err
-	}
-	return plaintext, nil
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
 func (ext *ExtenderAgent) PackTasks(agentData adaptix.AgentData, tasks []adaptix.TaskData) ([]byte, error) {

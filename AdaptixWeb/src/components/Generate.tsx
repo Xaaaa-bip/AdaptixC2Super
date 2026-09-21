@@ -7,7 +7,11 @@ import {
   type AgentProfile,
 } from '../api/listeners'
 import { ApiClient } from '../api/http'
+import { loadBuildSchema, visibleFields } from '../api/buildSchema'
+import type { BuildSchema } from '../api/types'
 import { downloadBytes, fmtSize } from '../utils'
+import { PageTips } from './PageTips'
+import { BuildSchemaFields } from './BuildSchemaFields'
 
 /**
  * 平台级预设：Windows 多种 format 收成一项，在参数区选格式。
@@ -42,7 +46,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [
   {
     id: 'macos',
     title: 'macOS',
-    desc: 'Native Agent · Mach-O / Shellcode ARM64',
+    desc: 'Go Agent · Mach-O (Apple Silicon)',
     agents: ['macos'],
     defaultAgent: 'macos',
   },
@@ -57,6 +61,24 @@ const PLATFORM_PRESETS: PlatformPreset[] = [
 
 function profileOf(agent: string): AgentProfile {
   return AGENT_PROFILES.find((p) => p.agent === agent) || AGENT_PROFILES[0]
+}
+
+/**
+ * Stager 内层载荷由 **teamserver 自己**的 HTTP 端点托管（/api/s/:token），
+ * 跟监听器不是一回事，端口也不一样。控制台本来就跑在 teamserver 上，所以
+ * location 就是正确答案。
+ *
+ * 以前这里没有输入框：端点只能靠服务端环境变量猜，猜错（典型是落到 8080，
+ * 那是 agent 监听器）就生成一个投出去必然静默失败的载荷，而服务端一个字节
+ * 的日志都不会留下。
+ */
+type StagerEndpoint = { host: string; port: number; ssl: boolean }
+
+function defaultStagerEndpoint(): StagerEndpoint {
+  if (typeof window === 'undefined') return { host: '', port: 0, ssl: true }
+  const { hostname, port, protocol } = window.location
+  const ssl = protocol === 'https:'
+  return { host: hostname || '', port: port ? Number(port) : ssl ? 443 : 80, ssl }
 }
 
 export function Generate() {
@@ -81,9 +103,31 @@ export function Generate() {
   const [jitter, setJitter] = useState(0)
   const [listener, setListener] = useState('')
   const [busy, setBusy] = useState(false)
+  // Linux 载荷重连参数（当前在 api/listeners.ts 里硬编码，这里允许覆盖）
+  const [reconnTimeout, setReconnTimeout] = useState(10)
+  const [reconnCount, setReconnCount] = useState(1000)
+  const [opsec, setOpsec] = useState(false)
+  // Stager 下载端点（beacon / linux 的 Stager 格式用）
+  const [stagerEp, setStagerEp] = useState<StagerEndpoint>(defaultStagerEndpoint)
   const [result, setResult] = useState('')
   const [lastFile, setLastFile] = useState('')
   const [lastSize, setLastSize] = useState(0)
+
+  // ── 插件声明的生成参数表 ────────────────────────────────────────────────
+  // null = 这个 agent/listener 组合没有声明（服务端返回 {}），走下面的内置界面。
+  // 拉取失败也留 null 但会记一条日志 —— 两者在界面上一样，在日志里必须能分开。
+  const [schema, setSchema] = useState<BuildSchema | null>(null)
+  // 表里那些**控制台自己没有 state** 的键的值。
+  //
+  // ★ 「在表里」才下发：没动过的键不进 config，插件按自己的默认值走。这是唯一不会
+  //   歪掉的做法 —— 表里没有 default 字段，前端无从知道"插件默认是什么"，而随便填
+  //   一个值就会静默改掉它。反例就在这张表上：rotation_mode 的选项是
+  //   ["random","sequential"]，插件默认却是 sequential（pl_main.go:756 只判 "random"），
+  //   默认选第一项 = 把顺序取用改成随机取用。
+  //
+  //   顺带也让 iat_hiding 回到它该有的语义：以前这里恒发 false，把 buildenv.mk 的
+  //   BEACON_IAT_HIDING_DEFAULT 压死了，而表上的提示还写着"默认值来自 buildenv"。
+  const [sv, setSv] = useState<Record<string, unknown>>({})
 
   const agentChoices = useMemo(
     () => AGENT_PROFILES.filter((p) => preset.agents.includes(p.agent)),
@@ -137,11 +181,116 @@ export function Generate() {
   }, [compatible, listener])
 
   const selectedListener = compatible.find((l) => l.l_name === listener)
+  // 表是按 (agent, listener 注册名) 取的 —— 服务端就是按这两个键预计算并缓存的。
+  // 没选监听器就是空串：那时服务端查不到缓存返回 {}，界面退回内置表单并提示
+  // "请先选择监听器"，比拿一个猜的 listener 渲染出错位的字段强。
+  const listenerType = selectedListener?.l_reg_name || ''
+
+  // 换 agent：上一个插件的表不能继续用（字段完全不同，会渲染出一屏发不出去的控件），
+  // 操作员在它上面填的值也一样。换监听器则**不清**——字段列表其实一样，只有 show_if
+  // 的结论不同，清掉会让界面先闪回内置表单再闪回来。
+  //
+  // exe_pseudo_sign 预置 true 是**跨字段策略②**：Exe / Service Exe 默认勾上伪签名。
+  // 它以前写死在 onGenerate 里（`format === 'Exe' || format === 'Service Exe'`），
+  // 现在表上有这个控件了，就得让它显示成勾上的样子，否则是"界面没勾、实际发了 true"。
+  //
+  // 计划书里还有一条**策略①（Stager 时强制 sleep=0s / jitter=0）在这份代码里并不存在**
+  // —— 别照计划书补上：插件确实拿 Stager 的 sleep 去生成内层载荷（pl_main.go:650），
+  // 强制归零是**改**行为，不是还原行为。
+  useEffect(() => {
+    setSchema(null)
+    setSv({ exe_pseudo_sign: true })
+  }, [agent])
+
+  useEffect(() => {
+    let stale = false
+    loadBuildSchema(api, agent, listenerType)
+      .then((s) => {
+        if (!stale) setSchema(s)
+      })
+      .catch((e: any) => {
+        if (stale) return
+        setSchema(null)
+        // 失败退回内置界面是对的（宁可给操作员一个能用的表单），但**必须留痕** ——
+        // 否则"这个 agent 没迁移"和"后端挂了"在界面上长得一模一样。
+        pushLog('warn', `生成参数表拉取失败（${agent}/${listenerType || '-'}）：${e?.message || e}`)
+      })
+    return () => {
+      stale = true
+    }
+  }, [api, agent, listenerType, pushLog])
+
   const showSleep = agent === 'beacon' || agent === 'kharon'
+  const isStager = format === 'Stager'
   const formatOptions =
     agent === 'gopher'
       ? [gopherFormatForOs(os)]
       : profile.formats
+
+  /**
+   * 表里的值 → 控制台的状态。
+   *
+   * 这几个 key 控制台自己就有 state：摘要栏、提示条（isStager）、监听器兼容性、切平台
+   * 重置都直接读它们，所以不再另开一份。**每个 key 只有一处存储** —— 不存在
+   * "表里选了 Stager、而 isStager 还是 false、于是下载端点的输入框不出现"这种分叉。
+   *
+   * ★ 代价说清楚：表以后新增一个控制台恰好也有 state 的 key，必须在这里补一根线。
+   *   漏了的表现是"界面上改了、配置里没变"，不报错。下面 write 的 switch 和这里
+   *   一一对应，改的时候两个一起改。
+   *   注意这两个 switch 是**路由**，不是"有哪些字段/取值"的第二份声明 ——
+   *   取值域和显隐一律来自表，这里一个字都不重复。
+   */
+  function readKey(k: string): unknown {
+    switch (k) {
+      case 'format':
+        return format
+      case 'arch':
+        return arch
+      case 'os':
+        return os
+      case 'sleep':
+        return sleep
+      case 'jitter':
+        return jitter
+      case 'stager_ts_host':
+        return stagerEp.host.trim()
+      case 'stager_ts_port':
+        return Number(stagerEp.port) || 0
+      case 'stager_ts_ssl':
+        return stagerEp.ssl
+      default:
+        return sv[k]
+    }
+  }
+
+  function writeKey(k: string, v: unknown) {
+    switch (k) {
+      case 'format':
+        return setFormat(String(v))
+      case 'arch':
+        return setArch(String(v))
+      case 'os':
+        return setOs(String(v))
+      case 'sleep':
+        return setSleep(String(v))
+      case 'jitter':
+        return setJitter(Number(v) || 0)
+      case 'stager_ts_host':
+        return setStagerEp((s) => ({ ...s, host: String(v ?? '') }))
+      case 'stager_ts_port':
+        return setStagerEp((s) => ({ ...s, port: Number(v) || 0 }))
+      case 'stager_ts_ssl':
+        return setStagerEp((s) => ({ ...s, ssl: !!v }))
+      default:
+        // undefined = 从表里删掉这个键 ⇒ 不下发。文本框清空、以及「默认」芯片都走这条。
+        return setSv((s) => {
+          const n = { ...s }
+          if (v === undefined) delete n[k]
+          else n[k] = v
+          return n
+        })
+    }
+  }
 
   async function onGenerate() {
     if (!listener) {
@@ -153,17 +302,53 @@ export function Generate() {
     setLastFile('')
     setLastSize(0)
     try {
-      let cfg = defaultAgentConfig(agent, format, arch, os)
-      if (agent === 'beacon') {
-        cfg = {
-          ...cfg,
-          sleep,
-          jitter,
-          iat_hiding: false,
-          exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+      let cfg: Record<string, any> = defaultAgentConfig(agent, format, arch, os)
+      if (schema) {
+        // 这个 agent 声明了字段表 ⇒ 表说了算。
+        // 先把表覆盖到的键从内置基线里**删掉**，再按表填回去 —— 否则基线里那些
+        // 表上没动过的键（`iat_hiding: false` 就是一个）会继续发出去，
+        // 而表上写着"留空 = 用插件默认值"。表声明了它，基线就不该再说话。
+        for (const f of schema.fields) delete cfg[f.key]
+        // ★ 只收集**当前可见**的键：show_if 收起 = 这个组合不适用 = 不发。
+        //   否则在 HTTP 监听器上填的代理，切到 TCP 之后会照样发出去 —— 插件不报错，
+        //   只是把一个它用不上的代理配置编进载荷。值仍留在 sv 里，切回去还在。
+        for (const f of visibleFields(schema, format, listenerType)) {
+          const v = readKey(f.key)
+          if (v !== undefined) cfg[f.key] = v
         }
-      } else if (agent === 'kharon') {
-        cfg = { ...cfg, sleep, jitter }
+      } else {
+        if (agent === 'beacon') {
+          cfg = {
+            ...cfg,
+            sleep,
+            jitter,
+            iat_hiding: false,
+            exe_pseudo_sign: format === 'Exe' || format === 'Service Exe',
+          }
+        } else if (agent === 'kharon') {
+          cfg = { ...cfg, sleep, jitter }
+        }
+        if (agent === 'linux') {
+          // 覆盖 listeners.ts 中的硬编码默认值
+          cfg = {
+            ...cfg,
+            reconn_timeout: String(reconnTimeout),
+            reconn_count: Number(reconnCount),
+            opsec_enabled: opsec,
+          }
+        }
+        // Stager 下载端点。beacon_agent / linux_agent 的 pl_stager 都按 stager_ts_*
+        // 读，且以 agent_params 为**第一优先级**（空值才回落到服务端环境变量 /
+        // 监听器 callback_addresses）。UI 是操作员唯一能改的地方，所以显式带上。
+        // （beacon 走表那条路时，这三个键由表上的 stager_ts_* 字段负责，同样是第一优先级。）
+        if (isStager) {
+          cfg = {
+            ...cfg,
+            stager_ts_host: stagerEp.host.trim(),
+            stager_ts_port: Number(stagerEp.port) || 0,
+            stager_ts_ssl: stagerEp.ssl,
+          }
+        }
       }
       pushLog('info', `生成 ${agent} / ${format} / ${listener}`, false)
       const res = await api.generateAgent(agent, [listener], cfg)
@@ -191,6 +376,11 @@ export function Generate() {
             <h3>生成载荷</h3>
             <span className="spacer" />
             <span className="dim" style={{ fontSize: 12 }}>选平台 → 选监听 → 选格式 → 下载</span>
+            <PageTips id="generate">
+              <p>选择平台 → 格式/架构 → 兼容监听器 → 生成后浏览器下载 payload。</p>
+              <p>Linux 载荷可配置<b>重连间隔/次数与 OPSEC 检测</b>；<b>Stager</b> 为一次性载荷（24 小时 TTL）。</p>
+              <p>生成产物为 base64 编码，本地解码后投递。</p>
+            </PageTips>
           </div>
           <div className="card-bd gen-body">
             <div className="gen-section-title">1. 目标平台</div>
@@ -232,7 +422,23 @@ export function Generate() {
               </>
             )}
 
-            <div className="gen-section-title">2. 监听器</div>
+            {/* 计数行。
+                这里原来是「只显示 2/5」被当成 bug 报上来的地方 —— 其实过滤本身是**对的**
+                （compatible 只留 l_reg_name 落在 profile.listeners 里的那些），
+                缺陷在于页面对"藏起来了几个、为什么藏"一个字都不说：
+                操作员看到 5 个监听器只出来 2 个，只能当成页面坏了。
+                所以补的是**解释**，不是把过滤放开 —— 放开会让不兼容的监听器可选，
+                选下去生成出来的载荷连不上。 */}
+            <div className="gen-section-title">
+              2. 监听器
+              {listenerList.length > 0 && (
+                <span className="gen-count">
+                  显示 {compatible.length} / 共 {listenerList.length}
+                  {compatible.length < listenerList.length &&
+                    ` · ${listenerList.length - compatible.length} 个与 ${profile.label} 不兼容`}
+                </span>
+              )}
+            </div>
             {compatible.length === 0 ? (
               <div className="hint warn-hint">
                 没有兼容监听器（需要 {profile.listeners.join(' / ')}）
@@ -276,6 +482,19 @@ export function Generate() {
 
             <div className="gen-section-title">3. 输出格式与参数</div>
             <div className="gen-params">
+              {/* 有表 ⇒ 按插件声明的字段表渲染；没有 ⇒ 下面那段内置 JSX **一字不动**。
+                  未迁移的 agent（kharon / gopher / macos / linux）走的还是老路，
+                  界面上和改动前逐项一致。 */}
+              {schema ? (
+                <BuildSchemaFields
+                  schema={schema}
+                  format={format}
+                  listenerType={listenerType}
+                  read={readKey}
+                  write={writeKey}
+                />
+              ) : (
+              <>
               <div className="field">
                 <label>格式</label>
                 <div className="chip-row gen-format-row">
@@ -332,6 +551,93 @@ export function Generate() {
                 )}
               </div>
 
+              {isStager && (
+                <>
+                  <div className="gen-section-title">Stager 下载端点</div>
+                  <div className="hint muted-hint" style={{ marginBottom: 4 }}>
+                    内层载荷由 <b>teamserver 自己</b>托管（<code>/api/s/&lt;token&gt;</code>），
+                    不是监听器端口。默认已填当前控制台地址；目标机若从别的出口访问，
+                    改成它够得着的对外地址。
+                  </div>
+                  <div className="field-grid-2">
+                    <div className="field">
+                      <label>Teamserver 地址</label>
+                      <input
+                        value={stagerEp.host}
+                        onChange={(e) => setStagerEp((s) => ({ ...s, host: e.target.value }))}
+                        placeholder="154.198.162.34"
+                        title="stager_ts_host"
+                      />
+                    </div>
+                    <div className="field">
+                      <label>端口</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={65535}
+                        value={stagerEp.port || ''}
+                        onChange={(e) => setStagerEp((s) => ({ ...s, port: Number(e.target.value) }))}
+                        placeholder="38212"
+                        title="stager_ts_port"
+                      />
+                    </div>
+                  </div>
+                  <div className="field field-flat">
+                    <label className="check-inline" style={{ color: 'var(--text)' }} title="stager_ts_ssl">
+                      <input
+                        type="checkbox"
+                        checked={stagerEp.ssl}
+                        onChange={(e) => setStagerEp((s) => ({ ...s, ssl: e.target.checked }))}
+                      />
+                      走 TLS（与 Teamserver.ssl 一致）
+                    </label>
+                  </div>
+                  {(!stagerEp.host.trim() || !stagerEp.port) && (
+                    <div className="hint warn-hint">
+                      地址或端口为空：生成时会回落到服务端环境变量；那里也没配的话，生成直接报错。
+                    </div>
+                  )}
+                </>
+              )}
+
+              {agent === 'linux' && (
+                <>
+                  <div className="field-grid-2">
+                    <div className="field">
+                      <label>重连间隔(秒)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={reconnTimeout}
+                        onChange={(e) => setReconnTimeout(Number(e.target.value))}
+                        title="reconn_timeout"
+                      />
+                    </div>
+                    <div className="field">
+                      <label>重连次数</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={reconnCount}
+                        onChange={(e) => setReconnCount(Number(e.target.value))}
+                        title="reconn_count"
+                      />
+                    </div>
+                  </div>
+                  <div className="field field-flat">
+                    {/* 线名 opsec_enabled 移到 title：它是复选框自己的说明文字，
+                        不是左侧那列字段标签（"重连间隔"/"重连次数"那种）。
+                        原来两者都写了，读起来像"OPSEC 检测 启用 OPSEC 检测（opsec_enabled）"。
+                        color 保持 --text：.field label 会把颜色压成 --text-2，
+                        而这是控件正文，跟全站另外 9 处 .check-inline 一致。 */}
+                    <label className="check-inline" style={{ color: 'var(--text)' }} title="opsec_enabled">
+                      <input type="checkbox" checked={opsec} onChange={(e) => setOpsec(e.target.checked)} />
+                      启用 OPSEC 检测
+                    </label>
+                  </div>
+                </>
+              )}
+
               {showSleep && (
                 <div className="field">
                   <label>Sleep / Jitter</label>
@@ -355,6 +661,8 @@ export function Generate() {
                   </div>
                 </div>
               )}
+              </>
+              )}
             </div>
 
             {format === 'Stager' && (
@@ -372,6 +680,11 @@ export function Generate() {
             {agent === 'kharon' && (
               <div className="hint muted-hint">
                 Kharon 需 <b>KharonHTTP</b> 监听器；格式 Exe / Dll / Bin / Svc。
+              </div>
+            )}
+            {agent === 'linux' && (
+              <div className="hint">
+                重连参数仅 Linux 载荷生效；Stager 为一次性载荷（24 小时 TTL）。
               </div>
             )}
 
@@ -444,6 +757,14 @@ export function Generate() {
                   <span className="k">绑定</span>
                   <b className="mono">
                     {selectedListener.l_bind_host || '-'}:{selectedListener.l_bind_port || '-'}
+                  </b>
+                </div>
+              )}
+              {isStager && (
+                <div>
+                  <span className="k">Stager 端点</span>
+                  <b className="mono">
+                    {stagerEp.ssl ? 'https' : 'http'}://{stagerEp.host || '?'}:{stagerEp.port || '?'}
                   </b>
                 </div>
               )}

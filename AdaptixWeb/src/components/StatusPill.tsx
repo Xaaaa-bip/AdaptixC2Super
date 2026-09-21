@@ -1,19 +1,5 @@
 /** Connection / entity status */
 
-export function StatusPill({
-  online,
-  label,
-  kind,
-}: {
-  online?: boolean
-  label?: string
-  kind?: 'online' | 'offline' | 'listen' | 'warn' | 'sync' | 'ws'
-}) {
-  const k = kind || (online ? 'online' : 'offline')
-  const text = label || (online ? '在线' : '离线')
-  return <span className={`tag ${k}`}>{text}</span>
-}
-
 export function ConnStatus({
   connected,
   wsConnected,

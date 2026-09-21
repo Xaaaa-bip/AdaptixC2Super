@@ -307,31 +307,69 @@ uint8_t* aes128_gcm_decrypt(const uint8_t* data, size_t data_len,
     return plaintext;
 }
 
-/// ---- RC4 Stream Cipher ----
+/// ---- ChaCha20 Stream Cipher (128-bit key variant, 96-bit nonce) ----
 
-static void rc4_crypt(const uint8_t* key, size_t key_len,
-                      const uint8_t* in, uint8_t* out, size_t len) {
-    uint8_t s[256];
-    for (int i = 0; i < 256; i++) s[i] = (uint8_t)i;
+static uint32_t chacha_rotl(uint32_t v, int c) {
+    return (v << c) | (v >> (32 - c));
+}
 
-    // KSA
-    uint8_t j = 0;
-    for (int i = 0; i < 256; i++) {
-        j = j + s[i] + key[i % key_len];
-        uint8_t t = s[i]; s[i] = s[j]; s[j] = t;
+static void chacha_qr(uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d) {
+    *a += *b; *d ^= *a; *d = chacha_rotl(*d, 16);
+    *c += *d; *b ^= *c; *b = chacha_rotl(*b, 12);
+    *a += *b; *d ^= *a; *d = chacha_rotl(*d, 8);
+    *c += *d; *b ^= *c; *b = chacha_rotl(*b, 7);
+}
+
+static uint32_t load32_le(const uint8_t* p) {
+    return ((uint32_t)p[0]) | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static void chacha20_block(const uint8_t key[16], const uint8_t nonce[12],
+                           uint32_t counter, uint32_t out[16]) {
+    uint32_t init[16], x[16];
+    init[0] = 0x61707865; init[1] = 0x3320646e;   // "expand 16-byte k"
+    init[2] = 0x79622d32; init[3] = 0x6b206574;
+    for (int i = 0; i < 4; i++) {
+        init[4 + i] = load32_le(key + 4 * i);
+        init[8 + i] = init[4 + i];
     }
+    init[12] = counter;
+    for (int i = 0; i < 3; i++)
+        init[13 + i] = load32_le(nonce + 4 * i);
 
-    // PRGA
-    uint8_t a = 0, b = 0;
-    for (size_t i = 0; i < len; i++) {
-        a = (uint8_t)(a + 1);
-        b = b + s[a];
-        uint8_t t = s[a]; s[a] = s[b]; s[b] = t;
-        out[i] = in[i] ^ s[(uint8_t)(s[a] + s[b])];
+    for (int i = 0; i < 16; i++) x[i] = init[i];
+    for (int r = 0; r < 10; r++) {
+        chacha_qr(&x[0], &x[4], &x[8], &x[12]);
+        chacha_qr(&x[1], &x[5], &x[9], &x[13]);
+        chacha_qr(&x[2], &x[6], &x[10], &x[14]);
+        chacha_qr(&x[3], &x[7], &x[11], &x[15]);
+        chacha_qr(&x[0], &x[5], &x[10], &x[15]);
+        chacha_qr(&x[1], &x[6], &x[11], &x[12]);
+        chacha_qr(&x[2], &x[7], &x[8], &x[13]);
+        chacha_qr(&x[3], &x[4], &x[9], &x[14]);
+    }
+    for (int i = 0; i < 16; i++) out[i] = x[i] + init[i];
+}
+
+static void chacha20_xor(const uint8_t key[16], const uint8_t nonce[12],
+                         const uint8_t* in, uint8_t* out, size_t len) {
+    uint32_t block[16];
+    uint32_t counter = 0;
+    size_t off = 0;
+    while (off < len) {
+        chacha20_block(key, nonce, counter, block);
+        const uint8_t* kb = (const uint8_t*)block;
+        size_t n = len - off;
+        if (n > 64) n = 64;
+        for (size_t i = 0; i < n; i++)
+            out[off + i] = in[off + i] ^ kb[i];
+        off += n;
+        counter++;
     }
 }
 
-/// ---- Gopher Transport Overlay (double-RC4) ----
+/// ---- Gopher Transport Overlay (double-ChaCha20, nonce-prefixed) ----
 
 static void derive_subkey(const uint8_t* sk, const uint8_t* salt, uint8_t* out) {
     for (int i = 0; i < 16; i++) {
@@ -341,7 +379,7 @@ static void derive_subkey(const uint8_t* sk, const uint8_t* salt, uint8_t* out) 
 
 static void transport_overlay(uint8_t* buf, size_t len,
                               const uint8_t* sk, const uint8_t* salt,
-                              int decrypt) {
+                              const uint8_t* nonce, int decrypt) {
     uint8_t sub[16];
     derive_subkey(sk, salt, sub);
 
@@ -350,13 +388,13 @@ static void transport_overlay(uint8_t* buf, size_t len,
     if (!tmp) return;
 
     if (decrypt) {
-        // Decrypt: RC4(sub) then RC4(sk)
-        rc4_crypt(sub, 16, buf, tmp, len);
-        rc4_crypt(sk, 16, tmp, buf, len);
+        // Decrypt: ChaCha20(sub) then ChaCha20(sk)
+        chacha20_xor(sub, nonce, buf, tmp, len);
+        chacha20_xor(sk, nonce, tmp, buf, len);
     } else {
-        // Encrypt: RC4(sk) then RC4(sub)
-        rc4_crypt(sk, 16, buf, tmp, len);
-        rc4_crypt(sub, 16, tmp, buf, len);
+        // Encrypt: ChaCha20(sk) then ChaCha20(sub)
+        chacha20_xor(sk, nonce, buf, tmp, len);
+        chacha20_xor(sub, nonce, tmp, buf, len);
     }
     ax_free(tmp);
 }
@@ -384,14 +422,86 @@ uint8_t* gopher_encrypt(const uint8_t* plaintext, size_t plaintext_len,
     uint8_t* gcm_data = aes128_gcm_encrypt(plaintext, plaintext_len, aes_key, &gcm_len);
     if (!gcm_data) return (uint8_t*)0;
 
-    // Step 2: Double-RC4 overlay (in-place on gcm_data)
-    transport_overlay(gcm_data, gcm_len, aes_key, salt, 0);
+    // Step 2: Double-ChaCha20 overlay, nonce-prefixed wire format
+    uint8_t nonce[12];
+    ax_random_bytes(nonce, 12);
+
+    uint8_t* out = (uint8_t*)ax_malloc(gcm_len + 12);
+    if (!out) {
+        ax_free(gcm_data);
+        ax_memset(aes_key, 0, sizeof(aes_key));
+        ax_memset(salt, 0, sizeof(salt));
+        return (uint8_t*)0;
+    }
+    transport_overlay(gcm_data, gcm_len, aes_key, salt, nonce, 0);
+    ax_memcpy(out, nonce, 12);
+    ax_memcpy(out + 12, gcm_data, gcm_len);
+    ax_free(gcm_data);
 
     ax_memset(aes_key, 0, sizeof(aes_key));
     ax_memset(salt, 0, sizeof(salt));
 
-    *out_len = gcm_len;
-    return gcm_data;
+    *out_len = gcm_len + 12;
+    return out;
+}
+
+/// ChaCha20-overlay-only encryption (no AES-GCM layer). Wire format:
+/// [nonce 12B][chacha20(subkey, nonce, plaintext)] — the mirror of
+/// gopher_decrypt_nogcm; both directions use the overlay exclusively.
+uint8_t* gopher_encrypt_nogcm(const uint8_t* data, size_t data_len,
+                              const uint8_t* key, size_t key_len,
+                              size_t* out_len) {
+    uint8_t aes_key[16], salt[16];
+    split_session_key(key, key_len, aes_key, salt);
+
+    uint8_t nonce[12];
+    ax_random_bytes(nonce, 12);
+
+    uint8_t* buf = (uint8_t*)ax_malloc(12 + data_len);
+    if (!buf) return (uint8_t*)0;
+    ax_memcpy(buf, nonce, 12);
+    ax_memcpy(buf + 12, data, data_len);
+
+    transport_overlay(buf + 12, data_len, aes_key, salt, nonce, 0);
+
+    ax_memset(aes_key, 0, sizeof(aes_key));
+    ax_memset(salt, 0, sizeof(salt));
+
+    *out_len = 12 + data_len;
+    return buf;
+}
+
+/// ChaCha20-overlay-only decryption (no AES-GCM layer). The hand-rolled
+/// AES-128-GCM proved unreliable on real-length inputs (hang), while the
+/// ChaCha20 overlay is the cross-language-verified primitive (verify [7]).
+/// Wire format: [nonce 12B][chacha20(subkey, nonce, plaintext)].
+uint8_t* gopher_decrypt_nogcm(const uint8_t* data, size_t data_len,
+                              const uint8_t* key, size_t key_len,
+                              size_t* out_len) {
+    uint8_t aes_key[16], salt[16];
+    split_session_key(key, key_len, aes_key, salt);
+
+    if (data_len < 12) {
+        ax_memset(aes_key, 0, sizeof(aes_key));
+        ax_memset(salt, 0, sizeof(salt));
+        return (uint8_t*)0;
+    }
+
+    uint8_t nonce[12];
+    ax_memcpy(nonce, data, 12);
+    size_t body_len = data_len - 12;
+
+    uint8_t* buf = (uint8_t*)ax_malloc(body_len > 0 ? body_len : 1);
+    if (!buf) return (uint8_t*)0;
+    ax_memcpy(buf, data + 12, body_len);
+
+    transport_overlay(buf, body_len, aes_key, salt, nonce, 1);
+
+    ax_memset(aes_key, 0, sizeof(aes_key));
+    ax_memset(salt, 0, sizeof(salt));
+
+    *out_len = body_len;
+    return buf;
 }
 
 uint8_t* gopher_decrypt(const uint8_t* data, size_t data_len,
@@ -400,17 +510,27 @@ uint8_t* gopher_decrypt(const uint8_t* data, size_t data_len,
     uint8_t aes_key[16], salt[16];
     split_session_key(key, key_len, aes_key, salt);
 
-    // Step 1: Copy data (we need to modify in-place)
-    uint8_t* buf = (uint8_t*)ax_malloc(data_len);
-    if (!buf) return (uint8_t*)0;
-    ax_memcpy(buf, data, data_len);
+    if (data_len < 12) {
+        ax_memset(aes_key, 0, sizeof(aes_key));
+        ax_memset(salt, 0, sizeof(salt));
+        return (uint8_t*)0;
+    }
 
-    // Step 2: Reverse double-RC4 overlay
-    transport_overlay(buf, data_len, aes_key, salt, 1);
+    uint8_t nonce[12];
+    ax_memcpy(nonce, data, 12);
+    size_t body_len = data_len - 12;
+
+    // Step 1: Copy body (we need to modify in-place)
+    uint8_t* buf = (uint8_t*)ax_malloc(body_len);
+    if (!buf) return (uint8_t*)0;
+    ax_memcpy(buf, data + 12, body_len);
+
+    // Step 2: Reverse double-ChaCha20 overlay
+    transport_overlay(buf, body_len, aes_key, salt, nonce, 1);
 
     // Step 3: AES-128-GCM decrypt
     size_t pt_len;
-    uint8_t* plaintext = aes128_gcm_decrypt(buf, data_len, aes_key, &pt_len);
+    uint8_t* plaintext = aes128_gcm_decrypt(buf, body_len, aes_key, &pt_len);
     ax_free(buf);
 
     ax_memset(aes_key, 0, sizeof(aes_key));

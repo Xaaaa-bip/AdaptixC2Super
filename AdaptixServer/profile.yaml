@@ -26,6 +26,8 @@ Teamserver:
     - "extenders/beacon_listener_http/config.yaml"
     - "extenders/beacon_listener_smb/config.yaml"
     - "extenders/beacon_listener_tcp/config.yaml"
+    - "extenders/beacon_listener_ws/config.yaml"
+    - "extenders/beacon_listener_https_emu/config.yaml"
     - "extenders/beacon_listener_dns/config.yaml"
     - "extenders/beacon_listener_discord/config.yaml"
     - "extenders/beacon_agent/config.yaml"
@@ -41,6 +43,18 @@ Teamserver:
     - "extenders/webdelivery/config.yaml"
     - "extenders/notifier/config.yaml"
     - "extenders/vnc/config.yaml"
+    # 二开补入（上游 profile.yaml 未列）。beacon_listener_ws / beacon_listener_https_emu
+    # 已按同组插入上方 listener 段。arachne 为 enabled:false 的桥接骨架。
+    - "extenders/arachne_service/config.yaml"
+    - "extenders/argfuscator/config.yaml"
+    # 二开新增：拓扑图服务端持久化（ExtenderData KV + WS 广播，零核心 Go 改动）。
+    # ★ 加这一行必须**同时**给 central.profile 加 —— 跑的是哪份由 -profile 决定，
+    #   现网命令行是 `-profile central.profile`，只改本文件是彻底静默的。
+    - "extenders/topology/config.yaml"
+    # 二开新增：libp2p 中转控制面板（systemd unit 的遥控器，插件自己不拉进程）。
+    # ★ 同 topology：必须**两份都加** —— 只加本文件对 `-profile central.profile`
+    #   的现网实例完全无效（静默）。
+    - "extenders/relay/config.yaml"
   axscripts:
     - "Extension-Kit/extension-kit.axs"
   # Shorter lifetimes reduce impact of stolen tokens; balance with operator workflow.
@@ -52,8 +66,10 @@ HttpServer:
   # default_response_headers:
   #   Server: "nginx"
   # Per-IP limit for POST /login and /refresh (rolling 1-minute window). 0 = disabled.
+  # 二开：默认 0（关闭）。上游默认 5，实测在多人/反复登录的现场会把自己人也挡在门外
+  #       （按源 IP 计数，NAT 后整间办公室共用一个 IP），且失败只回 429，排查成本高。
   rate_limit:
-    login_requests_per_minute: 5
+    login_requests_per_minute: 0
   error:
     status: 404
     headers:

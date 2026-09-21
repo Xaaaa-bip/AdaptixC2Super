@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { copyText } from '../utils'
 import { EmptyState, PageShell } from './ui'
+import { PageTips } from './PageTips'
 
 export function Credentials() {
   const api = useStore((s) => s.api)
@@ -43,6 +44,10 @@ export function Credentials() {
             <input type="search" placeholder="搜索用户 / 主机 / 标签" value={q} onChange={(e) => setQ(e.target.value)} />
             <button onClick={() => refresh()}>刷新</button>
             <div className="stats"><span>{view.length} 条</span></div>
+            <PageTips id="creds">
+              <p>团队凭据仓库：手动录入 username/password/realm/host/tag。</p>
+              <p>与 agent 端的 <code>creds</code> 收割命令（控制台输出）相互独立，需手动同步。</p>
+            </PageTips>
           </>
         }
       >

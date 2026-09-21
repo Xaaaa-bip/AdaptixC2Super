@@ -23,7 +23,7 @@ service_config: |
     dingtalk:
       enabled: true
       # 完整 Webhook 或仅 access_token 均可；启用加签时填写 secret（SEC 开头）
-      webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=5f1c2fa1863edc4c555c623acf8dda327d9d95648b62182bb4cedb0210bd2790"
+      webhook_url: ""
       secret: "SEC61b9baafe8769b63773123e90acfa45e63d4a4c97cca06092ac90f40cfc946ad"
     webhook:
       enabled: false

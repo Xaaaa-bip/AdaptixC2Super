@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { copyText, fmtRelative, fmtTime } from '../utils'
 import { EmptyState, PageShell } from './ui'
+import { PageTips } from './PageTips'
 
 export function Tasks() {
   const tasks = useStore((s) => s.tasks)
@@ -54,6 +55,11 @@ export function Tasks() {
               <span className="warn">执行中 {running}</span>
             </div>
             <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
+            <PageTips id="tasks">
+              <p><b>双击</b>任务跳转到对应主机控制台；单击查看详情与输出。</p>
+              <p>筛选：仅当前主机 / 仅执行中。</p>
+              <p>BOF / 下载 / run 等长任务以 <code>job</code> 形式显示（控制台 <code>job list</code> 可查）。</p>
+            </PageTips>
           </>
         }
       >
@@ -85,9 +91,18 @@ export function Tasks() {
                     }
                   }}>
                   <td>
+                    {/* 原来这里复用的是主机在线用的 .tag.online（绿色）。
+                        两个问题：
+                          1. 语义串了 —— 绿色在这个界面里的职责是"状态点"，
+                             主机在线是机器的状态；"任务完成"是事件的结果，
+                             借用同一个绿会让两件事看起来是同一类；
+                          2. 47 行全绿等于没有信息 —— 铺满的常态色只会让人
+                             对颜色脱敏，真正需要跳出来的"执行中"反而被淹没。
+                        现在：完成（常态）用中性，执行中用青（青 = 活的/进行中），
+                        琥珀留给真正的警告。 */}
                     {t.a_completed
-                      ? <span className="tag online">完成</span>
-                      : <span className="tag warn">执行中</span>}
+                      ? <span className="tag done">完成</span>
+                      : <span className="tag running">执行中</span>}
                   </td>
                   <td className="mono" title={t.a_cmdline}>{t.a_cmdline || '-'}</td>
                   <td>

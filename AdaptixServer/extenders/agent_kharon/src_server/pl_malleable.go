@@ -29,18 +29,42 @@ func BuildMalleableHTTPBytes(profileContent string) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("failed to parse profile: %v", err)
 	}
 
-	callbacks_raw := json_data["callbacks"].([]interface{})
+	// Every shape check below is deliberate: these were unchecked type
+	// assertions, so a profile that was valid JSON but not a valid *malleable*
+	// profile panicked the plugin rather than returning an error.  A panic
+	// raised while serving a build request takes the whole teamserver with it,
+	// which is a far worse failure than a rejected profile.
+	callbacks_raw, ok := json_data["callbacks"].([]interface{})
+	if !ok {
+		return nil, 0, fmt.Errorf("profile has no `callbacks` array")
+	}
+	if len(callbacks_raw) == 0 {
+		return nil, 0, fmt.Errorf("profile `callbacks` array is empty")
+	}
 	fmt.Printf("[DEBUG] Found %d callbacks\n", len(callbacks_raw))
 
 	buf := new(bytes.Buffer)
 
 	var all_hosts []string
-	for _, callback_item := range callbacks_raw {
-		callback_map := callback_item.(map[string]interface{})
-		hosts_raw := callback_map["hosts"].([]interface{})
-		for _, host := range hosts_raw {
-			all_hosts = append(all_hosts, host.(string))
+	for i, callback_item := range callbacks_raw {
+		callback_map, ok := callback_item.(map[string]interface{})
+		if !ok {
+			return nil, 0, fmt.Errorf("callbacks[%d] is not an object", i)
 		}
+		hosts_raw, ok := callback_map["hosts"].([]interface{})
+		if !ok {
+			return nil, 0, fmt.Errorf("callbacks[%d] has no `hosts` array", i)
+		}
+		for _, host := range hosts_raw {
+			h, ok := host.(string)
+			if !ok {
+				return nil, 0, fmt.Errorf("callbacks[%d] has a non-string entry in `hosts`", i)
+			}
+			all_hosts = append(all_hosts, h)
+		}
+	}
+	if len(all_hosts) == 0 {
+		return nil, 0, fmt.Errorf("profile declares no callback hosts")
 	}
 
 	totalCallbacks := int32(len(all_hosts))
@@ -48,8 +72,8 @@ func BuildMalleableHTTPBytes(profileContent string) ([]byte, int, error) {
 	fmt.Printf("[DEBUG] Writing %d callbacks\n", totalCallbacks)
 	fmt.Printf("[DEBUG] Hosts: %v\n", all_hosts)
 
-	first_callback := callbacks_raw[0].(map[string]interface{})
-	user_agent := first_callback["user_agent"].(string)
+	first_callback := callbacks_raw[0].(map[string]interface{}) // shape checked in the loop above
+	user_agent, _ := first_callback["user_agent"].(string)
 	get_config, has_get := first_callback["get"].(map[string]interface{})
 	post_config, has_post := first_callback["post"].(map[string]interface{})
 

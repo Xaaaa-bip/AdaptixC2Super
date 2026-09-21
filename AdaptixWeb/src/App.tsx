@@ -15,6 +15,10 @@ import { Targets } from './components/Targets'
 import { Logs } from './components/Logs'
 import { Chat } from './components/Chat'
 import { Graph } from './components/Graph'
+import { Relay } from './components/Relay'
+import { Bofs } from './components/Bofs'
+import { ArgFuscator } from './components/ArgFuscator'
+import { ExtKit } from './components/ExtKit'
 import { FileManager } from './components/FileManager'
 import { ProcessManager } from './components/ProcessManager'
 import { PtyTerm } from './components/PtyTerm'
@@ -25,8 +29,8 @@ import { CommandPalette } from './components/CommandPalette'
 import { ShortcutHelp } from './components/ui'
 import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, tabAgentId } from './store'
 import {
-  clamp, isAgentOnline, loadDensity, loadTermHeight, loadTheme,
-  saveDensity, saveTermHeight, saveTheme, type Density,
+  clamp, isAgentOnline, loadDensity, loadTermHeight,
+  saveDensity, saveTermHeight, type Density,
 } from './utils'
 
 type Menu = { id: TabId; label: string; ico: string; group?: string; shortcut?: string }
@@ -92,6 +96,29 @@ const ICO: Record<string, React.ReactNode> = {
       <circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none" />
     </Icon>
   ),
+  bofs: (
+    <Icon>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1.5" />
+      <path d="M8 3.5v17M16 3.5v17M3.5 8h17M3.5 16h17" />
+    </Icon>
+  ),
+  // 交叉重排：两条线互换端点，正是「同一个命令、换一种写法」的意思
+  argfuscator: (
+    <Icon>
+      <path d="M3.5 8h4l9 8h4" />
+      <path d="M3.5 16h4l9-8h4" />
+      <path d="M17.5 5 20.5 8l-3 3" />
+      <path d="M17.5 13 20.5 16l-3 3" />
+    </Icon>
+  ),
+  // 货架上的格子：一批现成命令摊开可查，不是「新建」也不是「执行」
+  extkit: (
+    <Icon>
+      <path d="M3.5 4.5h17v15h-17z" />
+      <path d="M3.5 9.5h17M3.5 14.5h17" />
+      <path d="M9 4.5v15" />
+    </Icon>
+  ),
   downloads: (
     <Icon>
       <path d="M12 4v11" />
@@ -145,6 +172,13 @@ const ICO: Record<string, React.ReactNode> = {
       <path d="M9 9.2 15 8.2M8.2 10.2 10.8 15M15.8 9.2 13.2 15" />
     </Icon>
   ),
+  relay: (
+    <Icon>
+      <circle cx="12" cy="12" r="2.6" />
+      <path d="M6.8 6.8a7.4 7.4 0 0 0 0 10.4M17.2 6.8a7.4 7.4 0 0 1 0 10.4" />
+      <path d="M4 4a11.3 11.3 0 0 0 0 16M20 4a11.3 11.3 0 0 1 0 16" />
+    </Icon>
+  ),
   command: (
     <Icon>
       <path d="M8 8H6.5A2.5 2.5 0 1 1 9 5.5V8h6V5.5A2.5 2.5 0 1 1 17.5 8H16" />
@@ -168,6 +202,9 @@ const MENUS: Menu[] = [
   { id: 'generate', label: '载荷', ico: 'generate', group: '作战', shortcut: 'G P' },
   { id: 'delivery', label: '投递', ico: 'delivery', group: '作战', shortcut: 'G W' },
   { id: 'tasks', label: '任务', ico: 'tasks', group: '作战', shortcut: 'G T' },
+  { id: 'bofs', label: 'BOF 模块', ico: 'bofs', group: '作战', shortcut: 'G B' },
+  { id: 'argfuscator', label: '参数混淆', ico: 'argfuscator', group: '作战', shortcut: 'G A' },
+  { id: 'extkit', label: '扩展命令', ico: 'extkit', group: '作战', shortcut: 'G X' },
   { id: 'downloads', label: '下载', ico: 'downloads', group: '资产' },
   { id: 'tunnels', label: '隧道', ico: 'tunnels', group: '资产' },
   { id: 'screens', label: '截图', ico: 'screens', group: '资产' },
@@ -175,6 +212,7 @@ const MENUS: Menu[] = [
   { id: 'targets', label: '目标', ico: 'targets', group: '资产' },
   { id: 'graph', label: '拓扑', ico: 'graph', group: '协作' },
   { id: 'chat', label: '聊天', ico: 'chat', group: '协作' },
+  { id: 'relay', label: '中转', ico: 'relay', group: '系统' },
   { id: 'logs', label: '日志', ico: 'logs', group: '系统', shortcut: 'G O' },
 ]
 
@@ -205,16 +243,6 @@ export default function App() {
   const openPty = useStore((s) => s.openPty)
   const openVnc = useStore((s) => s.openVnc)
 
-  const [dark, setDark] = useState(() => {
-    // 强制默认阳面：旧 localStorage dark 从 Signal Deck 残留时清掉
-    const t = loadTheme()
-    if (t === 'dark' && localStorage.getItem('adaptix.theme.migrated') !== 'shanshui') {
-      saveTheme('light')
-      localStorage.setItem('adaptix.theme.migrated', 'shanshui')
-      return false
-    }
-    return t === 'dark'
-  })
   const [density, setDensity] = useState<Density>(loadDensity)
   const [termH, setTermH] = useState(loadTermHeight)
   const [dragging, setDragging] = useState(false)
@@ -230,13 +258,6 @@ export default function App() {
     sessions: agentCount,
     listeners: listenerCount,
   }), [agentCount, listenerCount])
-
-  useEffect(() => {
-    const theme = dark ? 'dark' : 'light'
-    saveTheme(theme)
-    // 壳与 html 双写，避免 token 只挂在 html 时 ops 不同步
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [dark])
 
   useEffect(() => {
     saveDensity(density)
@@ -385,6 +406,9 @@ export default function App() {
           p: 'generate',
           w: 'delivery',
           t: 'tasks',
+          b: 'bofs',
+          a: 'argfuscator',
+          x: 'extkit',
           o: 'logs',
         }
         const dest = map[k]
@@ -403,7 +427,7 @@ export default function App() {
       if (!mod && e.key === '/') {
         // focus host search if on sessions, else open palette
         if ((useStore.getState().activeUiTab || useStore.getState().tab) === 'sessions') {
-          const el = document.querySelector<HTMLInputElement>('.hosts input[type="search"]')
+          const el = document.querySelector<HTMLInputElement>('.sess-search')
           if (el) { e.preventDefault(); el.focus(); el.select(); return }
         }
         e.preventDefault()
@@ -413,7 +437,11 @@ export default function App() {
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [connected, paletteOpen, helpOpen, selected, openFilesBrowser, openProcsBrowser, closeUiTab])
+    // ★ `chord` 必须在这里：onKey 里 `if (chord === 'g')` 读的是闭包里的值，
+    //   而 setChord('g') 自己不会让本 effect 重跑 —— 少了它，按 G 只会让页眉
+    //   闪出「G …」提示，接着按的字母永远匹配不上，所有 G 系列快捷键全是死的
+    //   （页眉 tooltip 写着 G H / G L / G X …）。上游两份树都有这个漏项。
+  }, [connected, paletteOpen, helpOpen, selected, openFilesBrowser, openProcsBrowser, closeUiTab, chord])
 
   // early return AFTER all hooks
   if (restoring) {
@@ -472,7 +500,6 @@ export default function App() {
   // Keep ALL open PTY/VNC sessions mounted so switching tabs does not kill WS
   const openPtyTabs = tabs.filter((id) => isPtyTab(id))
   const openVncTabs = tabs.filter((id) => isVncTab(id))
-  const vncAgent = isVncTab(current) ? tabAgentId(current) : null
 
   const primaryMenus = MENUS.filter((m) => m.group === '总览' || m.group === '作战')
   // 协作（拓扑/聊天）与资产、系统一并进侧栏
@@ -481,7 +508,7 @@ export default function App() {
   return (
     <div
       className="ops"
-      data-theme={dark ? 'dark' : 'light'}
+      data-theme="dark"
       data-density={density}
     >
       <div className="ink-scape" aria-hidden>
@@ -491,9 +518,9 @@ export default function App() {
         <div className="ink-mist" />
       </div>
       <nav className="rail" aria-label="主导航" data-rail="ink">
-        <button type="button" className="rail-brand" onClick={() => go('dashboard')} title="Adaptix">
-          <span className="rail-mark" aria-hidden><i /></span>
-          <span className="rail-brand-txt">Adaptix</span>
+        <button type="button" className="rail-brand" onClick={() => go('dashboard')} title="4-T34M">
+          <span className="rail-mark" aria-hidden>{'>_'}</span>
+          <span className="rail-brand-txt">4-T34M</span>
         </button>
         <div className="rail-section">
           {primaryMenus.map((m) => (
@@ -567,13 +594,14 @@ export default function App() {
                 <span className="dim">/{agentCount}</span>
               </span>
               <span className="ops-pill dim">{listenerCount} 监听</span>
-              <ConnStatus connected={connected} wsConnected={wsConnected} syncing={syncing} />
+              {/* 连接状态芯片（实时/轮询/离线）不在这里放。
+                  同一个 <ConnStatus> 在底栏已经常驻一份，顶栏再来一份就是
+                  同屏把同一件事说两遍 —— 而且底栏那份旁边就是在线数/监听数/
+                  任务数，是成套的；顶栏这份夹在搜索框和 退出 之间，只是噪音。
+                  状态归状态栏，顶栏留给控件和身份。 */}
             </div>
             <span className="ops-user">{username}</span>
             <button type="button" className="ghost ico" title="刷新" onClick={() => refreshRest().catch(() => {})}>↻</button>
-            <button type="button" className="ghost ico" title={dark ? '浅色' : '深色'} onClick={() => setDark((v) => !v)}>
-              {dark ? '☀' : '☾'}
-            </button>
             <button type="button" className="ghost ico" title="密度" onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
               {density === 'compact' ? '▣' : '▢'}
             </button>
@@ -615,6 +643,10 @@ export default function App() {
           {current === 'targets' && <Targets />}
           {current === 'graph' && <Graph />}
           {current === 'chat' && <Chat />}
+          {current === 'bofs' && <Bofs />}
+          {current === 'argfuscator' && <ArgFuscator />}
+          {current === 'extkit' && <ExtKit />}
+          {current === 'relay' && <Relay />}
           {current === 'logs' && <Logs />}
           {filesAgent && <FileManager agentId={filesAgent} />}
           {procsAgent && <ProcessManager agentId={procsAgent} />}
@@ -633,8 +665,6 @@ export default function App() {
               </div>
             )
           })}
-          {/* legacy single vncAgent unused when openVncTabs covers it */}
-          {false && vncAgent && <VncPanel agentId={vncAgent} />}
           {current === 'sessions' && (
             <>
               <div

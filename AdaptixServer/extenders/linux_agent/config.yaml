@@ -6,6 +6,8 @@ agent_name: "linux"
 agent_watermark: "a7f3b902"
 listeners:
   - "BeaconWS"
+  - "BeaconHTTP"
+  - "BeaconHTTPS"
   - "GopherTCP"
   - "LinuxTCP"
 multi_listeners: true

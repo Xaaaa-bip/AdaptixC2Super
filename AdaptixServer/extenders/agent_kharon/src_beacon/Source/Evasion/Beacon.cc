@@ -11,6 +11,17 @@ auto DECLFN Coff::DataParse(
         return;
     }
 
+    // `execute bof <path>` with no param_data delivers alen == 0, so size == 0 and
+    // length/size would become -4.  Floor it: the readers below stop at `length < 4`
+    // and a negative length would otherwise walk them off the end of the blob.
+    if ( size < 4 ) {
+        parser->original = buffer;
+        parser->buffer   = buffer;
+        parser->length   = 0;
+        parser->size     = 0;
+        return;
+    }
+
     parser->original = buffer;
     parser->buffer   = buffer;
     parser->length   = size - 4;
@@ -135,31 +146,101 @@ _KH_END:
     if ( MsgBuff ) KhFree( MsgBuff );
 }
 
+/*  The BeaconData* family is the BOF-facing ABI, so the struct it works on is the
+    BOF's own `datap` (Cobalt Strike layout, fixed - a BOF declares `datap parser;`
+    on its stack and hands us the pointer):
+
+        DATAP  { PCHAR original@0; PCHAR buffer@8; INT length@0x10; INT size@0x14; }
+
+    The internal wire struct disagrees with it on BOTH field order and signedness:
+
+        PARSER { PCHAR Original@0; PCHAR Buffer@8; UINT32 Size@0x10; UINT32 Length@0x14; }
+
+    Casting DATAP* to PPARSER* therefore aliases `length` onto `Size` and `size` onto
+    `Length`.  Parser::* only ever decrements the 0x14 field, so a type-punned read
+    leaves `length` (0x10) frozen at its initial value and - worse - compares the
+    guard as UINT32: a -4 length reads as 0xFFFFFFFC, `0xFFFFFFFC < 4` is false, and
+    the reader walks off the end of the blob.  That is the zero-argument crash.
+
+    These readers are implemented against DATAP directly - same arithmetic and same
+    bounds checks as the Cobalt Strike reference - so `length` stays the single,
+    signed, actually-decremented counter.  No byte swapping: Parser::Endian is
+    FALSE on this target (Kharon.h:1337) and the blob is little-endian.            */
+
 auto DECLFN Coff::DataExtract(
-    DATAP* parser, 
+    DATAP* parser,
     PINT   size
 ) -> PCHAR {
-    G_KHARON
-    return (PCHAR)Self->Psr->Bytes( (PPARSER)parser, (ULONG*)size );
+    INT   length  = 0;
+    PCHAR outdata = NULL;
+
+    if ( parser == NULL || parser->buffer == NULL )
+        return NULL;
+
+    if ( parser->length < 4 )
+        return NULL;
+
+    Mem::Copy( PTR( &length ), PTR( parser->buffer ), 4 );
+    parser->buffer += 4;
+
+    outdata = parser->buffer;
+    if ( outdata == NULL )
+        return NULL;
+
+    parser->length -= 4;
+    parser->length -= length;
+    parser->buffer += length;
+
+    if ( size != NULL )
+        *size = length;
+
+    return outdata;
 }
 
 auto DECLFN Coff::DataInt(
     DATAP* parser
 )-> INT {
-    G_KHARON
-    return Self->Psr->Int32( (PPARSER)parser );
+    INT value = 0;
+
+    if ( parser == NULL || parser->buffer == NULL )
+        return 0;
+
+    if ( parser->length < 4 )
+        return 0;
+
+    Mem::Copy( PTR( &value ), PTR( parser->buffer ), 4 );
+
+    parser->buffer += 4;
+    parser->length -= 4;
+
+    return value;
 }
 
 auto DECLFN Coff::DataShort(
     DATAP* parser
 ) -> SHORT {
-    G_KHARON
-    return Self->Psr->Int16( (PPARSER)parser );
+    SHORT value = 0;
+
+    if ( parser == NULL || parser->buffer == NULL )
+        return 0;
+
+    if ( parser->length < 2 )
+        return 0;
+
+    Mem::Copy( PTR( &value ), PTR( parser->buffer ), 2 );
+
+    parser->buffer += 2;
+    parser->length -= 2;
+
+    return value;
 }
 
 auto DECLFN Coff::DataLength(
     DATAP* parser
 ) -> INT32 {
+    if ( parser == NULL )
+        return 0;
+
     return parser->length;
 }
 

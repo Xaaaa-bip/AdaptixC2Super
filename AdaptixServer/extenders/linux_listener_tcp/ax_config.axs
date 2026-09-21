@@ -16,6 +16,11 @@ function ListenerUI(mode_create)
     let buttonEncryptKey = form.create_button("Generate");
     buttonEncryptKey.setEnabled(mode_create)
 
+    let labelCallback = form.create_label("Callback addresses (reverse pivot):");
+    let textCallback = form.create_list();
+    textCallback.setButtonsEnabled(true);
+    textCallback.addItem("address:port");
+
     let spacer2 = form.create_vspacer()
 
     form.connect(buttonEncryptKey, "clicked", function() { textlineEncryptKey.setText( ax.random_string(32, "hex") ); });
@@ -27,11 +32,15 @@ function ListenerUI(mode_create)
     layout.addWidget(labelEncryptKey,    2, 0, 1, 1);
     layout.addWidget(textlineEncryptKey, 2, 1, 1, 1);
     layout.addWidget(buttonEncryptKey,   2, 2, 1, 1);
-    layout.addWidget(spacer2,            3, 0, 1, 3);
+    layout.addWidget(labelCallback,      3, 0, 1, 1);
+    layout.addWidget(textCallback,       3, 1, 1, 2);
+    layout.addWidget(spacer2,            4, 0, 1, 3);
 
     let container = form.create_container();
     container.put("port_bind", spinPortBind);
     container.put("encrypt_key", textlineEncryptKey);
+    // Reverse pivot (opt-in): 留空 = 原行为（agent 监听端口）；填入 = agent 主动拨号这些地址。
+    container.put("callback_addresses", textCallback);
 
     let panel = form.create_panel();
     panel.setLayout(layout);

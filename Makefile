@@ -78,7 +78,7 @@ extenders: prepare
 		plugin_name=$$(basename $$dir); \
 		if [ ! -d "$$dir/dist" ]; then echo "[ERROR] $$dir/dist 不存在（Makefile 未生成 dist）"; exit 1; fi; \
 		rm -rf $(DIST_DIR)/extenders/$$plugin_name; \
-		mv $$dir/dist $(DIST_DIR)/extenders/$$plugin_name; \
+		cp -a $$dir/dist $(DIST_DIR)/extenders/$$plugin_name; \
 	done
 	@ echo "[+] done"
 
@@ -90,8 +90,9 @@ server-ext-with-kharon: kharon-sync server-ext
 
 server: prepare
 	@ echo "[*] Building adaptixserver..."
-	@ cd AdaptixServer && GOEXPERIMENT=jsonv2,greenteagc go build -buildvcs=false -ldflags="-s -w" -o adaptixserver 2>build_error.log || { echo "[ERROR] Failed to build AdaptixServer:"; cat build_error.log >&2; exit 1; }     # for static build use CGO_ENABLED=0
-	@ mv AdaptixServer/adaptixserver ./$(DIST_DIR)/
+	@ cd AdaptixServer && GOWORK=off go build -buildvcs=false -ldflags="-s -w" -o adaptixserver 2>build_error.log || { echo "[ERROR] Failed to build AdaptixServer:"; cat build_error.log >&2; exit 1; }     # for static build use CGO_ENABLED=0
+	@ cp -f AdaptixServer/adaptixserver ./$(DIST_DIR)/
+	@ rm -f AdaptixServer/build_error.log
 	@ cp AdaptixServer/ssl_gen.sh AdaptixServer/profile.yaml AdaptixServer/404page.html ./$(DIST_DIR)/
 	@ echo "[+] done"
 

@@ -716,6 +716,19 @@ static int elf_bof_execute(const uint8_t *elf_data, uint32_t elf_size,
     }
 
     // ── Step 8: Initialize BOF output, execute, collect output ──
+    /* ★ 守卫（ISS-078 家族）：`args == NULL` 且 `args_size > 0` 是**畸形**输入。
+     * 原来这一行**没有任何守卫** —— 而 BOF 是**不可信输入**（任意 .o 都能被下发），
+     * 里面第一句 `args[0]` 就是空指针解引用，直接把 agent 打死。
+     * `param_data` 缺失走的是 `args=NULL, size=0` 那条**合法**路径，不受影响。
+     * 放在 `bof_output_init()` **之前**，与上面 `if (!entry)` 的收尾方式对齐
+     * （不 init 就不必 cleanup）。 */
+    if (!args && args_size > 0) {
+        ax_free(sym_values);
+        cleanup_arena(&arena);
+        bof_error_response(response, BOF_ERR_PARSE, "args NULL with nonzero size");
+        return -1;
+    }
+
     bof_output_init();
 
     entry((char *)args, (int)args_size);

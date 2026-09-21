@@ -84,6 +84,19 @@ func runCmdCombined(dir, name string, args ...string) (string, error) {
 	return s, nil
 }
 
+// pseudoSignMissingTool 返回 applySelfSignedAuthenticode 所缺的外部工具名（两个都在则返回 ""）。
+// 判据与下面那两次 LookPath 相同，单独拎出来是为了让调用方能**区分「工具没装」与「签名跑失败」**：
+// 前者降级跳过（可选的签名步骤不该阻塞载荷生成），后者仍要终止（可能已写出半份产物）。
+func pseudoSignMissingTool() string {
+	if _, err := exec.LookPath("openssl"); err != nil {
+		return "openssl"
+	}
+	if _, err := exec.LookPath("osslsigncode"); err != nil {
+		return "osslsigncode"
+	}
+	return ""
+}
+
 // applySelfSignedAuthenticode signs inExe with an ephemeral self-signed cert (random CN/O) and writes outExe.
 // Requires openssl and osslsigncode on the teamserver PATH (same as Beacon agent).
 func applySelfSignedAuthenticode(inExe, outExe, workDir string) error {

@@ -60,6 +60,8 @@ typedef _Bool bool;
 #define COMMAND_PIVOT_EXEC      39
 #define COMMAND_LINK            40
 #define COMMAND_UNLINK          41
+/* Reverse pivot: parent listens, child dials in.  port==0 stops listening. */
+#define COMMAND_PIVOT_LISTEN    46
 
 // Tunnel/Terminal commands (control)
 #define COMMAND_TUNNEL_START    31

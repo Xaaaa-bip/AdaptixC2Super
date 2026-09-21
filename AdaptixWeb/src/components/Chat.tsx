@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { fmtTime } from '../utils'
+import { PageTips } from './PageTips'
 
 export function Chat() {
   const api = useStore((s) => s.api)
@@ -48,6 +49,10 @@ export function Chat() {
         <strong>团队聊天</strong>
         <span className="dim">{sorted.length} 条 · 当前 {username || '-'}</span>
         <div className="stats"><span className="dim">sync chat_history / chat_realtime</span></div>
+        <PageTips id="chat">
+          <p>团队实时聊天，消息经团队服务器广播给所有在线操作员。</p>
+          <p>Enter 发送；自己的消息靠右显示。</p>
+        </PageTips>
       </div>
       <div className="chat-body">
         {sorted.length === 0 ? (

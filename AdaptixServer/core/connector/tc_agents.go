@@ -28,6 +28,34 @@ type AgentConfig struct {
 	Config       string   `json:"config"`
 }
 
+type AgentBuildSchemaData struct {
+	AgentName    string `json:"agent"`
+	ListenerType string `json:"listener_type"`
+}
+
+// TcAgentBuildSchema hands the console the build form an agent declared in its
+// ax_config, so the WebUI can render it instead of keeping a hand-copied field
+// table per agent.  "{}" means the agent declared none -- the console falls
+// back, so this is a normal reply, not an error.
+func (tc *TsConnector) TcAgentBuildSchema(ctx *gin.Context) {
+	var data AgentBuildSchemaData
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": "invalid JSON data", "ok": false})
+		return
+	}
+	if data.AgentName == "" {
+		ctx.JSON(http.StatusOK, gin.H{"message": "agent is required", "ok": false})
+		return
+	}
+
+	schema, err := tc.teamserver.TsAgentBuildSchema(data.AgentName, data.ListenerType)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
+		return
+	}
+	ctx.Data(http.StatusOK, "application/json; charset=utf-8", []byte(schema))
+}
+
 func (tc *TsConnector) TcAgentGenerate(ctx *gin.Context) {
 	var (
 		agentConfig AgentConfig
@@ -99,8 +127,15 @@ func (tc *TsConnector) dispatchAgentCommand(ctx *gin.Context, username string, c
 	if commandData.HookId == "" && commandData.HandlerId == "" {
 		srvHookId, srvHandlerId, preHookHandled, hookErr := tc.teamserver.TsAxScriptResolveHooks(agentName, commandData.AgentId, listenerRegName, agentOs, commandData.CmdLine, args)
 		if hookErr != nil {
-			tc.teamserver.TsAgentConsoleErrorCommand(commandData.AgentId, username, commandData.CmdLine, std.ExtractJsErrorMessage(hookErr), "", "")
-			ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
+			msg := std.ExtractJsErrorMessage(hookErr)
+			tc.teamserver.TsAgentConsoleErrorCommand(commandData.AgentId, username, commandData.CmdLine, msg, "", "")
+			// ★ 必须回 ok:false：命令**根本没下发**（hook 解析阶段就失败了），
+			//   而调用方只在 ok:false 时才立刻报错。回 ok:true 的后果不是"少一条报错"：
+			//   浏览器操作（ui=true）会接着等 22~25s 的 BROWSER_* 回显，最后报
+			//   「等待文件列表回显超时（检查主机是否在线 / Sleep 是否过长）」——
+			//   把原因指向主机离线，与真实原因（prehook 抛异常）完全无关。
+			//   控制台里的那条错误照写，两条通道的结论一致。
+			ctx.JSON(http.StatusOK, gin.H{"message": msg, "ok": false})
 			return
 		}
 		if preHookHandled {

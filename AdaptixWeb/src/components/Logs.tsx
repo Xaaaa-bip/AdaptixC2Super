@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { copyText } from '../utils'
 import { EmptyState } from './ui'
+import { PageTips } from './PageTips'
 
 export function Logs() {
   const logs = useStore((s) => s.logs)
@@ -36,6 +37,10 @@ export function Logs() {
           const ok = await copyText(text)
           pushToast(ok ? 'ok' : 'err', ok ? '日志已复制' : '复制失败')
         }}>复制</button>
+        <PageTips id="logs">
+          <p>客户端本地事件日志：级别过滤 + 搜索 + 复制为文本。</p>
+          <p>仅记录本浏览器会话内的事件，非服务器日志。</p>
+        </PageTips>
       </div>
       <div className="log-page">
         {list.length === 0 && <EmptyState icon="≡" title="暂无系统日志" hint="操作与同步事件会出现在这里" />}

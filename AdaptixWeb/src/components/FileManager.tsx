@@ -11,20 +11,25 @@ import {
   detectEncodingId,
   type TextEncodingId,
 } from '../utils/textDecode'
-import { copyText } from '../utils'
+import { copyText, isLinuxAgent } from '../utils'
+import { PageTips } from './PageTips'
 
 type SortKey = 'name' | 'size' | 'date' | 'type'
 type Ctx = { x: number; y: number; item: FileItem } | null
 type TreeNode = { path: string; name: string; children?: string[]; loaded?: boolean; open?: boolean }
 
-function isWinPath(p: string) {
+function isWinPath(p: string, linux = false) {
+  // Linux 主机不做盘符/反斜杠判定
+  if (linux) return false
   return /\\/.test(p) || /^[a-zA-Z]:/.test(p)
 }
 
-function crumbsOf(path: string): { label: string; path: string }[] {
+function crumbsOf(path: string, linux = false): { label: string; path: string }[] {
+  // Linux 无盘符概念：面包屑根显示「根目录」（树根为「挂载点」）
+  const rootLabel = linux ? '根目录' : '此电脑'
   if (!path || path === '.') return [{ label: '当前目录', path: '.' }]
-  if (path === '' || path === '(disks)') return [{ label: '此电脑', path: '' }]
-  const win = isWinPath(path)
+  if (path === '' || path === '(disks)') return [{ label: rootLabel, path: '' }]
+  const win = isWinPath(path, linux)
   const sep = win ? '\\' : '/'
   // keep root like C:\ or /
   if (win) {
@@ -58,8 +63,10 @@ function extOf(name: string) {
   return name.slice(i + 1).toLowerCase()
 }
 
-function fileIcon(it: FileItem, isDisk = false) {
-  if (isDisk || /^[a-zA-Z]:\\?$/.test(it.name)) return '💾'
+function fileIcon(it: FileItem, isDisk = false, linux = false) {
+  // Linux 挂载点用中性文件夹图标，不做盘符判定
+  if (isDisk) return linux ? '📁' : '💾'
+  if (!linux && /^[a-zA-Z]:\\?$/.test(it.name)) return '💾'
   if (it.isDir) return '📁'
   const e = extOf(it.name)
   if (['exe', 'msi', 'bat', 'cmd', 'ps1', 'com', 'scr'].includes(e)) return '⚙️'
@@ -90,6 +97,10 @@ export function FileManager({ agentId }: { agentId: string }) {
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
   const agent = agents[agentId]
   const boosted = !!interactBoost[agentId]?.ref
+  // Linux 主机：无盘符 / 反斜杠 / GBK 概念，界面与路径处理走 Unix 分支
+  const isLinux = isLinuxAgent(agent)
+  const diskLabel = isLinux ? '挂载点' : '磁盘'
+  const rootLabel = isLinux ? '挂载点' : '此电脑'
 
   const [path, setPath] = useState('.')
   const [pathInput, setPathInput] = useState('.')
@@ -109,7 +120,7 @@ export function FileManager({ agentId }: { agentId: string }) {
   const [history, setHistory] = useState<string[]>(['.'])
   const [histIdx, setHistIdx] = useState(0)
   const [tree, setTree] = useState<Record<string, TreeNode>>({
-    '': { path: '', name: '此电脑', open: true, loaded: true, children: [] },
+    '': { path: '', name: isLinux ? '挂载点' : '此电脑', open: true, loaded: true, children: [] },
   })
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState<{
@@ -127,7 +138,7 @@ export function FileManager({ agentId }: { agentId: string }) {
   const tableRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const crumbs = useMemo(() => crumbsOf(mode === 'disks' ? '' : path), [path, mode])
+  const crumbs = useMemo(() => crumbsOf(mode === 'disks' ? '' : path, isLinux), [path, mode, isLinux])
 
   const view = useMemo(() => {
     let arr = [...items]
@@ -172,17 +183,19 @@ export function FileManager({ agentId }: { agentId: string }) {
   }
 
   function treeLabel(p: string) {
-    if (p === '') return '此电脑'
+    if (p === '') return isLinux ? '挂载点' : '此电脑'
     if (p === '.') return '当前目录'
     // C:\ or C:
-    if (/^[a-zA-Z]:\\?$/.test(p)) return p.replace(/\\$/, '')
+    if (!isLinux && /^[a-zA-Z]:\\?$/.test(p)) return p.replace(/\\$/, '')
+    if (isLinux && p === '/') return '/'
     return p.split(/[\\/]/).filter(Boolean).pop() || p
   }
 
   function treeParent(p: string): string | null {
     if (!p || p === '.' || p === '/') return null
-    // disk root belongs under "此电脑"
-    if (/^[a-zA-Z]:\\?$/.test(p)) return ''
+    // disk root belongs under "此电脑"；Linux 挂载点根（/xxx）挂在「挂载点」下
+    if (!isLinux && /^[a-zA-Z]:\\?$/.test(p)) return ''
+    if (isLinux && /^\/[^/]+$/.test(p)) return ''
     const parent = parentPath(p)
     // parentPath may return self for roots — treat as cycle
     if (!parent || parent === p) return ''
@@ -194,8 +207,8 @@ export function FileManager({ agentId }: { agentId: string }) {
       .filter((x) => x.isDir)
       .map((x) => {
         if (!dirPath || dirPath === '.') {
-          // disk list items are already full roots like C:\
-          if (/^[a-zA-Z]:/.test(x.name)) return x.name.endsWith('\\') ? x.name : (x.name + '\\')
+          // disk list items are already full roots like C:\（Linux 挂载点原样保留）
+          if (!isLinux && /^[a-zA-Z]:/.test(x.name)) return x.name.endsWith('\\') ? x.name : (x.name + '\\')
           return x.name
         }
         return joinPath(dirPath, x.name)
@@ -283,7 +296,7 @@ export function FileManager({ agentId }: { agentId: string }) {
     setBusy(true)
     setErr('')
     setProgress('')
-    setMessage('正在读取磁盘…')
+    setMessage(isLinux ? '正在读取挂载点…' : '正在读取磁盘…')
     setMode('disks')
     setSelected(null)
     setSelectedSet(new Set())
@@ -299,13 +312,13 @@ export function FileManager({ agentId }: { agentId: string }) {
       setItems(res.items)
       setPath('')
       setPathInput('')
-      setMessage(`${res.items.length} 个磁盘`)
+      setMessage(`${res.items.length} 个${diskLabel}`)
       setProgress('')
       setTree((t) => ({
         ...t,
         '': {
           path: '',
-          name: '此电脑',
+          name: isLinux ? '挂载点' : '此电脑',
           open: true,
           loaded: true,
           children: res.items.map((x) => x.name),
@@ -343,7 +356,7 @@ export function FileManager({ agentId }: { agentId: string }) {
           ...t,
           '': {
             path: '',
-            name: '此电脑',
+            name: isLinux ? '挂载点' : '此电脑',
             open: true,
             loaded: true,
             children: res.items.map((x) => x.name),
@@ -408,8 +421,10 @@ export function FileManager({ agentId }: { agentId: string }) {
   }
 
   function agentCodePages() {
-    const acp = Number((agent as any)?.a_acp || (agent as any)?.ACP || 936)
-    const oemcp = Number((agent as any)?.a_oemcp || (agent as any)?.OemCP || acp || 936)
+    // Linux 主机默认 UTF-8（65001），不回退 GBK/936
+    const fallback = isLinux ? 65001 : 936
+    const acp = Number((agent as any)?.a_acp || (agent as any)?.ACP || fallback) || fallback
+    const oemcp = Number((agent as any)?.a_oemcp || (agent as any)?.OemCP || acp) || acp
     return { acp, oemcp }
   }
 
@@ -590,6 +605,15 @@ export function FileManager({ agentId }: { agentId: string }) {
     pushToast(ok ? 'ok' : 'err', ok ? `已复制路径` : '复制失败')
   }
 
+  /** Linux 上一级：/a/b → /a、/a → /（parentPath 对单段 Unix 路径会返回自身） */
+  function parentOf(p: string) {
+    if (!isLinux) return parentPath(p || '.')
+    const s = String(p || '').replace(/\/+$/, '')
+    if (!s || s === '/' || s === '.') return p || '.'
+    const i = s.lastIndexOf('/')
+    return i <= 0 ? '/' : s.slice(0, i)
+  }
+
   function goBack() {
     if (histIdx <= 0) return
     const i = histIdx - 1
@@ -641,8 +665,8 @@ export function FileManager({ agentId }: { agentId: string }) {
           >
             {kids.length ? (node.open ? '▾' : '▸') : '·'}
           </button>
-          <span className="fm-tree-ico">{nodePath === '' ? '💻' : (/^[a-zA-Z]:\\?$/.test(nodePath) ? '💾' : '📁')}</span>
-          <span className="fm-tree-name" title={nodePath || '此电脑'}>{node.name}</span>
+          <span className="fm-tree-ico">{nodePath === '' ? '💻' : ((!isLinux && /^[a-zA-Z]:\\?$/.test(nodePath)) ? '💾' : '📁')}</span>
+          <span className="fm-tree-name" title={nodePath || rootLabel}>{nodePath === '' ? rootLabel : node.name}</span>
         </div>
         {node.open && kids.map((c) => renderTree(c, depth + 1, seen))}
       </div>
@@ -650,7 +674,8 @@ export function FileManager({ agentId }: { agentId: string }) {
   }
 
   const hostTitle = agent?.a_computer || agentId
-  const canUp = mode !== 'disks' && path && path !== '.' && !/^[a-zA-Z]:\\?$/.test(path)
+  // Linux 根目录 / 挂载点根无上一级（Windows 为盘符根）
+  const canUp = mode !== 'disks' && path && path !== '.' && (isLinux ? path !== '/' : !/^[a-zA-Z]:\\?$/.test(path))
 
   return (
     <div className="fm">
@@ -664,9 +689,13 @@ export function FileManager({ agentId }: { agentId: string }) {
           </div>
         </div>
         <div className="fm-title-actions">
-          <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`} title="打开本页会自动 sleep 0；关闭页签后恢复">
-            {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
-          </span>
+          {isLinux ? (
+            <span className="fm-boost" title="Linux beacon：编译期固定节拍，无 sleep 0 交互加速">Linux</span>
+          ) : (
+            <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`} title="打开本页会自动 sleep 0；关闭页签后恢复">
+              {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
+            </span>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -686,6 +715,11 @@ export function FileManager({ agentId }: { agentId: string }) {
             {busy ? '刷新中…' : '刷新'}
           </button>
           <button className="ghost" onClick={() => closeUiTab(`files:${agentId}` as any)}>关闭</button>
+          <PageTips id="files">
+            <p>双击目录进入；面包屑/上级按钮导航；右键下载/删除/复制路径。</p>
+            <p><b>Linux 主机显示挂载点</b>（无盘符）；预览自动识别编码（UTF-8 优先）。</p>
+            <p>多选支持 Ctrl/Shift，可批量下载/删除；「上传」投递本地文件到当前目录。</p>
+          </PageTips>
         </div>
       </div>
 
@@ -693,11 +727,11 @@ export function FileManager({ agentId }: { agentId: string }) {
       <div className="fm-nav">
         <button className="ico" disabled={histIdx <= 0 || busy} onClick={goBack} title="后退">←</button>
         <button className="ico" disabled={histIdx >= history.length - 1 || busy} onClick={goForward} title="前进">→</button>
-        <button className="ico" disabled={!canUp || busy} onClick={() => load(parentPath(path || '.'))} title="上级">↑</button>
+        <button className="ico" disabled={!canUp || busy} onClick={() => load(parentOf(path || '.'))} title="上级">↑</button>
         <button className="ico" disabled={busy} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))} title="刷新">↻</button>
         <div className="sep" />
-        <button disabled={busy} onClick={loadDisks}>此电脑</button>
-        <button disabled={busy} onClick={() => load('C:\\')}>C:\</button>
+        <button disabled={busy} onClick={() => loadDisks()}>{isLinux ? '挂载点' : '此电脑'}</button>
+        {!isLinux && <button disabled={busy} onClick={() => load('C:\\')}>C:\</button>}
         <button disabled={busy} onClick={() => load('.')}>当前目录</button>
         <div className="sep" />
         <div className="fm-crumbs">
@@ -708,7 +742,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                 className="ghost fm-crumb-btn"
                 disabled={busy}
                 onClick={() => (c.path === '' ? loadDisks() : load(c.path))}
-                title={c.path || '此电脑'}
+                title={c.path || (isLinux ? '挂载点' : '此电脑')}
               >
                 {c.label}
               </button>
@@ -774,7 +808,7 @@ export function FileManager({ agentId }: { agentId: string }) {
               <div className="fm-empty">
                 <div className="big">📁</div>
                 <div>空目录</div>
-                <div className="dim">{mode === 'disks' ? '未发现磁盘' : (path || '.')}</div>
+                <div className="dim">{mode === 'disks' ? (isLinux ? '未发现挂载点' : '未发现磁盘') : (path || '.')}</div>
               </div>
             )}
             {!busy && !err && view.length > 0 && (
@@ -840,13 +874,13 @@ export function FileManager({ agentId }: { agentId: string }) {
                             }}
                           />
                         </td>
-                        <td className="fm-ico">{fileIcon(it, disk)}</td>
+                        <td className="fm-ico">{fileIcon(it, disk, isLinux)}</td>
                         <td>
                           <div className="fm-name">{it.name}</div>
                         </td>
                         <td className="mono dim">{displaySize(it)}</td>
                         <td className="mono dim">{it.dateText || '—'}</td>
-                        <td className="dim">{disk ? '磁盘' : it.isDir ? '文件夹' : (extOf(it.name).toUpperCase() || '文件')}</td>
+                        <td className="dim">{disk ? diskLabel : it.isDir ? '文件夹' : (extOf(it.name).toUpperCase() || '文件')}</td>
                       </tr>
                     )
                   })}
@@ -857,7 +891,7 @@ export function FileManager({ agentId }: { agentId: string }) {
 
           <div className="fm-statusbar">
             <span>{view.length} 个对象{q ? `（已过滤）` : ''}</span>
-            <span className="dim mono">{mode === 'disks' ? '此电脑' : (path || '.')}</span>
+            <span className="dim mono">{mode === 'disks' ? (isLinux ? '挂载点' : '此电脑') : (path || '.')}</span>
             <span className="dim">{message || progress}</span>
             {selectedSet.size > 1 ? (
               <span className="mono">已选 {selectedSet.size} 项</span>
@@ -879,10 +913,10 @@ export function FileManager({ agentId }: { agentId: string }) {
             <div className="fm-detail-empty dim">选择文件或文件夹查看详情</div>
           ) : (
             <div className="fm-detail-bd">
-              <div className="fm-detail-ico">{fileIcon(selectedItem, mode === 'disks')}</div>
+              <div className="fm-detail-ico">{fileIcon(selectedItem, mode === 'disks', isLinux)}</div>
               <div className="fm-detail-name" title={selectedItem.name}>{selectedItem.name}</div>
               <div className="fm-kv">
-                <div><span>类型</span><b>{mode === 'disks' ? '磁盘' : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || '文件')}</b></div>
+                <div><span>类型</span><b>{mode === 'disks' ? diskLabel : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || '文件')}</b></div>
                 <div><span>大小</span><b>{displaySize(selectedItem)}</b></div>
                 <div><span>修改</span><b>{selectedItem.dateText || '—'}</b></div>
                 <div><span>路径</span><b className="mono">{itemPath(selectedItem)}</b></div>

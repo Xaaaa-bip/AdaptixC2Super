@@ -5,7 +5,8 @@ import {
   Agent, AppLog, ChatMessage, ConsoleLine, DEFAULT_SUBSCRIPTIONS, DownloadItem,
   Listener, P, Packet, Pivot, Task,
 } from './api/types'
-import { clearSession, isAgentOnline, loadSession, saveLoginPrefs, saveSession } from './utils'
+import { clearSession, isAgentOnline, isLinuxAgent, loadSession, saveLoginPrefs, saveSession } from './utils'
+import { emptySnapshot, GraphBoard, GraphSnapshot, isSnapshot, normSnapshot } from './graphBoard'
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36) }
 function now() { return Date.now() }
@@ -13,42 +14,33 @@ function now() { return Date.now() }
 /** 静态菜单页 + 动态工作页签（files:/procs:/pty:/vnc: 按主机停靠，非弹窗） */
 export type StaticTabId =
   | 'dashboard' | 'sessions' | 'listeners' | 'tasks' | 'downloads' | 'logs'
-  | 'generate' | 'delivery' | 'tunnels' | 'screens' | 'creds' | 'targets' | 'chat' | 'graph'
+  | 'generate' | 'delivery' | 'tunnels' | 'screens' | 'creds' | 'targets' | 'chat' | 'graph' | 'bofs'
+  | 'argfuscator' | 'extkit' | 'relay'
 export type TabId = StaticTabId | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
 
-/** 文件/进程管理产生的控制台噪音（listing / cat / ps 等） */
-export function isBrowserConsoleNoise(text: string, kind?: string): boolean {
-  const t = String(text || '').trim()
-  if (!t) return true
-  // help / 命令目录回显：绝不当噪音（含 Process-BOF / "Show process list" 等字样）
-  if (/^\s*Group\s*-/im.test(t) || /^\s*Command\s+:/im.test(t) || /^\s*help\s*\[/im.test(t)) return false
-  if (/\bSubCommand\b/i.test(t) && /\bDescription\b/i.test(t)) return false
-  // local echo of browser-driven commands
-  if (kind === 'local' || t.startsWith('>')) {
-    const body = t.replace(/^>\s*/, '')
-    // 仅单行本地回显（> ls …），多行 help 正文不要滤
-    if (!/\n/.test(body) && /^(ls|disks|cat|download|rm|cp|mv|mkdir|ps\b|pwd)\b/i.test(body)) return true
-  }
-  if (/^Listing\s+'/i.test(t)) return true
-  // 仅匹配任务标题行，避免误杀 help 里的 "Show process list" / Process-BOF
-  if (/^Process list\b/i.test(t) && !/\n/.test(t)) return true
-  if (/file content:/i.test(t)) return true
-  if (/directory is EMPTY/i.test(t)) return true
-  if (/^Status:\s*OK\b/i.test(t)) return true
-  if (/^Task:\s*(list files|show process|show mounted|cat file|kill process|download file|remove path)/i.test(t)) return true
-  if (/^Process \d+ killed/i.test(t)) return true
-  if (/^File (moved|copied|removed)|Directory '.+' created|removed successfully/i.test(t)) return true
-  // large table dumps (ls/ps) without user typing them
-  if (/\bType\b.+\bSize\b.+\bName\b/i.test(t) && /\bdir\b/i.test(t)) return true
-  if (/^\s*PID\b.+\bPPID\b/im.test(t) && /^\s*\d+\s+\d+/m.test(t) && !/^\s*Group\s*-/im.test(t)) return true
-  return false
-}
-
-export function isBrowserCmdline(cmd: string): boolean {
-  const c = String(cmd || '').trim().toLowerCase()
-  if (!c) return false
-  return /^(ls|disks|cat|download|rm|cp|mv|mkdir|pwd|ps)\b/.test(c)
-}
+/**
+ * ★ 这里曾经有 isBrowserConsoleNoise() / isBrowserCmdline()，按**命令拼写**与
+ *   **输出形状**（`> ls`、`Listing '…'`、`file content:`、`Process list`、
+ *   `Task: …`…）猜「这条是不是文件管理器发的」，命中即静默丢弃。
+ *   **已整批删除，不要再加回来。** 理由（2026-09-20 实测，两条独立证据）：
+ *
+ *   1. 服务端已经分流，前端这份猜测是纯冗余：
+ *      `ts_agent.go:162` 把 `ui:true` 的任务改成 TASK_TYPE_BROWSER，
+ *      `mgr_task.go:78/:98` 的 `!= TASK_TYPE_BROWSER` 同时挡掉 TsSyncConsole 与
+ *      DbConsoleInsert，`ts_browser.go` 四条完成路径只发 BROWSER_* 包
+ *      （且都不调 completeTask ⇒ browser 任务连 Tasks 表都不落）。
+ *      前端的 BROWSER_FILES/DISKS/PROCESS 是**独立 case 分支**，从不进 pushConsole。
+ *      ⇒ 四个 CONSOLE_* 分支**结构上不可能**收到文件管理器的输出。
+ *   2. 那些规则会**误杀操作员自己的命令**，而且是双向的：
+ *      拼写表让手敲 `ls`/`cat`/`ps`/`pwd`/`rm`/`cp`/`mv`/`mkdir` 的
+ *      **回显和输出一起消失**；`/^Task:/` 吞掉 `sleep` 的回执
+ *      （`beacon_agent/pl_main.go:2181` 就返回 "Task: sleep to …"，
+ *      与文件管理器那句 "Task: list files" 同形，**拼写无法区分**）。
+ *
+ *   判据（可复现）：文件面板发出的请求体是
+ *   `{"ui":true,"cmdline":"ls .","data":"{\"message\":\"Task: list files\"}"}`，
+ *   返回 ok:true，而 Consoles / Tasks **两张表都不增行**。
+ */
 
 export function isFilesTab(id: string | null | undefined): id is `files:${string}` {
   return !!id && id.startsWith('files:')
@@ -90,6 +82,11 @@ type State = {
   connected: boolean
   wsConnected: boolean
   syncing: boolean
+  /**
+   * 服务端自报的非回环网卡地址，来自同步起始包（SyncPackerStart.interfaces，与 Qt 侧
+   * ax.interfaces() 同源）。只用于给「回连地址」的缺省值做旁证 —— 见 lib/callbackHost.ts。
+   */
+  serverInterfaces: string[]
   username: string
   tab: TabId
   agents: Record<string, Agent>
@@ -113,6 +110,19 @@ type State = {
   interactBoost: Record<string, { sleep: number; jitter: number; ref: number }>
   chatMessages: ChatMessage[]
   pivots: Record<string, Pivot>
+  /**
+   * 主机页批量删除的勾选集合。
+   *
+   * 用 `Set` 而不是数组：线上见过 454 台主机，每行都要判一次「我勾了没」，
+   * 数组就是 454×454。用 Set 是 O(1)。
+   *
+   * ★ 两条 zustand v5 的硬约束（违反任一条都是「点了没反应」）：
+   *   1. **永远替换、绝不原地改**。v5 用 `Object.is` 比引用，`s.checkedIds.add(x)`
+   *      之后引用没变 ⇒ 订阅者永不重渲染。
+   *   2. **绝不在 selector 里 new**。`useStore(s => new Set(s.checkedIds))`
+   *      每次比较都是新对象 ⇒ 无限重渲染。
+   */
+  checkedIds: Set<string>
 
   setTab: (t: TabId) => void
   openConsole: (id: string) => void
@@ -146,16 +156,108 @@ type State = {
   handlePacket: (pkt: Packet) => void
   refreshRest: () => Promise<void>
   sendCommand: (cmdline: string) => Promise<void>
-  generateBeacon: (cfg: {
-    listener: string; format: string; arch: string; sleep: string; jitter: number; iat_hiding: boolean
-  }) => Promise<{ filename: string; bytes: Uint8Array }>
-  createHttpListener: (name: string, port: number, callback: string) => Promise<void>
+  /** 删一批主机的**唯一配方**。removeSelected / removeChecked 都是它的薄包装。 */
+  removeAgents: (ids: string[]) => Promise<void>
   removeSelected: () => Promise<void>
-  setBrowserPath: (agentId: string, path: string) => void
+  removeChecked: () => Promise<void>
+  toggleChecked: (id: string, on?: boolean) => void
+  /** 全选 / 全不选当前筛选结果（不是全部主机 —— 操作员看到什么就勾什么） */
+  setChecked: (ids: string[], on: boolean) => void
+  clearChecked: () => void
   setBrowserFiles: (agentId: string, path: string, items: any[], message?: string) => void
   setBrowserProcs: (agentId: string, items: any[], message?: string) => void
+
+  /**
+   * 拓扑图上「操作员自己画的那部分」。全局一张图，所有操作员共享，
+   * 存在服务端（extenders/topology 插件 + ExtenderData 表），不在 localStorage。
+   *
+   * ★ 放在 store 而不是 Graph.tsx 的 local state：实时通道的
+   *   SERVICE_DATA 推送要能写进来，而推送处理器在 handlePacket 里。
+   */
+  graph: GraphSnapshot
+  /** 进拓扑页时拉一次全量。失败只记日志、不阻断渲染（画空图也比白屏强）。 */
+  loadGraph: () => Promise<void>
+  /** 只换本地快照。WS 推送与保存成功都走它。 */
+  applyGraph: (snap: GraphSnapshot) => void
+  /**
+   * 保存一块 board。成功 → true。
+   * 撞上乐观锁（别人先改了）→ 吃下服务端回的当前版本、提示、返回 false。
+   */
+  saveGraph: (board: GraphBoard) => Promise<boolean>
 }
 
+
+/**
+ * 删掉一批主机时该做的**全部**本地清理。
+ *
+ * 抽成一份是因为有两条路径要删主机（单选 removeSelected / 批量 removeChecked），
+ * 而**重复配方是本项目的铁律违反**（`pl_bofs_api.go:381` 原话：「避免出现第二份
+ * 配方（本项目铁律）」）。两份配方必然漂 —— 原来那一份就漏了 browserFiles /
+ * browserProcs / interactBoost / downloads / tasks / pivots 六项，全是泄漏。
+ *
+ * 两个容易写错的地方：
+ *
+ * 1. **`selectedAgentId` 只在「焦点主机自己也被删」时才清空。** 批量场景下
+ *    焦点主机经常不在勾选集合里，无条件清空会把操作员的控制台从脚底下抽走。
+ *
+ * 2. **`interactBoost` 要删、不是 release。** 对已经不存在的主机走
+ *    releaseInteractBoost 会**给不存在的 agent 下发 sleep 恢复任务**。
+ *    直接删是安全的：`acquireInteractBoost` 里对恢复值有钳制
+ *    （`restoreSleep = sleepSec > 0 ? sleepSec : 5`，注释明写「避免永久 0」），
+ *    所以主机若真回来，会以 ≥5s 重新注册，不会永远停在 sleep 0。
+ */
+function purgeAgents(s: State, ids: Set<string>): Partial<State> {
+  const agents = { ...s.agents }
+  const browserFiles = { ...s.browserFiles }
+  const browserProcs = { ...s.browserProcs }
+  const interactBoost = { ...s.interactBoost }
+  for (const id of ids) {
+    delete agents[id]
+    delete browserFiles[id]
+    delete browserProcs[id]
+    delete interactBoost[id]
+  }
+
+  const openConsoleTabs = s.openConsoleTabs.filter((x) => !ids.has(x))
+  const activeConsoleTab = s.activeConsoleTab && ids.has(s.activeConsoleTab)
+    ? (openConsoleTabs[openConsoleTabs.length - 1] || null)
+    : s.activeConsoleTab
+
+  // 文件/进程/PTY/VNC 页签（`files:<id>` 这种）随主机一起关
+  const kept = s.uiTabs.filter((t) => { const a = tabAgentId(t); return !a || !ids.has(a) })
+  const uiTabs = kept.length ? kept : (['dashboard'] as TabId[])
+  const activeUiTab = uiTabs.includes(s.activeUiTab as TabId) ? s.activeUiTab : uiTabs[uiTabs.length - 1]
+
+  const downloads: Record<string, DownloadItem> = {}
+  for (const [k, d] of Object.entries(s.downloads)) {
+    if (!ids.has(String((d as any)?.d_agent_id || ''))) downloads[k] = d
+  }
+
+  const pivots: Record<string, Pivot> = {}
+  for (const [k, p] of Object.entries(s.pivots)) {
+    const parent = String((p as any)?.p_parent_agent_id || '')
+    const child = String((p as any)?.p_child_agent_id || '')
+    if (!ids.has(parent) && !ids.has(child)) pivots[k] = p
+  }
+
+  return {
+    agents,
+    browserFiles,
+    browserProcs,
+    interactBoost,
+    consoleLines: s.consoleLines.filter((l) => !ids.has(l.agentId)),
+    openConsoleTabs,
+    activeConsoleTab,
+    uiTabs,
+    activeUiTab: (activeUiTab || 'dashboard') as TabId,
+    tab: (activeUiTab || 'dashboard') as TabId,
+    selectedAgentId: s.selectedAgentId && ids.has(s.selectedAgentId) ? null : s.selectedAgentId,
+    tasks: s.tasks.filter((t) => !ids.has(String((t as any)?.a_id || ''))),
+    // 勾选集合跟着剪枝：留着已删主机的 id，下次批量删就会把它再发给服务端
+    // ⇒ 服务端报「找不到」⇒ 整个请求 ok:false（见 removeAgents 的注释）。
+    checkedIds: new Set([...s.checkedIds].filter((x) => !ids.has(x))),
+  }
+}
 
 export const useStore = create<State>((set, get) => ({
   api: new ApiClient(''),
@@ -163,6 +265,7 @@ export const useStore = create<State>((set, get) => ({
   connected: false,
   wsConnected: false,
   syncing: false,
+  serverInterfaces: [],
   username: '',
   tab: 'dashboard',
   agents: {},
@@ -185,6 +288,8 @@ export const useStore = create<State>((set, get) => ({
   interactBoost: {},
   chatMessages: [],
   pivots: {},
+  graph: emptySnapshot(),
+  checkedIds: new Set<string>(),
 
   setTab: (t) => set({ tab: t, activeUiTab: t }),
   openConsole: (id) => set((s) => {
@@ -273,6 +378,11 @@ export const useStore = create<State>((set, get) => ({
       get().pushToast('warn', '主机离线，无法打开 VNC')
       return
     }
+    // linux_agent 无桌面捕获能力，VNC 面板是死胡同：直接拦住，不开页签
+    if (isLinuxAgent(agent)) {
+      get().pushToast('warn', 'Linux 主机不支持 VNC')
+      return
+    }
     const id = vncTabId(agentId)
     const already = get().uiTabs.includes(id)
     set((s) => {
@@ -295,6 +405,18 @@ export const useStore = create<State>((set, get) => ({
       return
     }
     const agent = agents[agentId]
+    // Linux 主机：sleep 0 交互加速无意义（linux_agent 不解析该命令），
+    // 仅登记占位防止误下发，并在关闭页签时由 releaseInteractBoost 直接清理
+    if (isLinuxAgent(agent)) {
+      set((s) => ({
+        interactBoost: {
+          ...s.interactBoost,
+          [agentId]: { sleep: 0, jitter: 0, ref: 1 },
+        },
+      }))
+      pushLog('info', 'Linux 主机无需交互加速（不发送 sleep 0）', false)
+      return
+    }
     // 记录恢复值：优先 agent 上报；缺省 5s
     let sleepSec = Number(agent?.a_sleep ?? 5)
     let jitter = Number(agent?.a_jitter ?? 0)
@@ -401,8 +523,8 @@ export const useStore = create<State>((set, get) => ({
   },
   pushConsole: (agentId, kind, text) => {
     const t = String(text || '')
-    // 文件管理 / 进程管理 / 静默浏览操作：绝不进命令控制台
-    if (isBrowserConsoleNoise(t, kind)) return
+    // 唯一的过滤：空行不携带信息。**不按内容/拼写判断**——见本文件顶部那段说明。
+    if (!t.trim()) return
     set((s) => ({
       consoleLines: [...s.consoleLines, { id: uid(), agentId, kind, text: t, ts: now() }].slice(-2000),
     }))
@@ -426,23 +548,63 @@ export const useStore = create<State>((set, get) => ({
     if (exists) return s
     return { chatMessages: [...s.chatMessages, next].slice(-500) }
   }),
-  setBrowserPath: (agentId, path) => set((s) => ({
-    browserFiles: {
-      ...s.browserFiles,
-      [agentId]: {
-        path,
-        items: s.browserFiles[agentId]?.items || [],
-        message: s.browserFiles[agentId]?.message || '',
-        _ts: s.browserFiles[agentId]?._ts,
-      },
-    },
-  })),
   setBrowserFiles: (agentId, path, items, message = '') => set((s) => ({
     browserFiles: { ...s.browserFiles, [agentId]: { path, items, message, _ts: Date.now() } },
   })),
   setBrowserProcs: (agentId, items, message = '') => set((s) => ({
     browserProcs: { ...s.browserProcs, [agentId]: { items, message, _ts: Date.now() } },
   })),
+
+  applyGraph: (snap) => set({ graph: snap }),
+
+  loadGraph: async () => {
+    try {
+      const res = await get().api.topologyGet()
+      // ★ 只有真拿到快照才覆盖本地。服务端答 200 但空体时 request() 返回 null，
+      //   直接 normSnapshot(null) 会把操作员手上这张图变成空的 —— 而他下一步
+      //   一保存，空图就盖掉了服务端上所有人画的东西。见 graphBoard.isSnapshot。
+      if (!isSnapshot(res)) {
+        get().pushLog('warn', '拓扑图加载失败: 服务端未返回有效数据', false)
+        return
+      }
+      set({ graph: normSnapshot(res) })
+    } catch (e: any) {
+      // 不弹 toast：进页面自动拉一次就弹错，操作员会以为是自己点坏了。
+      get().pushLog('warn', `拓扑图加载失败: ${e?.message || e}`, false)
+    }
+  },
+
+  saveGraph: async (board) => {
+    const { api, graph } = get()
+    try {
+      const res = await api.topologySave(graph.rev, board)
+      // ★ 判成功必须看 rev，不能看「没抛异常」。同样那条 200+空体路径会让
+      //   request() 返回 null，而 `Number(undefined) || rev+1` 恰好算出一个
+      //   漂亮的 rev ⇒ 界面报告保存成功、实际什么都没落库。宁可误报失败，
+      //   也不能让操作员以为存住了。
+      if (!isSnapshot(res)) {
+        get().pushLog('err', '拓扑图保存失败: 服务端未确认（未返回 rev）')
+        get().pushToast('err', '拓扑图保存失败：服务端未确认，刷新后会丢失')
+        return false
+      }
+      // 本地立即生效，不等 WS 推送回来：推送是尽力而为的，而"拖完就按 F5"
+      // 一定会发生。等推送的写法在这条路径上会丢操作。
+      set({ graph: { rev: Number(res.rev), board } })
+      return true
+    } catch (e: any) {
+      const p = e?.payload
+      if (p && p.conflict) {
+        // 别人先改了。服务端把当前版本连同 board 一起回给我们，直接吃下重画 ——
+        // 只回一句「图已被他人修改」的话，操作员只能靠猜现在是什么样。
+        set({ graph: normSnapshot(p) })
+        get().pushToast('warn', '拓扑图已被他人修改，已载入最新版本')
+        return false
+      }
+      get().pushLog('err', `拓扑图保存失败: ${e?.message || e}`)
+      get().pushToast('err', `拓扑图保存失败: ${e?.message || e}`)
+      return false
+    }
+  },
 
   loginAndConnect: async ({ baseUrl, username, password }) => {
     const api = new ApiClient(baseUrl || '')
@@ -477,14 +639,10 @@ export const useStore = create<State>((set, get) => ({
       })
     }
     get().pushLog('info', `恢复会话 ${snap.username}…`, false)
-    // 校验 token：先 listAgents；失败则 refresh；再失败清会话
+    // 校验 token：listAgents 内部自带一次 401→refresh 重试；
+    // 失败即清会话，不再二次 refresh（避免打爆登录限流）
     try {
-      try {
-        await api.listAgents()
-      } catch {
-        await api.refreshAccess()
-        await api.listAgents()
-      }
+      await api.listAgents()
     } catch (e: any) {
       clearSession()
       get().pushLog('warn', `会话已失效，请重新登录: ${e?.message || e}`, false)
@@ -512,9 +670,12 @@ export const useStore = create<State>((set, get) => ({
       downloads: {},
       chatMessages: [],
       pivots: {},
+      // 换账号/换服务端连着进来时不能带着上一条连接的图渲染。
+      graph: emptySnapshot(),
       openConsoleTabs: [],
       activeConsoleTab: null,
       selectedAgentId: null,
+      checkedIds: new Set<string>(),
       uiTabs: ['dashboard'],
       activeUiTab: 'dashboard',
       tab: 'dashboard',
@@ -591,6 +752,7 @@ export const useStore = create<State>((set, get) => ({
       connected: false,
       wsConnected: false,
       syncing: false,
+      serverInterfaces: [],
       username: '',
       agents: {},
       listeners: {},
@@ -598,9 +760,12 @@ export const useStore = create<State>((set, get) => ({
       downloads: {},
       chatMessages: [],
       pivots: {},
+      // ★ 只清本地缓存。服务端那份是所有人共享的，退出登录绝不能顺手把它抹了。
+      graph: emptySnapshot(),
       openConsoleTabs: [],
       activeConsoleTab: null,
       selectedAgentId: null,
+      checkedIds: new Set<string>(),
       consoleLines: [],
       browserFiles: {},
       browserProcs: {},
@@ -619,7 +784,10 @@ export const useStore = create<State>((set, get) => ({
     }
     switch (type) {
       case P.SYNC_START:
-        set({ syncing: true })
+        // 服务端在同步起始包里带上了自己的网卡地址（SyncPackerStart.interfaces，
+        // 与 Qt 侧 ax.interfaces() 同源）。此前这个字段收到就丢。
+        // Web 这边只拿它给「回连地址」的缺省值做旁证 —— 见 lib/callbackHost.ts。
+        set({ syncing: true, serverInterfaces: Array.isArray(pkt.interfaces) ? pkt.interfaces : [] })
         break
       case P.SYNC_FINISH:
         set({ syncing: false })
@@ -630,6 +798,23 @@ export const useStore = create<State>((set, get) => ({
       case P.NOTIFICATION:
         pushLog('info', String(pkt.message || pkt.Message || ''))
         break
+      case P.SERVICE_DATA: {
+        // 插件自定义服务的广播（TsServiceSendDataAll）。
+        // ★ SyncPackerServiceData.Data 是 **string**，里面才是 JSON ——
+        //   少一次 parse 就会把 "{\"rev\":3}" 整个字面量当成 board。
+        if (String(pkt.service || '') !== 'topology') break
+        let inner: any = null
+        try { inner = JSON.parse(String(pkt.data ?? '')) } catch { break }
+        // 解析出来还得**是**一份快照。这条守卫与 loadGraph/saveGraph 那两处同源：
+        // 插件只推 rev+board，缺了 rev 就说明这不是本轮认识的格式。
+        if (!isSnapshot(inner)) break
+        // 服务端是唯一权威，收到就吃下，不做 rev 比较。
+        // 加"只接受更新的 rev"这道守卫看似稳妥，实际会造出一个死局：
+        // 一旦有人手工删掉 ExtenderData 里那行（回退文档里就是这么写的），
+        // rev 从 0 重来，所有还开着的浏览器就会永远拒绝更新。
+        set({ graph: normSnapshot(inner) })
+        break
+      }
       case P.LISTENER_START:
       case P.LISTENER_EDIT: {
         const l = normListener(pkt)
@@ -644,11 +829,30 @@ export const useStore = create<State>((set, get) => ({
       case P.AGENT_NEW:
       case P.AGENT_UPDATE: {
         const a = normAgent(pkt)
-        if (a.a_id) set((s) => ({ agents: { ...s.agents, [a.a_id]: { ...s.agents[a.a_id], ...a } } }))
+        if (!a.a_id) break
+        set((s) => {
+          const old = s.agents[a.a_id]
+          // ★ AGENT_UPDATE 是**部分更新**：服务端 SyncPackerAgentUpdate 除 a_id 外
+          // 每个字段都是 `*T` + omitempty（core/server/utils.go:335-363），
+          // 一次「设置标签」只带 a_id + a_tags 两个字段，其余一概不出现。
+          // 而 normAgent 是「字段齐全」的归一化器，包里没有的字段会填 '' / undefined，
+          // 于是 {...old, ...normAgent(pkt)} 会把 a_os / a_computer / a_username /
+          // a_arch / a_elevated 这些**包里根本没提**的字段一起冲成空。
+          // （长期没被发现，是因为 Hosts 改完标签会 refreshRest() 重拉全量补回来；
+          //   但拓扑图这类不重拉的路径上，空白会一直留到下次全量同步。）
+          //
+          // 修法：先把包里的**原始键**盖到旧值上，再整体归一化 ——
+          // 「这次到底带了哪些字段」由包自己说了算，不必再维护一张
+          // a_x → x 的别名表（那张表在 a_external_ip→external、
+          // a_os_desc→os、a_oemcp→oem_cp 这几处并不规则，通用规则一定写错）。
+          const next = old && pkt.type === P.AGENT_UPDATE ? normAgent({ ...old, ...pkt }) : { ...old, ...a }
+          return { agents: { ...s.agents, [a.a_id]: next } }
+        })
         break
       }
       case P.AGENT_TICK: {
-        const ids: string[] = pkt.a_id_array || (pkt.a_id ? [pkt.a_id] : [])
+        // 服务端 SyncPackerAgentTick 把 id 列表序列化为数组放在 a_id（json:"a_id"）
+        const ids: string[] = Array.isArray(pkt.a_id) ? pkt.a_id : (pkt.a_id ? [pkt.a_id] : [])
         const tick = pkt.a_last_tick || Math.floor(Date.now() / 1000)
         set((s) => {
           const agents = { ...s.agents }
@@ -659,14 +863,33 @@ export const useStore = create<State>((set, get) => ({
       }
       case P.AGENT_REMOVE: {
         const ids: string[] = pkt.a_id_array || (pkt.a_id ? [pkt.a_id] : [])
-        set((s) => { const agents = { ...s.agents }; for (const id of ids) delete agents[id]; return { agents } })
+        // 走同一份清理配方，而不是只删 agents 里的键：别的主机下线时，
+        // 这边开着的控制台页签 / 文件页签 / 勾选状态同样是悬挂的。
+        // （没删干净的话，下一次批量删除会把这些幽灵 id 发给服务端。）
+        set((s) => purgeAgents(s, new Set(ids)))
         break
       }
       case P.AGENT_TASK_SYNC:
       case P.AGENT_TASK_UPDATE:
       case P.AGENT_TASK_SEND: {
-        const t = normTask(pkt)
-        set((s) => ({ tasks: [t, ...s.tasks.filter((x) => x.a_task_id !== t.a_task_id)].slice(0, 500) }))
+        // ★ 这里是「任务跑完，命令/开始/操作员全变 `-`」的**真凶**，别再只盯
+        //   下面的 CONSOLE_* 分支（那一处是同一个 bug 的第二实例，但不是
+        //   产生现象的那一次写入）。服务端对每个任务发两条通道的包：
+        //     mgr_task.go:88 → AGENT_TASK_UPDATE，0x4a，字段只有
+        //       a_id/a_task_id/a_handler_id/a_task_type/a_finish_time/
+        //       a_msg_type/a_message/a_text/a_completed
+        //       —— **没有 a_cmdline / a_start_time / a_client**（utils.go:401）
+        //     mgr_task.go:99 → CONSOLE_TASK_UPD，同样不带这三样
+        //   而建行的 AGENT_TASK_SYNC（utils.go:383）**带全**五样。
+        //   于是整条替换 = 用残缺包覆盖完整行。改成合并（见 mergeTask）。
+        if (pkt.a_task_id) {
+          const t = normTask(pkt)
+          set((s) => {
+            const prev = s.tasks.find((x) => x.a_task_id === t.a_task_id)
+            const merged = prev ? mergeTask(prev, t) : t
+            return { tasks: [merged, ...s.tasks.filter((x) => x.a_task_id !== t.a_task_id)].slice(0, 500) }
+          })
+        }
         break
       }
       case P.AGENT_TASK_REMOVE:
@@ -679,7 +902,8 @@ export const useStore = create<State>((set, get) => ({
         break
       }
       case P.DOWNLOAD_DELETE: {
-        const ids: string[] = pkt.d_file_id_array || (pkt.d_file_id ? [pkt.d_file_id] : [])
+        // 服务端 SyncPackerDownloadDelete 的字段名是 d_files_id
+        const ids: string[] = pkt.d_files_id || pkt.d_file_id_array || (pkt.d_file_id ? [pkt.d_file_id] : [])
         set((s) => { const downloads = { ...s.downloads }; for (const id of ids) delete downloads[id]; return { downloads } })
         break
       }
@@ -716,14 +940,15 @@ export const useStore = create<State>((set, get) => ({
             // Qt / server JSON keys: b_filename, b_is_dir, b_size, b_date
             items = arr.map((x: any) => {
               const rawName = x.b_filename || x.filename || x.Filename || x.name || ''
+              // linux_agent 的 b_date 是格式化字符串（"Jan 05 12:34"）而非 epoch：非数字则原样透传
+              const num = Number(x.b_date)
+              const date = Number.isFinite(num) && num > 0 ? new Date(num * 1000) : null
               return {
               name: rawName,
               isDir: !!(x.b_is_dir ?? x.is_dir ?? x.IsDir ?? x.dir),
               size: Number(x.b_size ?? x.size ?? x.Size ?? 0),
-              date: Number(x.b_date ?? x.date ?? x.Date ?? 0),
-              dateText: x.b_date
-                ? new Date(Number(x.b_date) * (Number(x.b_date) < 1e12 ? 1000 : 1)).toLocaleString()
-                : undefined,
+              date: date ? Math.floor(date.getTime() / 1000) : (Number(x.date ?? x.Date ?? 0) || 0),
+              dateText: date ? date.toLocaleString() : (typeof x.b_date === 'string' ? x.b_date : ''),
               sizeText: x.b_size != null ? String(x.b_size) : undefined,
               mode: x.b_mode || x.mode || '',
               user: x.b_user || x.user || '',
@@ -779,22 +1004,16 @@ export const useStore = create<State>((set, get) => ({
         const body = (text || message).trim()
         // 有正文（help 列表）→ 按 ok 原文输出，勿走 local 的 `> ` 前缀逻辑
         if (body) {
-          if (!isBrowserConsoleNoise(body, 'ok')) {
-            pushConsole(aid, 'ok', body)
-          }
-        } else if (cmdline && !isBrowserCmdline(cmdline) && !isBrowserConsoleNoise(cmdline, 'local')) {
+          pushConsole(aid, 'ok', body)
+        } else if (cmdline) {
           pushConsole(aid, 'local', cmdline.startsWith('>') ? cmdline : `> ${cmdline}`)
         }
         break
       }
       case P.CONSOLE_ERROR: {
-        const errMsg = String(pkt.a_message || pkt.a_text || '')
-        // 文件/进程浏览器错误只 toast，不刷控制台
-        if (isBrowserConsoleNoise(errMsg, 'err') || isBrowserCmdline(String(pkt.a_cmdline || ''))) {
-          if (errMsg) get().pushToast('err', errMsg)
-        } else {
-          pushConsole(pkt.a_id || '', 'err', errMsg)
-        }
+        // 错误一律进控制台（原文）。此前按 isBrowserCmdline 把「像文件管理器」的
+        // 报错降级成 toast ⇒ 手敲 ls/cat/ps… 失败时控制台一个字都没有。
+        pushConsole(pkt.a_id || '', 'err', String(pkt.a_message || pkt.a_text || ''))
         break
       }
       case P.CONSOLE_OUT:
@@ -802,20 +1021,23 @@ export const useStore = create<State>((set, get) => ({
       case P.CONSOLE_TASK_UPD: {
         const message = String(pkt.a_message || pkt.message || '')
         const text = String(pkt.a_text || pkt.text || '')
-        const cmdline = String(pkt.a_cmdline || pkt.cmdline || pkt.a_command_line || '')
         const msg = [message, text].filter(Boolean).join('\n')
         const kind = pkt.a_completed === false ? 'task' : 'ok'
         const aid = pkt.a_id || ''
-        // 文件/进程浏览器相关任务：只更新任务列表，绝不 push 到命令控制台
-        const browserCmd = isBrowserCmdline(cmdline)
-        const browserMsg = isBrowserConsoleNoise(msg, kind) || isBrowserConsoleNoise(message, kind)
-        if (msg && aid && !browserCmd && !browserMsg) {
+        if (msg && aid) {
           pushConsole(aid, kind as any, msg)
         }
-        // 仍写入 tasks（任务中心可见），但不刷控制台
+        // 任务行必须**合并**，不能整条替换：type=107（完成包）不带
+        // a_cmdline/a_start_time/a_client。★ 但**产生「跑完变 `-`」现象的那次
+        // 写入不在这里**，在 P.AGENT_TASK_UPDATE 分支（它先到、先把行擦空，
+        // 于是这里的 prev 已经是残缺的）。两处都要合并，缺一不可。
         if (pkt.a_task_id) {
           const t = normTask(pkt)
-          set((s) => ({ tasks: [t, ...s.tasks.filter((x) => x.a_task_id !== t.a_task_id)].slice(0, 500) }))
+          set((s) => {
+            const prev = s.tasks.find((x) => x.a_task_id === t.a_task_id)
+            const merged = prev ? mergeTask(prev, t) : t
+            return { tasks: [merged, ...s.tasks.filter((x) => x.a_task_id !== t.a_task_id)].slice(0, 500) }
+          })
         }
         break
       }
@@ -889,13 +1111,16 @@ export const useStore = create<State>((set, get) => ({
       const n = normDl(d)
       if (n.d_file_id) dlMap[n.d_file_id] = n
     }
-    set({
+    set((s) => ({
       // REST is source of truth for agents/listeners lists
       agents: agentMap,
       listeners: listenerMap,
       tasks: (Array.isArray(tasks) ? tasks : []).map(normTask).slice(0, 500),
       downloads: dlMap,
-    })
+      // 勾选集合跟 REST 名单求交：批量条上显示的必须是**真的还在**的主机数。
+      // 少了一台没剪掉，操作员看到的「已选 50 台」里就有一台是幽灵。
+      checkedIds: new Set([...s.checkedIds].filter((id) => !!agentMap[id])),
+    }))
   },
 
   sendCommand: async (cmdline) => {
@@ -912,76 +1137,85 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  generateBeacon: async (cfg) => {
+  /**
+   * 删一批主机。单选与批量走**同一条**路径。
+   *
+   * ★ 这里的 catch 是必须的，而且是本功能最容易写错的一处：
+   * `tc_agents.go:311-331` 会遍历所有 id 收集错误，**只要有一台失败**就整体
+   * 返回 `{message: <编号列表>, ok: false}`（HTTP 200），而 `http.ts:92` 在
+   * `ok === false` 时抛 `data.message`。如果照直 await 出去，结果是
+   * 「批量删 50 台、其中 1 台删不掉 ⇒ 抛错 ⇒ 本地清理根本不执行 ⇒ 50 台
+   * 全都还在，日志里只有一行错误」。所以：出错也照清，再 refreshRest 对账，
+   * 服务端真的没删掉的会自己重新出现。
+   */
+  removeAgents: async (ids) => {
     const { api, pushLog } = get()
-    pushLog('info', `生成 beacon format=${cfg.format} listener=${cfg.listener}`)
-    const res = await api.generateAgent('beacon', [cfg.listener], {
-      os: 'windows', arch: cfg.arch, format: cfg.format,
-      sleep: cfg.sleep, jitter: cfg.jitter, iat_hiding: cfg.iat_hiding,
-      exe_pseudo_sign: cfg.format === 'Exe' || cfg.format === 'Service Exe',
-    })
-    const decoded = ApiClient.decodeGeneratePayload(res.message)
-    pushLog('ok', `已生成 ${decoded.filename} (${decoded.bytes.length} bytes)`)
-    return decoded
-  },
-
-  createHttpListener: async (name, port, callback) => {
-    const { api, pushLog } = get()
-    const config = {
-      host_bind: '0.0.0.0', port_bind: port,
-      callback_addresses: [callback],
-      encrypt_key: randomHex(16),
-      http_method: 'POST', hb_header: 'X-Beacon-Id',
-      host_header: [], uri: ['/api/v1/status'],
-      user_agent: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
-      ssl: false, 'page-error': '<html>404</html>',
-      'page-payload': '<html><!--<<<PAYLOAD_DATA>>>--></body></html>', protocol: 'http',
+    const list = [...new Set(ids)].filter((id) => !!get().agents[id])
+    if (!list.length) return
+    let failed = false
+    try {
+      await api.removeAgents(list)
+    } catch (e: any) {
+      failed = true
+      pushLog('err', `删除未全部成功（本地已清理，稍后对账）：${e?.message || e}`)
     }
-    await api.createListener(name, 'BeaconHTTP', config)
-    pushLog('ok', `监听器 ${name} 已创建`)
-    await get().refreshRest()
+    set((s) => purgeAgents(s, new Set(list)))
+    pushLog('warn', failed
+      ? `已请求删除 ${list.length} 台主机（服务端报告部分失败）`
+      : `已删除 ${list.length} 台主机`)
+    await get().refreshRest().catch(() => {})
   },
 
   removeSelected: async () => {
-    const { api, selectedAgentId, pushLog } = get()
-    if (!selectedAgentId) return
-    await api.removeAgents([selectedAgentId])
-    pushLog('warn', `已删除主机 ${selectedAgentId}`)
-    set((s) => {
-      const agents = { ...s.agents }
-      delete agents[selectedAgentId]
-      const consoleLines = s.consoleLines.filter((l) => l.agentId !== selectedAgentId)
-      const openConsoleTabs = s.openConsoleTabs.filter((x) => x !== selectedAgentId)
-      const activeConsoleTab = s.activeConsoleTab === selectedAgentId
-        ? (openConsoleTabs[openConsoleTabs.length - 1] || null)
-        : s.activeConsoleTab
-      // 关掉该主机的文件/进程页签
-      const uiTabs = s.uiTabs.filter((t) => tabAgentId(t) !== selectedAgentId)
-      const safeTabs = uiTabs.length ? uiTabs : (['dashboard'] as TabId[])
-      const activeUiTab = safeTabs.includes(s.activeUiTab as TabId)
-        ? s.activeUiTab
-        : safeTabs[safeTabs.length - 1]
-      return {
-        agents,
-        selectedAgentId: null,
-        consoleLines,
-        openConsoleTabs,
-        activeConsoleTab,
-        uiTabs: safeTabs,
-        activeUiTab: activeUiTab || 'dashboard',
-        tab: (activeUiTab || 'dashboard') as TabId,
-      }
-    })
+    const { selectedAgentId } = get()
+    if (selectedAgentId) await get().removeAgents([selectedAgentId])
   },
+
+  removeChecked: async () => {
+    const { checkedIds } = get()
+    if (checkedIds.size) await get().removeAgents([...checkedIds])
+  },
+
+  toggleChecked: (id, on) => set((s) => {
+    const n = new Set(s.checkedIds)
+    if (on ?? !n.has(id)) n.add(id); else n.delete(id)
+    return { checkedIds: n }
+  }),
+
+  setChecked: (ids, on) => set((s) => {
+    const n = new Set(s.checkedIds)
+    for (const id of ids) { if (on) n.add(id); else n.delete(id) }
+    return { checkedIds: n }
+  }),
+
+  clearChecked: () => set({ checkedIds: new Set<string>() }),
 }))
+
+/**
+ * `0.0.0.0` / `::` 是"没取到地址"的哨兵值，不是地址。
+ *
+ * 原样留着会一路伪装成真地址。实测 454 台主机里 448 台的 a_internal_ip 是
+ * `0.0.0.0`，于是所有 `a_internal_ip || a_external_ip || '-'` 的回退链全断了：
+ * `'0.0.0.0'` 是非空字符串（真值），永远赢过真实的外网 IP，也永远显示不出 `-`。
+ * 界面上就成了 448 张卡片齐刷刷写着 `root@0.0.0.0` —— 一个看着像地址、
+ * 实际意思是"不知道"的东西，操作员按它去定位主机只会扑空。
+ *
+ * 在唯一入口处归一成空串，让回退链恢复本来的意思。两侧都要过一遍：
+ * `blankIp(a) || blankIp(b)` 而不是 `blankIp(a || b)` —— 后者在 a 是 '0.0.0.0'
+ * 时根本轮不到 b。
+ */
+const blankIp = (v: any): string => {
+  const s = String(v ?? '').trim()
+  return s === '0.0.0.0' || s === '::' || s === '::0' ? '' : s
+}
 
 function normAgent(p: any): Agent {
   return {
     a_id: p.a_id || p.id || '',
     a_name: p.a_name || p.name,
     a_listener: p.a_listener || p.listener,
-    a_external_ip: p.a_external_ip || p.external,
-    a_internal_ip: p.a_internal_ip || p.internal,
+    a_external_ip: blankIp(p.a_external_ip) || blankIp(p.external),
+    a_internal_ip: blankIp(p.a_internal_ip) || blankIp(p.internal),
     a_domain: p.a_domain || p.domain,
     a_computer: p.a_computer || p.computer,
     a_username: p.a_username || p.username,
@@ -1021,6 +1255,29 @@ function normListener(p: any): Listener {
     l_data: data,
   }
 }
+/**
+ * 任务包是**增量**的，同一条任务会先后收到多个包：
+ *   type=106 / CONSOLE_TASK_SYNC —— 带 a_cmdline + a_start_time + a_client，a_completed=false
+ *   type=107 / CONSOLE_TASK_UPD / CONSOLE_OUT —— 只带 a_finish_time + a_message/a_text
+ * 所以合并时**已知值优先**：新包里缺失（undefined/null/空串）的字段绝不覆盖已有的非空值。
+ *
+ * ★ a_completed 取**单调或**：断线重连会回放旧包，一个迟到的 106（completed=false）
+ *   不该把已经完成的任务翻回未完成。
+ */
+function mergeTask(prev: Task, next: Task): Task {
+  const out: any = { ...prev }
+  for (const k of Object.keys(next) as (keyof Task)[]) {
+    const v: any = (next as any)[k]
+    if (v === undefined || v === null || v === '') continue
+    if (k === 'a_completed') {
+      out[k] = prev.a_completed === true || v === true
+      continue
+    }
+    out[k] = v
+  }
+  return out as Task
+}
+
 function normTask(p: any): Task {
   return {
     a_task_id: p.a_task_id || p.task_id,

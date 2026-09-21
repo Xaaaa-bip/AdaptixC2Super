@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useStore } from '../store'
 import { fmtRelative, isAgentOnline } from '../utils'
 import { ConnStatus } from './StatusPill'
+import { PageTips } from './PageTips'
 
 export function Dashboard({ online, total, listeners }: { online: number; total: number; listeners: number }) {
   const setTab = useStore((s) => s.setTab)
@@ -57,6 +58,11 @@ export function Dashboard({ online, total, listeners }: { online: number; total:
           <button type="button" onClick={() => go('listeners')}>监听器</button>
           <button type="button" onClick={() => go('graph')}>拓扑</button>
           <button type="button" onClick={() => go('chat')}>聊天</button>
+          <PageTips id="dashboard">
+            <p>四块统计卡点击直达对应功能页（主机/监听器/任务/通道）。</p>
+            <p><b>通道</b>区分实时（WebSocket）与轮询（REST 兜底）两种连接状态。</p>
+            <p>下方三个面板（最近主机/监听器/动态）均可直接跳转。</p>
+          </PageTips>
         </div>
       </header>
 

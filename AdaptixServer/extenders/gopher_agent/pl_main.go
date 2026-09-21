@@ -78,6 +78,14 @@ type Teamserver interface {
 	TsTunnelConnectionData(channelId int, data []byte)
 	TsTunnelConnectionAccept(tunnelId int, channelId int)
 
+	// ★ 批次9d：与上面同名方法配对 —— 见调用点（COMMAND_TUNNEL_ACCEPT）的说明。
+	//   ★ InitPlugin 是 `Ts = ts.(Teamserver)` 的**运行时**断言：core 必须真有这两个
+	//     方法，否则插件加载即 panic。已核对 core/server/ts_tunnels.go 新增
+	//     TsTunnelConnectionAcceptDirect(tunnelId, channelId int)，以及既有的
+	//     TsTunnelChannelExists(channelId int) bool（签名逐字一致）。
+	TsTunnelConnectionAcceptDirect(tunnelId int, channelId int)
+	TsTunnelChannelExists(channelId int) bool
+
 	TsConvertCpToUTF8(input string, codePage int) string
 	TsConvertUTF8toCp(input string, codePage int) string
 	TsWin32Error(errorCode uint) string
@@ -106,6 +114,50 @@ func (p *PluginAgent) GetExtender() adaptix.ExtenderAgent {
 
 func makeProxyTask(packData []byte) adaptix.TaskData {
 	return adaptix.TaskData{Type: adaptix.TASK_TYPE_PROXY_DATA, Data: packData, Sync: false}
+}
+
+// maxBofObjectBytes 是单个 BOF 对象的上限，一条**读文件前**的守卫：
+// 实参可能是敲错的路径（"/var/log/syslog"），没有上限就会把整个文件读进内存
+// 再塞进任务包 —— 服务端 1.9G，这类手误不该有放大器。
+const maxBofObjectBytes = 16 << 20 // 16 MiB
+
+// resolveBofObject 把 `execute bof` 的实参解析成对象字节。
+//
+// ★ 为什么必须先试路径：本命令在命令树里的示例一直是
+//   `execute bof /home/user/whoami.o`（ax_config.axs），WebUI 的补全也按
+//   服务端绝对路径给候选，而这里原本**只认 base64** —— 操作员从候选里选一个，
+//   得到 `illegal base64 data at input byte 4`，完全看不出「其实要贴 base64」。
+//   linux_agent 早已是「先路径、后 base64」，这里补齐，四个 extender 行为一致。
+//
+// ★ 路径按**进程 cwd** 解析（服务端 cwd = <dist>，如 /home/ad/dist），
+//   所以补全给的是绝对路径；相对路径能用只是巧合，不要依赖。
+func resolveBofObject(v string) ([]byte, error) {
+	if v == "" {
+		return nil, errors.New("bof object is empty")
+	}
+
+	if st, statErr := os.Stat(v); statErr == nil && !st.IsDir() {
+		if st.Size() > maxBofObjectBytes {
+			return nil, fmt.Errorf("bof object %s is too large (%d bytes, max %d)", v, st.Size(), maxBofObjectBytes)
+		}
+		b, readErr := os.ReadFile(v)
+		if readErr != nil {
+			return nil, fmt.Errorf("cannot read bof object %s: %v", v, readErr)
+		}
+		if len(b) == 0 {
+			return nil, fmt.Errorf("bof object %s is empty", v)
+		}
+		return b, nil
+	}
+
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("bof object %q is neither a readable file on the teamserver nor valid base64 data", v)
+	}
+	if len(b) == 0 {
+		return nil, fmt.Errorf("bof object %q decoded to 0 bytes", v)
+	}
+	return b, nil
 }
 
 func getStringArg(args map[string]any, key string) (string, error) {
@@ -191,6 +243,13 @@ func TunnelMessageClose(channelId int) adaptix.TaskData {
 func TunnelMessageReverse(tunnelId int, port int) adaptix.TaskData {
 	var packData []byte
 	/// START CODE HERE
+	// ★ 批次9：原实现是**空壳** —— packData 从不赋值，makeProxyTask(nil) 下发的是一枚
+	//   空任务，agent 收到什么也不做。这就是「API ok / GUI 看似成功 / 零流量」的第一因。
+	//   写法沿用本文件自己的惯用法（msgpack 包 Command），**不照抄 beacon 的 packer 数组** ——
+	//   gopher 的 agent 解析的是 Command{Code, Id, Data}，两套编码不通用。
+	packerData, _ := msgpack.Marshal(ParamsTunnelReverse{TunnelId: tunnelId, Port: port})
+	cmd := Command{Code: COMMAND_TUNNEL_REVERSE, Data: packerData}
+	packData, _ = msgpack.Marshal(cmd)
 	/// END CODE HERE
 	return makeProxyTask(packData)
 }
@@ -372,6 +431,93 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				return nil, err
 			}
 
+		case "libp2p":
+
+			// Phase5 §4 步骤 7。地址语义与 tcp 分支共用 callback_addresses
+			// （此处是 multiaddr，不是 host:port），但**不套 TLS** —— Noise 已提供
+			// 加密与对端认证，再叠一层只会增加握手延迟与签名面。
+			servers, ok := listenerMap["callback_addresses"].(string)
+			if !ok {
+				return nil, errors.New("libp2p profile: callback_addresses must be a string")
+			}
+
+			servers = strings.ReplaceAll(servers, " ", "")
+			servers = strings.ReplaceAll(servers, "\n", ",")
+			servers = strings.TrimSuffix(servers, ",")
+			var addrs []string
+			for _, a := range strings.Split(servers, ",") {
+				a = strings.TrimSpace(a)
+				if a != "" {
+					addrs = append(addrs, a)
+				}
+			}
+
+			// 可选 l2p_addrs：显式多地址列表（给了就**覆盖** callback_addresses）。
+			if extra, ok := listenerMap["l2p_addrs"].(string); ok && strings.TrimSpace(extra) != "" {
+				var fromExtra []string
+				for _, a := range strings.FieldsFunc(extra, func(r rune) bool {
+					return r == ',' || r == '\n' || r == ' ' || r == '\t'
+				}) {
+					if a = strings.TrimSpace(a); a != "" {
+						fromExtra = append(fromExtra, a)
+					}
+				}
+				if len(fromExtra) > 0 {
+					addrs = fromExtra
+				}
+			}
+			if len(addrs) == 0 {
+				return nil, errors.New("libp2p profile: need at least one multiaddr")
+			}
+
+			l2pPeerID, _ := listenerMap["l2p_peer_id"].(string)
+			l2pProtocol, _ := listenerMap["l2p_protocol"].(string)
+			// ★ S6：l2p_peer_id 原是**死字段**（写进 agent profile 却从不被读，
+			//   现已从 Profile 里删掉）。这里把它转成一条真判据：listener 自报的
+			//   peer id 必须出现在它给出的**每一个** multiaddr 里 —— 不一致时
+			//   agent 会去拨一个错误的 peer id，libp2p 在 Noise 握手阶段拒绝，
+			//   现象是"agent 永远不上线"，与网络不通完全无法区分。
+			if l2pPeerID != "" {
+				for _, a := range addrs {
+					if !strings.Contains(a, "/p2p/"+l2pPeerID) {
+						return nil, fmt.Errorf("libp2p profile: l2p_peer_id %q not present in multiaddr %q", l2pPeerID, a)
+					}
+				}
+			}
+			l2pTimeout := 0
+			if v, ok := listenerMap["l2p_dial_timeout"].(float64); ok && v > 0 {
+				l2pTimeout = int(v)
+			}
+			// ★★ 绝不把 listener 的 l2p_privkey 当作 agent 自己的身份 —— Phase5
+			// 实测出的第三个致命缺陷（红绿对照见 patches/l2p_ident.py 的文件头）：
+			// listener 的私钥一旦被 agent 采用，agent 的 peer id 就等于它要拨的地址里
+			// /p2p/<peerID> 那个 id ⇒ libp2p 的 swarm_dial.go:246
+			//     if p == s.local { return nil, ErrDialToSelf }
+			// 在任何传输层动作**之前**就返回 ⇒ agent 静默重试 5 次后退出（退出码 0、
+			// 零输出），服务端连一次 SYN 都收不到。而且私钥会随**每一个**生成出来的
+			// agent 二进制外泄 —— 拿到任意一个 agent 就能冒充 listener。
+			// agent 是**拨号方**，用 libp2p 自生成的临时身份即可（见
+			// src_gopher/transport_libp2p.go 的同名说明）；临时身份对隐匿性反而更好：
+			// 每次运行的 peer id 都不同，不可跨运行关联。
+			var l2pPrivKey []byte // 恒为 nil
+
+			profile := Profile{
+				Type:              uint(agentWatermark),
+				Addresses:         addrs,
+				ConnTimeout:       reconnectTimeout,
+				ConnCount:         generateConfig.ReconnectCount,
+				UseSSL:            false,
+				Transport:         "libp2p",
+				Libp2pAddrs:       addrs,
+				Libp2pPrivKey:     l2pPrivKey,
+				Libp2pProtocol:    l2pProtocol,
+				Libp2pDialTimeout: l2pTimeout,
+			}
+			profileData, err = msgpack.Marshal(profile)
+			if err != nil {
+				return nil, err
+			}
+
 		default:
 			return nil, errors.New("protocol unknown")
 		}
@@ -392,6 +538,27 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		/// END CODE HERE
 	}
 	return agentProfiles, nil
+}
+
+// agentNeedsLibp2p 判断这次构建是否需要 `-tags libp2p`（Phase5 §4 步骤 7）。
+//
+// ★ 判据必须与 GenerateProfiles 看**同一个来源**（profile.ListenerProfiles），
+// 而不是包级变量 —— teamserver 可以并发构建，包级变量会让"A 构建的 tag 泄漏到 B"。
+// ★ 与 GenerateProfiles 里的 switch **故意不共用函数**：这里只做"有没有 libp2p"
+// 这一件事，不解析 profile 内容；解析失败当"不需要"处理，真正的错误留给
+// GenerateProfiles 去报，避免同一个错误在两处各报一遍。
+// （↑ 续行**不缩进**：Go 1.19+ 会把 doc comment 里缩进的续行当成代码块重排成 `//	`。）
+func agentNeedsLibp2p(profile adaptix.BuildProfile) bool {
+	for _, lp := range profile.ListenerProfiles {
+		var lm map[string]any
+		if err := json.Unmarshal(lp.Profile, &lm); err != nil {
+			continue
+		}
+		if proto, _ := lm["protocol"].(string); proto == "libp2p" {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [][]byte) ([]byte, string, error) {
@@ -529,6 +696,14 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Using go-win7 for Windows 7 support")
 
 	}
+	// Phase5 §4 步骤 7：任一 listener profile 要 libp2p ⇒ 本产物必须带 tag 构建，
+	// 否则编进去的是 transport_nolibp2p.go 的替身，agent 拨号必失败。
+	// ★ 注入点**必须**在 Win7 分支**之后**：那个分支会把 cmdBuild 整个重写。
+	if agentNeedsLibp2p(profile) {
+		cmdBuild += " -tags libp2p"
+		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Gopher: libp2p transport requested -> adding -tags libp2p")
+	}
+
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Starting build process...")
 
 	var buildArgs []string
@@ -538,16 +713,43 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		_ = os.RemoveAll(tempDir)
 		return nil, "", err
 	}
+	// ★★ B-B1 硬门：**证明**这次产物里真的编进了它需要的 transport，而不是只相信
+	//    agentNeedsLibp2p 的判断。判据是**双向**的 —— 正样本（本变体的指纹必须出现）
+	//    + 负样本（另一种变体的指纹必须不出现）。只做负样本的话，"扫描通道在这个文件
+	//    上根本没生效"也会通过，那正是归档里第⑨种假绿（负向观测必须先证明观测通道
+	//    对该对象有效）。
+	//    ★ 在这里拦下来，operator 看到的是**构建失败**并带原因，而不是一个永远不上线、
+	//      且与"网络不通"无法区分的 agent。
+	if err := axVerifyTransportTag(buildPath, agentNeedsLibp2p(profile)); err != nil {
+		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_ERROR, "Gopher: "+err.Error())
+		_ = os.RemoveAll(tempDir)
+		return nil, "", err
+	}
+	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Gopher: transport tag assertion OK")
 
 	finalExe := buildPath
 	if GoOs == "windows" && generateConfig.ExePseudoSign {
-		signedPath := filepath.Join(tempDir, "agent_signed.exe")
-		_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Gopher: applying pseudo Authenticode (openssl + osslsigncode)...")
-		if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {
-			_ = os.RemoveAll(tempDir)
-			return nil, "", err
+		// ★ 工具没装时**降级为不签名并继续**，不再让整个生成失败。
+		//   实测症状：控制台「生成载荷」页选 Gopher + 格式 EXE，点「生成并下载」后按钮
+		//   下方直接红字 `pseudo-sign requires osslsigncode in PATH` —— 而伪签名只是让
+		//   产物"看起来有签名"的美化步骤，缺一个可选工具就让 Windows EXE 完全生成不出来，
+		//   代价明显不成比例（EXE 是最常用的格式）。
+		//   与 beacon_agent 同型改动；那边上方 pe_header_mod.py 缺失也是这么处理的
+		//   （"skipping PE post-processing"）。
+		//   ★ 注意只对「工具缺失」降级：真正的签名**执行失败**仍然终止 —— 那时可能已经
+		//     写出了半份产物，不能当成成功。
+		if miss := pseudoSignMissingTool(); miss != "" {
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO,
+				fmt.Sprintf("Gopher: pseudo-sign skipped: %s not in teamserver PATH — payload will be UNSIGNED (install it: pre_install_linux_all.sh server)", miss))
+		} else {
+			signedPath := filepath.Join(tempDir, "agent_signed.exe")
+			_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Gopher: applying pseudo Authenticode (openssl + osslsigncode)...")
+			if err := applySelfSignedAuthenticode(buildPath, signedPath, tempDir); err != nil {
+				_ = os.RemoveAll(tempDir)
+				return nil, "", err
+			}
+			finalExe = signedPath
 		}
-		finalExe = signedPath
 	}
 
 	Payload, err = os.ReadFile(finalExe)
@@ -998,7 +1200,16 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		cmd = Command{Code: COMMAND_DOWNLOAD, Data: packerData}
 
 	case "execute":
+		// ★ 这里原来是 `if agentData.Os != adaptix.OS_WINDOWS { goto RET }` —— 直接跳出，
+		//   err 仍为 nil。后果是**彻底的静默**：不建任务、不回报错、控制台一个字都没有
+		//   （实测 Linux gopher：execute bof <绝对路径> 后 /api/agent/task/list 无新增）。
+		//   操作员唯一的结论只会是「这功能坏了」，而真相是「这个 agent 没有 BOF 加载器」。
+		//   BOF 是编译进 agent 载荷的能力，不是操作系统给的：同一台 Linux 上
+		//   linux_agent 有、gopher 没有。说不出来，就等于没做。
 		if agentData.Os != adaptix.OS_WINDOWS {
+			err = fmt.Errorf("execute bof is not available on this agent: gopher has a BOF loader "+
+				"only on Windows (this host reports os=%d). Use the agent's built-in commands, "+
+				"or a linux agent (its BOFs are compiled at runtime on the server).", agentData.Os)
 			goto RET
 		}
 
@@ -1017,7 +1228,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			if err != nil {
 				goto RET
 			}
-			bofContent, decodeErr := base64.StdEncoding.DecodeString(bofFile)
+			bofContent, decodeErr := resolveBofObject(bofFile)
 			if decodeErr != nil {
 				err = decodeErr
 				goto RET
@@ -2152,6 +2363,23 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				task.Message = fmt.Sprintf("Error %s", params.Error)
 				task.MessageType = adaptix.MESSAGE_ERROR
 
+			case COMMAND_TUNNEL_REVERSE:
+				// ★ 批次9：agent 回答「反向端口转发的监听起没起」。
+				//   走 Type-1（普通任务结果）而不是 Type-2 —— 它是**对下发任务的回答**，
+				//   任务 id 由外层 dispatch 原样带回，这里不需要另造关联 id。
+				var params AnsTunnelReverse
+				err := msgpack.Unmarshal(cmd.Data, &params)
+				if err != nil {
+					continue
+				}
+				// TsTunnelUpdateRportfwd 返回 (taskId, message, err)，成功即把 GUI 置 Active
+				task.TaskId, task.Message, err = Ts.TsTunnelUpdateRportfwd(params.TunnelId, params.Result == 1)
+				if err != nil {
+					task.MessageType = adaptix.MESSAGE_ERROR
+				} else {
+					task.MessageType = adaptix.MESSAGE_SUCCESS
+				}
+
 			default:
 				continue
 			}
@@ -2171,6 +2399,33 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 			task.TaskId = job.JobId
 
 			switch job.CommandId {
+
+			case COMMAND_TUNNEL_ACCEPT:
+
+				// ★ 批次9：agent 通告「目标机上有人连进来了，这是新分配的 channelId」。
+				//   必须走 Type-2（异步）—— 它**不是**对某个任务的回答，是 agent 主动发起的事件。
+				//   服务端在这里才第一次知道 channelId ⇒ 建通道 + 拨 Fhost:Fport
+				//   （TsTunnelConnectionAccept → handlerReverseAccept）。
+				//   ★ teamserver 必须先完成这一步，agent 随后那条 TUNNEL_PACK 才能过
+				//     listener 的 TsTunnelChannelExists 门。
+				var params ParamsTunnelAccept
+				err := msgpack.Unmarshal(job.Data, &params)
+				if err != nil {
+					goto HANDLER
+				}
+				// ★ 批次9d：走 **AcceptDirect**（core 只拨号+登记，**不启 relay**）。
+				//   本 agent 的 listener 插件提供独立加密数据通道，core 若在这里启
+				//   relaySocketToTunnel(..., false)，那个 G2 就会和 listener 抢读同一条
+				//   prSrv，而被抢走的一半交给 gopher 的 TunnelMessageWriteTCP ——
+				//   上游占位空壳 ⇒ 首包永久丢失（b''）。窗口期 = agent 这条 ACCEPT
+				//   到 listener 收到 TUNNEL_PACK 的**整个往返**，事后 pause 关不死。
+				//   ★ exists 守卫：TUNNEL_PACK 可能先到（listener 侧那时已建好同名通道），
+				//     此时再 Accept 会**二次拨号 + 二次注册**，必须跳过。
+				if !Ts.TsTunnelChannelExists(params.ChannelId) {
+					Ts.TsTunnelConnectionAcceptDirect(params.TunnelId, params.ChannelId)
+				}
+				task.Message = fmt.Sprintf("Reverse port forward: accepted channel %d", params.ChannelId)
+				task.MessageType = adaptix.MESSAGE_SUCCESS
 
 			case COMMAND_DOWNLOAD:
 
@@ -2325,5 +2580,42 @@ HANDLER:
 		Ts.TsTaskUpdate(agentData.Id, task)
 	}
 
+	return nil
+}
+/// ── 构建后传输指纹断言（B-B1）─────────────────────────────────────────────
+
+// 与 src_gopher/transport_libp2p.go、transport_nolibp2p.go 里的 axLibp2pBuildTag
+// 一一对应。★ 这是**跨文件**耦合：改一边必须改另一边。断言失败时先怀疑这三个字面量
+// 是否还对得上，再怀疑构建。
+const (
+	axTagLibp2p = "axc2:l2p:enabled:v1"
+	axTagStub   = "axc2:l2p:disabled:v1"
+)
+
+// axVerifyTransportTag 扫产物字节，确认它带的 transport 变体与 profile 的要求一致。
+func axVerifyTransportTag(path string, wantLibp2p bool) error {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("build assertion: read %s: %w", path, err)
+	}
+	hasL2p := bytes.Contains(payload, []byte(axTagLibp2p))
+	hasStub := bytes.Contains(payload, []byte(axTagStub))
+	// ★ 顺序即语义：**前置条件检查放最前**，且必须写成「两枚都没有」。
+	//   第一版把这条写成了 `!wantLibp2p && !hasStub` 并放在第三位 —— 于是
+	//   「带 tag 的产物 + profile 不要 libp2p」（hasL2p=true, hasStub=false）
+	//   被它**抢先命中**，报出"扫描通道坏了"这个完全错误的理由，最后那条
+	//   `!wantLibp2p && hasL2p` 永远求值不到。
+	//   ★ 这个错只被"**必须报错、且理由要对**"这一半逮住：只看"是否报错"的话，
+	//     ④ 确实报了错 ⇒ 假绿。判据的红/绿之外，**红的理由**也得是判据的一部分。
+	switch {
+	case !hasL2p && !hasStub:
+		return fmt.Errorf("build assertion FAILED: payload has neither %q nor %q - the byte scan itself is not working", axTagLibp2p, axTagStub)
+	case wantLibp2p && !hasL2p:
+		return fmt.Errorf("build assertion FAILED: profile requests libp2p but payload lacks %q (stub tag present=%v) - `-tags libp2p` did not take effect", axTagLibp2p, hasStub)
+	case wantLibp2p && hasStub:
+		return fmt.Errorf("build assertion FAILED: payload contains the no-libp2p stub tag %q despite `-tags libp2p`", axTagStub)
+	case !wantLibp2p && hasL2p:
+		return fmt.Errorf("build assertion FAILED: payload contains %q although no listener profile asked for libp2p", axTagLibp2p)
+	}
 	return nil
 }

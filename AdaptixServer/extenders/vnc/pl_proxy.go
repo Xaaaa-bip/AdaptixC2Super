@@ -68,6 +68,42 @@ func streamHeaderTimeout() time.Duration {
 	return 60 * time.Second
 }
 
+// streamConnectRetryWindow 是「agent 侧 vnc_stream 还没起来」时的自愈窗口。
+//
+// ★ 为什么必须重试：VncPanel「一键启动」只固定等 6s 就打开 iframe，而 beacon 上
+//   `vnc start` 是**任务**，要走 beacon 的 check-in：
+//     第 1 次 check-in → 收 COMMAND_UPLOAD，落盘 vnc_stream.exe
+//     第 2 次 check-in → 收 COMMAND_PS_RUN，PowerShell 再花几百毫秒才 bind 端口
+//   而 TsTaskGetAvailableAll 先取 HostedTasks 再取 HostedTunnelTasks —— 隧道
+//   connect 命令和 PS_RUN 落在**同一批**里。于是观看端常常在 vnc_stream 起来
+//   **之前**就建好隧道通道，agent 连 127.0.0.1:<targetPort> 得到
+//   WSAECONNREFUSED(10061) → PackProxyStatus → 服务端 TsTunnelConnectionHalt
+//   → 对端 RST。线上日志正是
+//     `header parse error after 5.704560701s ... connection reset by peer`
+//   （5.7s ≈ 一个 beacon 周期）。旧代码在这里直接 502 ⇒ 用户看到的「无画面」。
+// ★ 为什么只重试「一个响应头字节都没收到」的情况：收到任何响应字节都说明
+//   vnc_stream 活着、画面已开始，绝不能重连去打断它。
+// ★ 为什么写失败也要重试：RST 可能比我们的 64 字节 GET 更早到达内核，此时
+//   失败暴露在 conn.Write 上（本地复现即 `write: connection reset by peer`），
+//   而不是随后的 ReadResponse（线上抓到的 `header parse error` 是 RST 晚到的
+//   那一支）。同一个竞态、同样的「零响应字节」，必须同样对待 —— 只重试读会让
+//   修复在快 RST 的场景下退化成原来的立即 502。
+// ★ 为什么不重试超时：超时已花掉整个 header_timeout（默认 60s），再等一个窗口
+//   没有意义 —— 那类故障是「agent 连上了但 vnc_stream 不出帧」，不是没起来。
+// ★ 为什么不重试 dial 失败：TsTunnelStart 是**同步** net.Listen，`vnc start`
+//   一旦成功监听就已就绪；dial 失败只可能是「隧道压根不存在」，重试不会变好，
+//   保持原来的快速报错。
+func streamConnectRetryWindow() time.Duration {
+	if Config.StreamConnectRetrySec > 0 {
+		return time.Duration(Config.StreamConnectRetrySec) * time.Second
+	}
+	return 45 * time.Second
+}
+
+// streamConnectRetryInterval 是两次尝试之间的间隔。1s 足够跟上 sleep 0 的 beacon
+// （交互加速后一个往返通常不到 1s），又不会把 HostedTunnelTasks 灌爆。
+const streamConnectRetryInterval = 1 * time.Second
+
 func isTimeoutErr(err error) bool {
 	if err == nil {
 		return false
@@ -97,64 +133,110 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[VNC] Stream proxy: request received method=%s path=%s query=%q remote=%s local_port=%d target=%s dial_timeout=%s header_timeout=%s\n",
 		r.Method, r.URL.Path, r.URL.RawQuery, r.RemoteAddr, localPort, targetAddr, dialTimeout, headerTimeout)
 
-	// Dial the upstream tunnel port (lportfwd listener on this server)
-	fmt.Printf("[VNC] Stream proxy: dialing %s (timeout=%s)\n", targetAddr, dialTimeout)
-	dialStart := time.Now()
-	dialer := net.Dialer{Timeout: dialTimeout}
-	conn, err := dialer.Dial("tcp", targetAddr)
-	if err != nil {
-		fmt.Printf("[VNC] Stream proxy: failed to connect to %s for local_port=%d: %v\n", targetAddr, localPort, err)
-		http.Error(w, fmt.Sprintf("Failed to connect to VNC stream on local port %d: %v", localPort, err), 502)
-		return
-	}
-	defer func() {
-		fmt.Printf("[VNC] Stream proxy: upstream connection to %s (local_port=%d) closed\n", targetAddr, localPort)
-		conn.Close()
-	}()
-	fmt.Printf("[VNC] Stream proxy: dial ok %s (local_port=%d, elapsed=%s)\n", targetAddr, localPort, time.Since(dialStart))
-
 	// Send GET /stream to the upstream (vnc_stream agent via tunnel)
 	upReq, _ := http.NewRequest("GET", "/stream", nil)
 	var reqBuf bytes.Buffer
 	_ = upReq.Write(&reqBuf)
-	reqBytes, err := conn.Write(reqBuf.Bytes())
-	if err != nil {
-		fmt.Printf("[VNC] Stream proxy: failed to write GET /stream to %s (local_port=%d): %v\n", targetAddr, localPort, err)
-		http.Error(w, fmt.Sprintf("Failed to send request to VNC stream on local port %d: %v", localPort, err), 502)
-		return
-	}
-	fmt.Printf("[VNC] Stream proxy: GET /stream written to %s (local_port=%d, bytes=%d)\n", targetAddr, localPort, reqBytes)
+	reqBytes := reqBuf.Bytes()
 
-	// Wait for upstream HTTP response headers
-	fmt.Printf("[VNC] Stream proxy: waiting for headers from %s (local_port=%d, timeout=%s)\n", targetAddr, localPort, headerTimeout)
-	headerStart := time.Now()
-	_ = conn.SetReadDeadline(time.Now().Add(headerTimeout))
-	resp, err := http.ReadResponse(bufio.NewReader(conn), upReq)
-	_ = conn.SetReadDeadline(time.Time{})
-	if err != nil {
-		elapsed := time.Since(headerStart)
-		timedOut := isTimeoutErr(err)
-		if timedOut {
-			fmt.Printf("[VNC] Stream proxy: header timeout after %s (configured=%s) from %s (local_port=%d): %v\n",
-				elapsed, headerTimeout, targetAddr, localPort, err)
+	// 循环：每次尝试都要重新 dial（上一次的 conn 已被 agent 侧 RST 关掉），
+	// 但 dial **失败**不重试、直接 502（见 streamConnectRetryWindow 的说明）。
+	// 要重试的是「GET 已发出/正在发出、响应头还没回来就被 RST」—— 那正是
+	// vnc_stream 还没 bind 的表现。收到任何响应头都说明已经出画，立刻退出循环。
+	retryDeadline := time.Now().Add(streamConnectRetryWindow())
+	var conn net.Conn
+	var resp *http.Response
+	var lastErr error
+	var attempts int
+	var timedOut bool
+	var lastStage string
+	var lastErrorAt time.Time
+	var headerElapsed time.Duration
+
+	for attempts = 1; ; attempts++ {
+		// Dial the upstream tunnel port (lportfwd listener on this server)
+		fmt.Printf("[VNC] Stream proxy: dialing %s (timeout=%s)\n", targetAddr, dialTimeout)
+		dialStart := time.Now()
+		dialer := net.Dialer{Timeout: dialTimeout}
+		conn, lastErr = dialer.Dial("tcp", targetAddr)
+		if lastErr != nil {
+			fmt.Printf("[VNC] Stream proxy: failed to connect to %s for local_port=%d: %v\n", targetAddr, localPort, lastErr)
+			http.Error(w, fmt.Sprintf("Failed to connect to VNC stream on local port %d: %v", localPort, lastErr), 502)
+			return
+		}
+		fmt.Printf("[VNC] Stream proxy: dial ok %s (local_port=%d, elapsed=%s)\n", targetAddr, localPort, time.Since(dialStart))
+
+		// 写请求。RST 可能比这次写更早到达内核，于是**同一个竞态**会在两个地方
+		// 冒出来：写的时候（本机已收到 RST）或读响应头的时候（RST 在写之后到）。
+		// 线上日志抓到的是后者，本地复现抓到的是前者 —— 两者都必须重试。
+		lastStage = "write"
+		_ = conn.SetWriteDeadline(time.Now().Add(dialTimeout))
+		_, lastErr = conn.Write(reqBytes)
+		_ = conn.SetWriteDeadline(time.Time{})
+		if lastErr != nil {
+			lastErrorAt = time.Now()
+			timedOut = isTimeoutErr(lastErr)
+			fmt.Printf("[VNC] Stream proxy: failed to write GET /stream to %s (local_port=%d, attempt %d, timeout=%v): %v\n",
+				targetAddr, localPort, attempts, timedOut, lastErr)
 		} else {
-			fmt.Printf("[VNC] Stream proxy: header parse error after %s from %s (local_port=%d): %v\n",
-				elapsed, targetAddr, localPort, err)
+			fmt.Printf("[VNC] Stream proxy: GET /stream written to %s (local_port=%d, bytes=%d)\n", targetAddr, localPort, len(reqBytes))
+
+			// Wait for upstream HTTP response headers
+			lastStage = "header"
+			fmt.Printf("[VNC] Stream proxy: waiting for headers from %s (local_port=%d, timeout=%s)\n", targetAddr, localPort, headerTimeout)
+			headerStart := time.Now()
+			_ = conn.SetReadDeadline(time.Now().Add(headerTimeout))
+			resp, lastErr = http.ReadResponse(bufio.NewReader(conn), upReq)
+			_ = conn.SetReadDeadline(time.Time{})
+			if lastErr == nil {
+				fmt.Printf("[VNC] Stream proxy: response received from %s (local_port=%d, status=%d, attempt=%d, elapsed=%s)\n",
+					targetAddr, localPort, resp.StatusCode, attempts, time.Since(headerStart))
+				break
+			}
+			lastErrorAt = time.Now()
+			headerElapsed = time.Since(headerStart)
+			timedOut = isTimeoutErr(lastErr)
+			if timedOut {
+				fmt.Printf("[VNC] Stream proxy: header timeout after %s (configured=%s) from %s (local_port=%d): %v\n",
+					headerElapsed, headerTimeout, targetAddr, localPort, lastErr)
+			} else {
+				fmt.Printf("[VNC] Stream proxy: header parse error after %s from %s (local_port=%d): %v\n",
+					headerElapsed, targetAddr, localPort, lastErr)
+			}
 		}
-		reason := "parse error"
-		if timedOut {
-			reason = "timeout"
+		_ = conn.Close()
+
+		// 超时、客户端已离开、或窗口用尽 ⇒ 放弃
+		if timedOut || r.Context().Err() != nil || !time.Now().Before(retryDeadline) {
+			// 不要 Round 到毫秒：agent 侧拒绝的 RST 是亚毫秒级回来的，
+			// 舍入后这条诊断信息会变成误导性的 "after 0s"。
+			detail := fmt.Sprintf("%s after %s", lastStage, time.Since(lastErrorAt))
+			if lastStage == "header" {
+				detail = fmt.Sprintf("%s after %s", lastStage, headerElapsed)
+			}
+			errBody := fmt.Sprintf(
+				"VNC stream upstream error on local_port=%d: %s, gave up after %d attempt(s) (configured stream_header_timeout_sec=%d, stream_connect_retry_sec=%d). "+
+					"Raise stream_header_timeout_sec (currently %d) or lower the beacon sleep. Error: %v",
+				localPort, detail, attempts, Config.StreamHeaderTimeoutSec, Config.StreamConnectRetrySec,
+				Config.StreamHeaderTimeoutSec, lastErr)
+			http.Error(w, errBody, 502)
+			return
 		}
-		errBody := fmt.Sprintf(
-			"VNC stream upstream error on local_port=%d: %s after %s (configured stream_header_timeout_sec=%d). "+
-				"Raise stream_header_timeout_sec (currently %d) or lower the beacon sleep. Error: %v",
-			localPort, reason, elapsed.Round(time.Millisecond), Config.StreamHeaderTimeoutSec,
-			Config.StreamHeaderTimeoutSec, err)
-		http.Error(w, errBody, 502)
-		return
+
+		fmt.Printf("[VNC] Stream proxy: upstream not ready for local_port=%d (attempt %d): %v — vnc_stream 可能尚未启动，%s 后重试\n",
+			localPort, attempts, lastErr, streamConnectRetryInterval)
+		select {
+		case <-r.Context().Done():
+			fmt.Printf("[VNC] Stream proxy: client %s went away while waiting for local_port=%d\n", r.RemoteAddr, localPort)
+			return
+		case <-time.After(streamConnectRetryInterval):
+		}
 	}
-	fmt.Printf("[VNC] Stream proxy: response received from %s (local_port=%d, status=%d, elapsed=%s)\n",
-		targetAddr, localPort, resp.StatusCode, time.Since(headerStart))
+
+	defer func() {
+		fmt.Printf("[VNC] Stream proxy: upstream connection to %s (local_port=%d) closed\n", targetAddr, localPort)
+		_ = conn.Close()
+	}()
 
 	// Copy upstream response headers to client, skipping hop-by-hop and
 	// HTTP/2-invalid headers (RFC 7540 section 8.1.2.2 forbids these on HTTP/2).

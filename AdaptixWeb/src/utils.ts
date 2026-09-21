@@ -75,11 +75,13 @@ export function isAgentOnline(
 }
 
 /** 仅两态：在线 / 离线。超时无心跳一律离线（不再单独标「无响应」）。 */
-export function agentHealth(
-  a: { a_mark?: string; a_last_tick?: number; a_sleep?: number; a_jitter?: number },
-  opts?: { coaf?: number; offsetSec?: number; now?: number },
-): 'online' | 'offline' {
-  return isAgentOnline(a, opts) ? 'online' : 'offline'
+/**
+ * 是否 Linux 主机：a_os === 2（Linux）或监听器名为 Linux* 前缀。
+ * 用于屏蔽 Windows 专有的死胡同功能（VNC / 截图 BOF / sleep 0 加速等）。
+ */
+export function isLinuxAgent(a?: { a_os?: number; a_listener?: string } | null): boolean {
+  if (!a) return false
+  return a.a_os === 2 || /^Linux/i.test(a.a_listener || '')
 }
 
 export function copyText(text: string) {
@@ -107,7 +109,6 @@ function fallbackCopy(text: string) {
 }
 
 const LS = {
-  theme: 'adaptix.theme',
   collapsed: 'adaptix.sider.collapsed',
   loginUser: 'adaptix.login.user',
   loginBase: 'adaptix.login.base',
@@ -168,11 +169,13 @@ export function formatSecToStr(seconds: number) {
  * 动态心跳文案（对齐 Qt LastTickWorker + Sleep 列）：
  * - 在线：`12s` 或 `12s / 5s`（距上次回连 / 配置 sleep）
  * - sleep=0 交互：`3s · interact`
+ * - Linux：beacon 为编译期固定节拍（约 20~45s），a_sleep 恒为 0，不显示 interact
  * - 离线：相对时间
  */
 export function formatHeartbeat(
   a: { a_last_tick?: number; a_sleep?: number; a_jitter?: number; a_mark?: string },
   opts?: { now?: number },
+  isLinux = false,
 ): { text: string; sub?: string; live: boolean } {
   const live = isAgentOnline(a, opts)
   if (!a.a_last_tick) return { text: '-', live: false }
@@ -188,6 +191,10 @@ export function formatHeartbeat(
   if (!live) {
     return { text: fmtRelative(a.a_last_tick), sub: sleepSec === 0 ? 'sleep 0' : `sleep ${sleepSec}s`, live: false }
   }
+  // Linux beacon：无 sleep 配置（a_sleep === 0），节拍由编译期决定（≈20~45s）
+  if (isLinux && sleepSec === 0) {
+    return { text: formatSecToStr(ageSec), sub: '≈30s beacon', live: true }
+  }
   if (sleepSec === 0) {
     return { text: formatSecToStr(ageSec), sub: 'interact · sleep 0', live: true }
   }
@@ -200,15 +207,8 @@ export function formatHeartbeat(
 }
 
 export function loadTheme(): 'light' | 'dark' {
-  const v = localStorage.getItem(LS.theme)
-  // 山水太极默认宣纸阳面；仅显式 dark 走淡墨阴面
-  if (v === 'dark') return 'dark'
-  return 'light'
-}
-
-export function saveTheme(theme: 'light' | 'dark') {
-  localStorage.setItem(LS.theme, theme)
-  document.documentElement.setAttribute('data-theme', theme)
+  // 黑客风：纯深色，无主题切换
+  return 'dark'
 }
 
 export function loadCollapsed(): boolean {
@@ -314,4 +314,20 @@ export async function loadRuntimeConfig(): Promise<RuntimeConfig | null> {
   } catch {
     return null
   }
+}
+
+/** Uint8Array → base64。分块是为了绕开 String.fromCharCode 的实参个数上限
+ *  （几 MB 的载荷一次性展开会 stack overflow）。 */
+export function bytesToB64(buf: Uint8Array): string {
+  let s = ''
+  const CH = 0x8000
+  for (let i = 0; i < buf.length; i += CH) {
+    s += String.fromCharCode(...buf.subarray(i, i + CH))
+  }
+  return btoa(s)
+}
+
+/** File → base64（不带 data: 前缀）。服务端按 base64.StdEncoding 解。 */
+export async function fileToB64(f: File): Promise<string> {
+  return bytesToB64(new Uint8Array(await f.arrayBuffer()))
 }

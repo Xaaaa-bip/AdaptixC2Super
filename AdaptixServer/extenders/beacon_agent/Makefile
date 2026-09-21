@@ -5,7 +5,7 @@ all: clean
 	@ echo "    * Building agent_beacon plugin"
 	@ mkdir -p $(ROOT)dist
 	@ cp $(ROOT)config.yaml $(ROOT)ax_config.axs $(ROOT)dist/
-	@ cd $(ROOT) && GOEXPERIMENT=jsonv2,greenteagc go build -buildmode=plugin -ldflags="-s -w" -o ./dist/agent_beacon.so .
+	@ cd $(ROOT) && go build -buildmode=plugin -ldflags="-s -w" -o ./dist/agent_beacon.so .
 	@ echo "      done..."
 
 	@ echo "    * Building agent"
@@ -20,7 +20,7 @@ all: clean
 	@ for d in objects_http objects_smb objects_tcp objects_dns objects_ws; do \
 		if [ -d "$(ROOT)src_beacon/$$d" ]; then \
 			rm -rf "$(ROOT)dist/$$d"; \
-			mv "$(ROOT)src_beacon/$$d" "$(ROOT)dist/$$d"; \
+			cp -a "$(ROOT)src_beacon/$$d" "$(ROOT)dist/$$d"; \
 		fi; \
 	done
 	@ echo "      done..."

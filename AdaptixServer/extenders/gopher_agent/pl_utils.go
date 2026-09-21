@@ -20,6 +20,17 @@ type Profile struct {
 	SslCert     []byte   `msgpack:"ssl_cert"`
 	SslKey      []byte   `msgpack:"ssl_key"`
 	CaCert      []byte   `msgpack:"ca_cert"`
+
+	// ↓ Phase5 新增（**只增不改**，见文件头）。零值语义：Transport == "" ⇒ tcp。
+	// ★ S6：删掉 libp2p_peer_id / libp2p_relays。前者 agent 侧**从不读**（peer id
+	//   本来就在每个 multiaddr 的 /p2p/<id> 里，且已由 pl_main.go 改成一条真判据），
+	//   后者全树**从没被写过**。死字段不只是浪费字节 —— 它会让下一个人以为这两条路
+	//   是通的。msgpack 反序列化忽略未知键，所以删字段不破坏与旧 builder 的兼容。
+	Transport         string   `msgpack:"transport"`
+	Libp2pAddrs       []string `msgpack:"libp2p_addrs"`
+	Libp2pPrivKey     []byte   `msgpack:"libp2p_privkey"`
+	Libp2pProtocol    string   `msgpack:"libp2p_protocol"`
+	Libp2pDialTimeout int      `msgpack:"libp2p_dial_timeout"`
 }
 
 type SessionInfo struct {
@@ -259,6 +270,25 @@ type ParamsTunnelResume struct {
 	ChannelId int `msgpack:"channel_id"`
 }
 
+// ★ 批次9（rportfwd）。三个结构与 src_gopher/utils/utils.go 里的同名结构
+// **必须逐字段一致**（msgpack 按字段名编解码）—— 判据 V4 会逐字段比对，
+// 因为这两份定义分处两个 module，编译器管不到它们的一致性。
+type ParamsTunnelReverse struct {
+	TunnelId int `msgpack:"tunnel_id"`
+	Port     int `msgpack:"port"`
+}
+
+// AnsTunnelReverse 是 agent 对「监听起没起」的回答。Result: 1=已监听, 0=监听失败。
+type AnsTunnelReverse struct {
+	TunnelId int `msgpack:"tunnel_id"`
+	Result   int `msgpack:"result"`
+}
+
+type ParamsTunnelAccept struct {
+	TunnelId  int `msgpack:"tunnel_id"`
+	ChannelId int `msgpack:"channel_id"`
+}
+
 const (
 	COMMAND_ERROR      = 0
 	COMMAND_PWD        = 1
@@ -286,6 +316,12 @@ const (
 	COMMAND_TUNNEL_STOP   = 32
 	COMMAND_TUNNEL_PAUSE  = 33
 	COMMAND_TUNNEL_RESUME = 34
+
+	// ★ 批次9（rportfwd）：与上游 beacon_agent/pl_utils.go:58-59 **同值**。
+	// 取同一个数字不是凑巧 —— 全项目共用一套命令码表，改一处就要改全部 agent，
+	// 判据 V3 会交叉核对这两个值，防止将来某一侧单独漂移。
+	COMMAND_TUNNEL_REVERSE = 67
+	COMMAND_TUNNEL_ACCEPT  = 68
 
 	COMMAND_TERMINAL_START = 35
 	COMMAND_TERMINAL_STOP  = 36

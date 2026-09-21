@@ -187,7 +187,7 @@ function GenerateUI(listeners_type)
 {
     let labelFormat = form.create_label("Format:");
     let comboFormat = form.create_combo()
-    comboFormat.addItems(["Binary Mach-O (Native)", "Shellcode ARM64 (Native)"]);
+    comboFormat.addItems(["Binary Mach-O"]);
 
     let labelTarget = form.create_label("Target:");
     let textTarget = form.create_textline("macOS ARM64 (Apple Silicon)");

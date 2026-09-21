@@ -51,6 +51,9 @@ type VncConfig struct {
 	StreamIntervalMs       int    `yaml:"stream_interval_ms" json:"stream_interval_ms"`
 	StreamHeaderTimeoutSec int    `yaml:"stream_header_timeout_sec" json:"stream_header_timeout_sec"`
 	StreamDialTimeoutSec   int    `yaml:"stream_dial_timeout_sec"   json:"stream_dial_timeout_sec"`
+	// StreamConnectRetrySec 是「隧道通道被 agent 侧拒绝」时的自愈窗口，
+	// 见 pl_proxy.go handleStream 里的说明。0/缺省 ⇒ 45s。
+	StreamConnectRetrySec int `yaml:"stream_connect_retry_sec" json:"stream_connect_retry_sec"`
 }
 
 func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginService {
@@ -69,6 +72,7 @@ func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginSe
 		StreamIntervalMs:       100,
 		StreamHeaderTimeoutSec: 60,
 		StreamDialTimeoutSec:   10,
+		StreamConnectRetrySec:  45,
 	}
 	if serviceConfig != "" {
 		if err := yaml.Unmarshal([]byte(serviceConfig), &Config); err != nil {
@@ -85,9 +89,9 @@ func InitPlugin(ts any, moduleDir string, serviceConfig string) adaptix.PluginSe
 	Ts.TsEndpointRegister("POST", Config.ApiRoute+"/screen", handleScreenSwitch)
 	Ts.TsEndpointRegister("POST", Config.ApiRoute+"/quality", handleQuality)
 
-	fmt.Printf("[VNC] Service initialized. Viewer: %s, Stream: %s, Input: %s, API: %s, stream_dial_timeout_sec=%d, stream_header_timeout_sec=%d\n",
+	fmt.Printf("[VNC] Service initialized. Viewer: %s, Stream: %s, Input: %s, API: %s, stream_dial_timeout_sec=%d, stream_header_timeout_sec=%d, stream_connect_retry_sec=%d\n",
 		Config.ViewerRoute, Config.StreamRoute, Config.InputRoute, Config.ApiRoute,
-		Config.StreamDialTimeoutSec, Config.StreamHeaderTimeoutSec)
+		Config.StreamDialTimeoutSec, Config.StreamHeaderTimeoutSec, Config.StreamConnectRetrySec)
 
 	return &PluginService{}
 }

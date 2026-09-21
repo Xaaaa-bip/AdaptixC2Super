@@ -5,7 +5,7 @@ all: clean
 	@ cp -r web ./dist/
 	@ # agent payloads required by beacon "vnc start" auto-upload (next to plugin dir)
 	@ if [ -d agent ]; then cp -a agent ./dist/; fi
-	@ CGO_ENABLED=1 GOEXPERIMENT=jsonv2,greenteagc go build -buildmode=plugin -ldflags="-s -w" -o ./dist/vnc.so .
+	@ CGO_ENABLED=1 go build -buildmode=plugin -ldflags="-s -w" -o ./dist/vnc.so .
 	@ echo " done..."
 
 clean:

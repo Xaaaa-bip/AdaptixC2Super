@@ -33,6 +33,14 @@ auto DECLFN Transport::StrategyRot( VOID ) -> HTTP_CALLBACKS* {
     HTTP_CALLBACKS* TargetCallback = { nullptr };
     ULONG           MaxIdx         = Self->Config.Http.CallbacksCount-1;
 
+    // A profile whose callback count did not survive the build leaves no
+    // callbacks to rotate through.  Both the modulo below and the -1 above turn
+    // into undefined behaviour at zero, so bail out here; the caller at
+    // "Failed to get C2 callback" already treats nullptr as a failed send.
+    if ( Self->Config.Http.CallbacksCount == 0 ) {
+        return nullptr;
+    }
+
     switch ( Strategy ) {
         case DOMAIN_STRATEGY_FAILOVER: {
             if ( this->FailCount == 10 ) {

@@ -108,7 +108,10 @@ static void check_ld_so_preload(void) {
     BeaconPrintf(CALLBACK_OUTPUT, "\n=== /etc/ld.so.preload ===\n");
 
     char *data = (char *)0;
-    int len = AxReadFileToBuffer("/etc/ld.so.preload", &data, 8192);
+    /* ★ 走 Real：本 BOF 是**我们自己的**侦察工具，要看的就是
+     * "我们自己写进去的那几行还在不在" —— 读被抹平的视图只会得到
+     * 一行空格，然后报"库文件不存在"的假警（ISS-076 同族）。 */
+    int len = AxReadFileReal("/etc/ld.so.preload", &data, 8192);
     if (len > 0 && data) {
         BeaconPrintf(CALLBACK_OUTPUT, "  [!!] /etc/ld.so.preload EXISTS — global preload active!\n");
 

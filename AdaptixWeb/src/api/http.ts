@@ -1,4 +1,30 @@
+import type { BuildSchema, CmdBatch } from './types'
+
 export type LoginResult = { access_token: string; refresh_token: string }
+
+/**
+ * extenders/relay 插件回的 axrelay 进程状态。
+ * 服务端只回它从 systemctl 与日志里**读到**的东西，不做任何推断 ——
+ * 所以 `active` 是 systemd 的原话（active/inactive/failed/…），不是布尔值。
+ */
+export type RelayStatus = {
+  ok: boolean
+  unit: string
+  unit_file: string
+  unit_present: boolean
+  systemctl_present: boolean
+  active: string
+  sub_state: string
+  enabled: string
+  main_pid: string
+  n_restarts: string
+  since: string
+  listen: string
+  peer_id: string
+  log_file: string
+  log_tail: string[] | null
+  hint?: string
+}
 
 function joinUrl(base: string, path: string) {
   if (path.startsWith('http')) return path
@@ -12,6 +38,7 @@ export class ApiClient {
   baseUrl: string
   accessToken = ''
   refreshToken = ''
+  private refreshBlockedUntil = 0
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
@@ -62,12 +89,14 @@ export class ApiClient {
       payload = JSON.stringify(body)
     }
     const res = await fetch(joinUrl(this.baseUrl, path), { method, headers, body: payload })
-    // 401 → try refresh once
-    if (res.status === 401 && retry && this.refreshToken) {
+    // 401 → try refresh once；刷新失败进入 60s 熔断，避免
+    // REST 兜底轮询的并发 401 触发 /refresh 风暴打爆登录限流
+    if (res.status === 401 && retry && this.refreshToken && Date.now() > this.refreshBlockedUntil) {
       try {
         await this.refreshAccess()
         return this.request<T>(method, path, body, false)
       } catch {
+        this.refreshBlockedUntil = Date.now() + 60_000
         throw new Error('session expired')
       }
     }
@@ -76,15 +105,29 @@ export class ApiClient {
     try {
       data = text ? JSON.parse(text) : null
     } catch {
-      if (retry && this.refreshToken) {
+      if (retry && this.refreshToken && Date.now() > this.refreshBlockedUntil) {
         try {
           await this.refreshAccess()
           return this.request<T>(method, path, body, false)
-        } catch { /* fallthrough */ }
+        } catch {
+          this.refreshBlockedUntil = Date.now() + 60_000
+        }
       }
       throw new Error(`non-JSON response HTTP ${res.status}`)
     }
-    if (data && data.ok === false) throw new Error(data.message || 'request failed')
+    if (data && data.ok === false) {
+      // 把整个响应体挂到 error 上：有些失败不是「出错了」而是「有结果要你处理」，
+      // 调用方需要读到 ok 之外的字段（例：拓扑图保存撞上乐观锁时，响应里
+      // 带着服务端当前的 rev 和 board，前端要拿它直接重载，而不是只弹一句报错）。
+      const err: any = new Error(data.message || 'request failed')
+      err.payload = data
+      throw err
+    }
+    // ★ 注意这里可能返回 **null**：服务端对**未注册**的 /api/* 路径答的是
+    //   `HTTP 200` + `content-length: 0`（实测，没有 content-type，也不是 SPA 兜底），
+    //   于是 text 是空串 ⇒ 跳过 JSON.parse ⇒ data 保持 null ⇒ 一路 return 出去。
+    //   调用方若把 null 当"成功且无数据"就会静默出错（拓扑图保存曾因此在
+    //   没落库的情况下报告成功）。**判成功要看具体字段，不要只看"没抛异常"。**
     return data as T
   }
 
@@ -177,6 +220,17 @@ export class ApiClient {
     })
   }
 
+  /**
+   * 插件的生成参数表（ax_config.axs 的 `BuildSchema(listener_type)`）。
+   *
+   * ★ 响应是**裸 JSON**（`{version, fields:[...]}` 或 `{}`），没有 ok/message 包装 ——
+   * 服务端是 `TsAgentBuildSchema` 直接把 Export() 的结果返回。request<T>() 只在
+   * `data.ok === false` 时抛，所以这里自然通过；`{}` 的归一化在 api/buildSchema.ts。
+   */
+  agentBuildSchema(agent: string, listener_type: string) {
+    return this.post<BuildSchema>('/api/agent/build/schema', { agent, listener_type })
+  }
+
   /** WebDelivery 插件：一键上线配置（对齐 Qt DialogWebDelivery） */
   webDeliveryStatus() {
     return this.post<{
@@ -209,6 +263,36 @@ export class ApiClient {
   }) {
     return this.post<{ ok?: boolean; message?: string }>('/api/webdelivery/config', cfg)
   }
+
+  /** argfuscator 插件：参数混淆（服务端调 pwsh + Invoke-ArgFuscator） */
+  argFuscatorStatus() {
+    return this.post<{
+      ok?: boolean
+      available?: boolean
+      reason?: string
+      pwsh?: string
+      pwsh_version?: string
+      module_dir?: string
+      models?: number
+      commands?: string[]
+      platforms?: string[]
+      max_variants?: number
+      timeout_sec?: number
+      message?: string
+    }>('/api/argfuscator/status', {})
+  }
+
+  /**
+   * 生成 N 个语义等价、写法不同的命令变体。
+   * 失败时服务端回 {ok:false,message} ⇒ request() 会抛 data.message（已是人话）。
+   * 注意 profile 不传：在 -Command 这条路径上服务端不读它。
+   */
+  argFuscatorGenerate(cfg: { command: string; platform: string; n: number }) {
+    return this.post<{ ok?: boolean; count?: number; variants?: string[]; ms?: number }>(
+      '/api/argfuscator/generate',
+      cfg,
+    )
+  }
   static decodeGeneratePayload(message: string): { filename: string; bytes: Uint8Array } {
     const idx = message.indexOf(':')
     if (idx < 0) throw new Error('unexpected generate payload')
@@ -219,6 +303,27 @@ export class ApiClient {
     return { filename, bytes }
   }
   removeAgents(ids: string[]) { return this.post('/api/agent/remove', { agent_id_array: ids }) }
+  /**
+   * 拓扑图（extenders/topology 插件注册的路由，与其它 API 同一个端口、同一套 JWT）。
+   *   GET  → { rev, board }
+   *   POST → body { base_rev, board }；rev 不匹配时抛出的 error 上挂着
+   *          服务端当前版本（err.payload.rev / .board），见上面的 request()。
+   */
+  topologyGet() { return this.get<{ rev: number; board: any }>('/api/topology/graph') }
+  topologySave(baseRev: number, board: any) {
+    return this.post<{ ok: boolean; rev: number }>('/api/topology/graph', { base_rev: baseRev, board })
+  }
+  /**
+   * libp2p 中转进程（axrelay）的控制面，由 extenders/relay 插件注册。
+   *
+   * ★ 这三个动作转发给 systemd，插件**不自己 fork** —— 见 pl_main.go 头部注释：
+   *   relay 的生死只能有一个 owner，否则两个进程抢 4446。
+   * ★ 三个动作都回**最新状态**（形状同 relayStatus），所以按钮点完不用再拉一次。
+   */
+  relayStatus() { return this.get<RelayStatus>('/api/relay/status') }
+  relayAction(action: 'start' | 'stop' | 'restart') {
+    return this.post<RelayStatus>(`/api/relay/${action}`, {})
+  }
   setTag(ids: string[], tag: string) { return this.post('/api/agent/set/tag', { agent_id_array: ids, tag }) }
   setMark(ids: string[], mark: string) { return this.post('/api/agent/set/mark', { agent_id_array: ids, mark }) }
   setColor(ids: string[], background: string, foreground: string, reset = false) {
@@ -269,62 +374,13 @@ export class ApiClient {
     return this.commandExecute(agentId, cmdline, args, true)
   }
 
-  browserLs(agentId: string, path = '.') {
-    const p = path || '.'
-    return this.commandBrowser(agentId, `ls ${p}`, {
-      command: 'ls',
-      path: p,
-      message: 'Task: list files',
-    })
-  }
-
-  browserDisks(agentId: string) {
-    return this.commandBrowser(agentId, 'disks', {
-      command: 'disks',
-      message: 'Task: show mounted disks',
-    })
-  }
-
-  browserPsList(agentId: string) {
-    return this.commandBrowser(agentId, 'ps list', {
-      command: 'ps',
-      subcommand: 'list',
-      message: 'Task: show process list',
-    })
-  }
-
-  browserPsKill(agentId: string, pid: number) {
-    return this.commandBrowser(agentId, `ps kill ${pid}`, {
-      command: 'ps',
-      subcommand: 'kill',
-      pid,
-      message: 'Task: kill process',
-    })
-  }
-
-  browserDownload(agentId: string, filePath: string) {
-    return this.commandBrowser(agentId, `download ${filePath}`, {
-      command: 'download',
-      file: filePath,
-      message: 'Task: download file',
-    })
-  }
-
-  browserRm(agentId: string, path: string) {
-    // rm is normal task (console), not browser UI packet
-    return this.commandExecute(agentId, `rm ${path}`, {
-      command: 'rm',
-      path,
-      message: 'Task: remove path',
-    }, false)
-  }
-
-  browserCat(agentId: string, path: string) {
-    return this.commandExecute(agentId, `cat ${path}`, {
-      command: 'cat',
-      path,
-      message: 'Task: cat file',
-    }, false)
+  /**
+   * 命令树（只读）。服务端 TsAxScriptCommands 无参，请求体被忽略。
+   * 返回 CommandBatch[]：agent → listener → os → groups → commands。
+   * 缓存策略在 api/cmdTree.ts，这里只负责取。
+   */
+  axscriptCommands() {
+    return this.post<CmdBatch[]>('/api/axscript/commands', {})
   }
 
   downloadSync(fileId: string) {

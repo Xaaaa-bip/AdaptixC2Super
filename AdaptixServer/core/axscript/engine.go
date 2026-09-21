@@ -35,6 +35,16 @@ func NewScriptEngine(name string, manager *ScriptManager) *ScriptEngine {
 		functions: make(map[string]goja.Callable),
 	}
 
+	// 快照全局沙箱根（SetGlobalAllowedRoots 必须在引擎创建前调用，
+	// 与 NewScriptEngineFromPath 的行为一致——否则文件参数一律被拒）
+	if manager != nil {
+		manager.mu.RLock()
+		for _, root := range manager.globalAllowedRoots {
+			engine.allowedRoots = append(engine.allowedRoots, root)
+		}
+		manager.mu.RUnlock()
+	}
+
 	consoleObj := rt.NewObject()
 	consoleObj.Set("log", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })
 	consoleObj.Set("warn", func(call goja.FunctionCall) goja.Value { return goja.Undefined() })

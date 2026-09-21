@@ -717,6 +717,31 @@ func (ts *Teamserver) TsTunnelConnectionHalt(channelId int, errorCode byte) {
 }
 
 func (ts *Teamserver) TsTunnelConnectionAccept(tunnelId int, channelId int) {
+	ts.tunnelConnectionAccept(tunnelId, channelId, false)
+}
+
+// TsTunnelConnectionAcceptDirect 与 TsTunnelConnectionAccept 同构，唯一差别是
+// **ioDirect=true**：明确声明数据通道由调用方插件自己提供，core 因此**不启动**
+// relaySocketToTunnel 里那个「读 prSrv 并打包成任务回传 agent」的 goroutine。
+
+// 为什么必须由 core 区分，而不是让插件事后去关它：
+//   relay 一旦启动就开始和插件抢读**同一条 prSrv**；而 agent 的 ACCEPT 走主连接、
+//   插件要等的 TUNNEL_PACK 走**另一条** TCP 连接，插件能执行「关掉它」时早已过去
+//   一个往返 ⇒ 目标机 banner/首包通常已被抢走并交给 Callbacks.WriteTCP
+//   （gopher 与 macos 的 TunnelMessageWriteTCP 是上游 /// START CODE HERE 占位、空壳）
+//   ⇒ 字节**永久丢失**，表现为 client 侧 b''。窗口只能靠**不启动**消除，事后关闭只是压低概率。
+
+// 对照组（reuse）：正向 lportfwd/socks 的 handleTunChannelCreate 本就不启 relay，
+// 通道建好只等插件自己 TsTunnelConnectionResume(..., ioDirect=true)。本方法把反向补齐成同一形状。
+
+// 对其它 agent 类型的零影响：beacon/kharon 等没有独立数据通道，继续用
+// TsTunnelConnectionAccept（ioDirect=false）—— 它们的 TunnelMessageWriteTCP 是**真实现**，
+// relay 正是它们唯一的数据通路，行为逐字节不变。
+func (ts *Teamserver) TsTunnelConnectionAcceptDirect(tunnelId int, channelId int) {
+	ts.tunnelConnectionAccept(tunnelId, channelId, true)
+}
+
+func (ts *Teamserver) tunnelConnectionAccept(tunnelId int, channelId int, ioDirect bool) {
 	tunId := fmt.Sprintf("%08x", tunnelId)
 	tunnel, ok := ts.TunnelManager.GetTunnel(tunId)
 	if !ok {
@@ -729,7 +754,7 @@ func (ts *Teamserver) TsTunnelConnectionAccept(tunnelId int, channelId int) {
 	}
 
 	if tunnel.Data.Client == "" {
-		handlerReverseAccept(ts.TunnelManager, agent, tunnel, channelId)
+		handlerReverseAccept(ts.TunnelManager, agent, tunnel, channelId, ioDirect)
 	} else {
 		// TODO: reverse proxy to client
 	}
@@ -853,7 +878,7 @@ func handleTunChannelCreateClient(tm *TunnelManager, agent *Agent, tunnel *Tunne
 	tm.RegisterChannel(tunnel.Data.TunnelId, tunnel, tunChannel)
 }
 
-func handlerReverseAccept(tm *TunnelManager, agent *Agent, tunnel *Tunnel, channelId int) {
+func handlerReverseAccept(tm *TunnelManager, agent *Agent, tunnel *Tunnel, channelId int, ioDirect bool) {
 	target := tunnel.Data.Fhost + ":" + tunnel.Data.Fport
 	fwdConn, err := net.Dial("tcp", target)
 	if err != nil {
@@ -867,7 +892,13 @@ func handlerReverseAccept(tm *TunnelManager, agent *Agent, tunnel *Tunnel, chann
 
 	tm.RegisterChannel(tunnel.Data.TunnelId, tunnel, tunChannel)
 
-	relaySocketToTunnel(tm, agent, tunnel, tunChannel, false)
+	// ★ 批次9d：ioDirect=true ⇒ **不启** relay。数据通道所有权交给调用方插件
+	//   （它紧跟一次 TsTunnelConnectionResume(..., true)，那时才启 G1 并独占 prSrv）。
+	//   详见 TsTunnelConnectionAcceptDirect 的注释：窗口只能靠「不启动」消除。
+	//   ioDirect=false 保持原样 —— beacon/kharon 的 WriteTCP 是真实现，relay 是它们唯一通路。
+	if !ioDirect {
+		relaySocketToTunnel(tm, agent, tunnel, tunChannel, false)
+	}
 }
 
 /// process socket

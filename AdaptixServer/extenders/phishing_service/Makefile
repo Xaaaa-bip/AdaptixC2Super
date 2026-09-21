@@ -3,7 +3,7 @@ all: clean
 	@ mkdir dist
 	@ cp config.yaml ax_config.axs ./dist/
 	@ cp -r templates landers ./dist/
-	@ GOEXPERIMENT=jsonv2,greenteagc go build -buildmode=plugin -ldflags="-s -w" -o ./dist/service_phishing.so *.go
+	@ go build -buildmode=plugin -ldflags="-s -w" -o ./dist/service_phishing.so *.go
 	@ echo "      done..."
 
 clean:

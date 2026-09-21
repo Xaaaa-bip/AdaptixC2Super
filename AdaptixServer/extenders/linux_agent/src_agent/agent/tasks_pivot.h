@@ -15,4 +15,8 @@ int task_unlink(const uint8_t *data, uint32_t data_len, mp_writer_t *w);
 /// COMMAND_PIVOT_EXEC — relay data to child agent
 int task_pivot_exec(const uint8_t *data, uint32_t data_len, mp_writer_t *w);
 
+/// COMMAND_PIVOT_LISTEN — reverse pivot: listen for children that dial IN.
+/// port == 0 stops listening.
+int task_pivot_listen(const uint8_t *data, uint32_t data_len, mp_writer_t *w);
+
 #endif /* TASKS_PIVOT_H */

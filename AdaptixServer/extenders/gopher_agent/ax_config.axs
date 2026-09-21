@@ -323,6 +323,10 @@ function GenerateUI(listeners_type)
     let checkIconRandom = form.create_check("Random ICO");
     let iconSelector = form.create_selector_file();
     let checkExePseudoSign = form.create_check("Exe pseudo Authenticode (openssl + osslsigncode on teamserver)");
+    // Default ON, matching the web console (listeners.ts:319 sends true when os=windows).
+    // The gopher teamserver has always read this value, so leaving it unset meant the Qt default
+    // (unchecked) decided -- i.e. Qt and web disagreed on the same checkbox.
+    checkExePseudoSign.setChecked(true);
 
     let hline = form.create_hline()
 

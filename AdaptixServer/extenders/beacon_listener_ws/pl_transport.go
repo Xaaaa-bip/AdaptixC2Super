@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rc4"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -209,8 +211,13 @@ func (t *TransportWS) Start(ts Teamserver) error {
 			return err
 		}
 
-		t.Server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
+		// NextProtos: the H1 agent offers ALPN [h2, http/1.1]; the server
+		// accepts ONLY http/1.1 — offering "h2" here with an empty TLSNextProto
+		// map crashes Go's http2 configure path (SIGSEGV in h2_bundle.go).
+		// The client's JA4 is unaffected (it hashes the client offer).
+		t.Server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"}}
 		t.Server.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler))
+		fmt.Printf("   [WS-TLS] serving %s with NextProtos=%v\n", t.Name, t.Server.TLSConfig.NextProtos)
 
 		go func() {
 			err = t.Server.ListenAndServeTLS("", "")
@@ -374,7 +381,9 @@ func (t *TransportWS) parseBeat(ctx *gin.Context) (string, string, []byte, error
 }
 
 func (t *TransportWS) generateSelfSignedCert(certFile, keyFile string) error {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// ECDSA P-256: the embedded-mbedtls linux agent is an ECDSA-only build
+	// (H1 trimmed config drops RSA), so the WS listener cert must be ECDSA.
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
 	}
@@ -385,11 +394,20 @@ func (t *TransportWS) generateSelfSignedCert(certFile, keyFile string) error {
 		return err
 	}
 
+	// Real subject fields: the embedded mbedtls client (H1) fails to parse
+	// completely EMPTY issuer/subject names (x509_get_name → OUT_OF_DATA),
+	// and an empty subject is also an anomaly to network inspection — use a
+	// plausible CDN-style identity instead.
 	template := x509.Certificate{
-		SerialNumber:          serialNumber,
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName:   "localhost",
+			Organization: []string{"Cloudflare, Inc."},
+			Country:      []string{"US"},
+		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
@@ -417,8 +435,11 @@ func (t *TransportWS) generateSelfSignedCert(certFile, keyFile string) error {
 	t.Config.SslCert = certBuffer.Bytes()
 	os.WriteFile(certFile, t.Config.SslCert, 0644)
 
-	keyData := x509.MarshalPKCS1PrivateKey(privateKey)
-	err = pem.Encode(&keyBuffer, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: keyData})
+	keyData, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		return err
+	}
+	err = pem.Encode(&keyBuffer, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyData})
 	if err != nil {
 		return err
 	}

