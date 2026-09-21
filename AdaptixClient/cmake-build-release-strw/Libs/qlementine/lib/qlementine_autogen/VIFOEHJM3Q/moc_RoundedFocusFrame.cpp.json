@@ -1,0 +1,61 @@
+{
+    "classes": [
+        {
+            "className": "RoundedFocusFrame",
+            "lineNumber": 12,
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 15,
+                    "name": "radiuses",
+                    "notify": "radiusesChanged",
+                    "override": false,
+                    "read": "radiuses",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "RadiusesF",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setRadiuses"
+                }
+            ],
+            "qualifiedClassName": "oclero::qlementine::RoundedFocusFrame",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 22,
+                    "name": "radiusesChanged",
+                    "returnType": "void"
+                }
+            ],
+            "slots": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "type": "RadiusesF"
+                        }
+                    ],
+                    "index": 1,
+                    "lineNumber": 21,
+                    "name": "setRadiuses",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QFocusFrame"
+                }
+            ]
+        }
+    ],
+    "inputFile": "RoundedFocusFrame.hpp",
+    "outputRevision": 69
+}

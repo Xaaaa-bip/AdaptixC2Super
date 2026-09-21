@@ -1,0 +1,32 @@
+{
+	"BUILD_DIR" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/qlementine_autogen",
+	"CMAKE_BINARY_DIR" : "X:/AdaptixClient/cmake-build-release-strw",
+	"CMAKE_CURRENT_BINARY_DIR" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib",
+	"CMAKE_CURRENT_SOURCE_DIR" : "X:/AdaptixClient/Libs/qlementine/lib",
+	"CMAKE_SOURCE_DIR" : "X:/AdaptixClient",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/qlementine_autogen/include",
+	"INPUTS" : 
+	[
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/Inter-BoldItalic.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/Inter-Regular.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/Inter-Italic.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/InterDisplay-BoldItalic.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/InterDisplay-Italic.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/Inter-Bold.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/InterDisplay-Regular.ttf",
+		"X:/AdaptixClient/Libs/qlementine/lib/resources/fonts/inter/InterDisplay-Bold.ttf"
+	],
+	"LOCK_FILE" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/CMakeFiles/qlementine_autogen.dir/AutoRcc_qlementine_font_inter_3YJK5W5UP7_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "--no-zstd", "-name", "qlementine_font_inter" ],
+	"OUTPUT_CHECKSUM" : "3YJK5W5UP7",
+	"OUTPUT_NAME" : "qrc_qlementine_font_inter.cpp",
+	"RCC_EXECUTABLE" : "D:/Qt/6.11.0/mingw_64/bin/rcc.exe",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "X:/AdaptixClient/cmake-build-release-strw/Libs/qlementine/lib/CMakeFiles/qlementine_autogen.dir/AutoRcc_qlementine_font_inter_3YJK5W5UP7_Used.txt",
+	"SOURCE" : "X:/AdaptixClient/Libs/qlementine/lib/resources/qlementine_font_inter.qrc",
+	"USE_BETTER_GRAPH" : true,
+	"VERBOSITY" : 0
+}

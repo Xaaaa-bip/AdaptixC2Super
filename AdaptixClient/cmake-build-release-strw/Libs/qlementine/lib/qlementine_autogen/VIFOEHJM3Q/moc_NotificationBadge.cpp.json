@@ -1,0 +1,191 @@
+{
+    "classes": [
+        {
+            "className": "NotificationBadge",
+            "lineNumber": 12,
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 15,
+                    "name": "text",
+                    "notify": "textChanged",
+                    "override": false,
+                    "read": "text",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QString",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setText"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 16,
+                    "name": "foregroundColor",
+                    "notify": "foregroundColorChanged",
+                    "override": false,
+                    "read": "foregroundColor",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QColor",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setForegroundColor"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 2,
+                    "lineNumber": 17,
+                    "name": "backgroundColor",
+                    "notify": "backgroundColorChanged",
+                    "override": false,
+                    "read": "backgroundColor",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QColor",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setBackgroundColor"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 3,
+                    "lineNumber": 18,
+                    "name": "relativePosition",
+                    "notify": "relativePositionChanged",
+                    "override": false,
+                    "read": "relativePosition",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QPoint",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setRelativePosition"
+                }
+            ],
+            "qualifiedClassName": "oclero::qlementine::NotificationBadge",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 32,
+                    "name": "textChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 36,
+                    "name": "foregroundColorChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 2,
+                    "lineNumber": 40,
+                    "name": "backgroundColorChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 3,
+                    "lineNumber": 45,
+                    "name": "relativePositionChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 4,
+                    "lineNumber": 49,
+                    "name": "paddingChanged",
+                    "returnType": "void"
+                }
+            ],
+            "slots": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 5,
+                    "lineNumber": 31,
+                    "name": "setText",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "type": "QColor"
+                        }
+                    ],
+                    "index": 6,
+                    "lineNumber": 35,
+                    "name": "setForegroundColor",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "type": "QColor"
+                        }
+                    ],
+                    "index": 7,
+                    "lineNumber": 39,
+                    "name": "setBackgroundColor",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "type": "QPoint"
+                        }
+                    ],
+                    "index": 8,
+                    "lineNumber": 43,
+                    "name": "setRelativePosition",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "type": "QMargins"
+                        }
+                    ],
+                    "index": 9,
+                    "lineNumber": 48,
+                    "name": "setPadding",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QWidget"
+                }
+            ]
+        }
+    ],
+    "inputFile": "NotificationBadge.hpp",
+    "outputRevision": 69
+}

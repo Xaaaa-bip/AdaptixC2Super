@@ -2839,10 +2839,12 @@ typedef enum _PROCESS_TLS_INFORMATION_TYPE
 #define NtLastError() ( NtCurrentTeb()->LastErrorValue )
 #define NtLastStatus()	( NtCurrentTeb()->LastStatusValue )
 
-#if defined(_M_X86)
-#define NtCurrentPID() __readfsdword(0x20)
+#if defined(_M_X86) || defined(__i386__) || defined(i386)
+#define NtCurrentPID() ({ DWORD _pid = 0; __asm__ __volatile__("movl %%fs:0x20, %0" : "=r"(_pid)); (ULONG_PTR)_pid; })
+#elif defined(_M_X64) || defined(__x86_64__)
+#define NtCurrentPID() ({ DWORD64 _pid = 0; __asm__ __volatile__("movq %%gs:0x20, %0" : "=r"(_pid)); (ULONG_PTR)_pid; })
 #else
-#define NtCurrentPID() __readgsqword(0x20)
+#define NtCurrentPID() ((ULONG_PTR)0)
 #endif
 
 #define THREAD_TERMINATE               (0x0001)  

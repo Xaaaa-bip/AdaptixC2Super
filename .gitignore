@@ -44,3 +44,10 @@ Thumbs.db
 
 # Local secrets (if any)
 .env
+cmake-build-release/
+dist/
+dist.zip
+AdaptixServer.zip
+AdaptixClient.zip
+vnc.zip*
+AdaptixClient_windows_x64/

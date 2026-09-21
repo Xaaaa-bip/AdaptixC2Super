@@ -26,8 +26,8 @@ AgentInfo* AgentInfo_Create()
 	self->arch64        = (sizeof(void*) != 4);
 	self->sys64         = self->arch64 || isWow64;
 	self->build_number  = OSVersion.dwBuildNumber;
-	self->major_version = OSVersion.dwMajorVersion;
-	self->minor_version = OSVersion.dwMinorVersion;
+	self->major_version = (BYTE)OSVersion.dwMajorVersion;
+	self->minor_version = (BYTE)OSVersion.dwMinorVersion;
 	self->is_server     = OSVersion.wProductType != VER_NT_WORKSTATION;
 	self->internal_ip   = GetInternalIpLong();
 	self->username      = _GetUserName();

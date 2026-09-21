@@ -1,0 +1,18 @@
+{
+    "classes": [
+        {
+            "className": "WidgetWithFocusFrameEventFilter",
+            "lineNumber": 12,
+            "object": true,
+            "qualifiedClassName": "oclero::qlementine::WidgetWithFocusFrameEventFilter",
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QObject"
+                }
+            ]
+        }
+    ],
+    "inputFile": "WidgetWithFocusFrameEventFilter.hpp",
+    "outputRevision": 69
+}
