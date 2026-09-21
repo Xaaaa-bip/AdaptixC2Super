@@ -58,6 +58,9 @@ export function Relay() {
 
   const [st, setSt] = useState<RelayStatus | null>(null)
   const [err, setErr] = useState('')
+  // 接口回了 200 空 body ⇒ 插件确实没注册。与"请求失败"是**两回事**，
+  // 分开存才知道该给哪条指引（见 refresh 里的注释）。
+  const [missing, setMissing] = useState(false)
   const [busy, setBusy] = useState('')
   // 轮询可能在上一次还没回来时又触发；用一个 ref 挡住，避免请求叠起来。
   const inflight = useRef(false)
@@ -66,10 +69,30 @@ export function Relay() {
     if (!api || inflight.current) return
     inflight.current = true
     try {
-      setSt(await api.relayStatus())
+      const s = await api.relayStatus()
+      // ★★ 「插件没注册」**不是异常**。未注册的 /api/* 路径，服务端回的是
+      //    **HTTP 200 + 空 body**（实测，见 api/http.ts 末尾那段注释），
+      //    解析出来就是 null。以前这里直接把 null 当成功写进 state ⇒
+      //    顶部状态永远停在「读取中…」，而下面那句"若为 404…去 profile 注册"
+      //    又只在 404 时才成立 —— 两头都对不上，把操作员往"去改 profile"上带。
+      if (!s) { setMissing(true); setSt(null); setErr(''); return }
+      setSt(s)
+      setMissing(false)
       setErr('')
     } catch (e: any) {
-      // 插件没加载时这里会是 404 —— 说清楚是「插件不在」，别让操作员去查 relay。
+      // ★★ relay/status 用 `ok:false` 表达「relay 未被托管」—— 那是**合法的诊断结果**
+      //    （unit 没装就是没装），负载是完整的一份状态。但 api/http.ts 把一切
+      //    `ok:false` 一律抛出来，于是整份状态被丢掉，页面只剩一句
+      //    `request failed`，所有字段显示 `—`，「unit 文件 未找到」也成了默认值而不是事实。
+      //    好在 http.ts 把响应体挂在 `err.payload` 上（见那里的注释），接回来当状态用。
+      const p = e?.payload
+      if (p && typeof p === 'object' && 'unit_present' in p) {
+        setSt(p as RelayStatus)
+        setMissing(false)
+        setErr('')
+        return
+      }
+      // 到这里的才是真失败：网络中断、401、服务端 ok:false 且没带状态体。
       setErr(e?.message || String(e))
     } finally {
       inflight.current = false
@@ -99,7 +122,9 @@ export function Relay() {
     }
   }
 
-  const { text: stText, tone } = describe(st)
+  // 插件没注册时 st 恒为 null，describe() 只会一直回「读取中…」——
+  // 那是个永远转不完的假状态，得单独标出来。
+  const { text: stText, tone } = missing ? { text: '插件未注册', tone: 'err' as Tone } : describe(st)
   const running = st?.active === 'active'
   const known = !!st && st.unit_present && st.systemctl_present
   const disabled = !!busy || !known
@@ -134,14 +159,41 @@ export function Relay() {
         </PageTips>
       </div>
 
+      {/* ★ 三种「看不到状态」必须分开说，否则会把操作员指向错误的方向：
+            · missing   插件没注册（200 空响应）→ 去 profile；这是 2026-09-21 实测踩的坑，
+                        当时页面把这条说成"404 才可能"，而真实原因（unit 没装）压根没显示
+            · err       请求本身失败           → 多半 teamserver 在重启 / 链接断，刷新
+            · st.hint   插件答了但它自己有问题 → **服务端的权威诊断**，照它做 */}
+      {missing ? (
+        <div style={{ padding: '10px 14px 0' }}>
+          <div className="card" style={{ flex: '0 0 auto', padding: '10px 12px' }}>
+            <div className="lv err">relay 插件没注册</div>
+            <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>
+              接口回了<b>空响应</b> —— 说明 <span className="mono">extenders/relay</span> 没在
+              profile 里列出，或 <span className="mono">relay.so</span> 没落位。改完要重启 teamserver。
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {err ? (
         <div style={{ padding: '10px 14px 0' }}>
           <div className="card" style={{ flex: '0 0 auto', padding: '10px 12px' }}>
             <div className="lv err">读不到 relay 状态</div>
             <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>{err}</div>
             <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>
-              若为 404，通常是 extenders/relay 插件没在 profile 里注册（改完要重启 teamserver）。
+              这是<b>请求失败</b>，与「插件没注册」是两回事（后者是 200 空响应，不会抛异常）。
+              多半是 teamserver 正在重启或链接中断，刷新即可。
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {st?.hint ? (
+        <div style={{ padding: '10px 14px 0' }}>
+          <div className="card" style={{ flex: '0 0 auto', padding: '10px 12px' }}>
+            <div className="lv warn">relay 无法被托管</div>
+            <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>{st.hint}</div>
           </div>
         </div>
       ) : null}
