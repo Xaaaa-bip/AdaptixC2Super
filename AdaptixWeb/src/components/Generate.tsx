@@ -31,7 +31,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [
   {
     id: 'windows',
     title: 'Windows',
-    desc: 'Beacon / Kharon · Stager、EXE、DLL、Shellcode…',
+    desc: 'Beacon / Kharon · Stager、EXE',
     badge: '推荐',
     agents: ['beacon', 'kharon'],
     defaultAgent: 'beacon',

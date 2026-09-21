@@ -187,14 +187,12 @@ function SelectRow({
   const extra = cur !== undefined && !opts.includes(cur) ? [cur] : []
   return (
     <div className="chip-row bs-chips">
-      <button
-        type="button"
-        className={`bs-default${cur === undefined ? ' primary' : ''}`}
-        onClick={() => write(field.key, undefined)}
-        title="不指定：这个键不下发，交给插件自己的默认值（不是取第一个选项）"
-      >
-        默认
-      </button>
+      {/* 原来这里有一个「默认」按钮（点它 = 这个键不下发、交给插件默认值）。
+          按用户要求去掉 —— 它长得像取值项、又和取值项并排，看着像"待勾选的大框"。
+          ★ 去掉的只是"能回到未选状态"这个动作，**初始语义没变**：字段在操作员动它
+          之前仍然是 undefined ⇒ 不下发这个键 ⇒ 插件按自己的默认值走。
+          （这条很要紧：rotation_mode 的插件默认是 sequential 而不是选项里的第一项
+          random，前端一旦"默认选第一项"就会把默认行为静默改掉。） */}
       {[...extra, ...opts].map((o) => (
         <button
           key={o}

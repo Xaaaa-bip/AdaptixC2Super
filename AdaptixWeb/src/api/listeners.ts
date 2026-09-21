@@ -258,14 +258,11 @@ export const AGENT_PROFILES: AgentProfile[] = [
     label: 'Beacon',
     platform: 'windows',
     // Stager 为产品化扩展；其余对齐 ax_config GenerateUI
-    formats: [
-      'Stager',
-      'Exe',
-      'Service Exe',
-      'DLL',
-      'Shellcode',
-      'Hex C',
-    ],
+    // 只留 Exe / Stager。Service Exe / DLL / Shellcode / Hex C 在 pl_main.go 里
+    // 虽然有分支，但不是这条产品线要暴露的产出形态（Stager 是为产品化加的，
+    // Exe 是日常一键上线的默认）。投递页也用这份清单（WebDelivery.tsx:455
+    // `const formats = profile.formats`），改这一处两边同时生效。
+    formats: ['Stager', 'Exe'],
     arches: ['x64', 'x86'],
     listeners: ['BeaconHTTP', 'BeaconWS', 'BeaconTCP', 'BeaconSMB', 'BeaconDNS'],
     defaultFormat: 'Stager',
