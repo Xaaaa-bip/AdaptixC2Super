@@ -34,6 +34,30 @@
 `BEACON_PE_HEADER_MOD`**（当前 `:= true`）。Web 侧 `BuildSchema()` 同步补了该字段，
 Qt 侧 `GenerateUI` 早已在传该键。
 
+### Beacon 隧道/代理：交互不再被心跳拖死
+
+SOCKS5 隧道的数据是**搭心跳便车**的（`TsTaskGetAvailableAll` 把隧道任务和普通命令合成一个包下发，
+Agent 侧 `Proxyfire_ProcessTunnels` 往同一个 `packerOut` 里塞），所以 `sleep_delay` 直接就是代理的
+**包间隔**，且目标机 DNS 是在心跳线程里**同步解析**的。三处修复（`MainAgent.cpp` / `Proxyfire.cpp` / `Proxyfire.h`）：
+
+| 位置 | 问题 | 修法 |
+|---|---|---|
+| `MainAgent.cpp` | 有隧道时仍按 `sleep_delay` 整睡，交互式代理每跳等一个心跳 | **活动感知快轮询**：有通道且 15s 内有数据流动 ⇒ 50ms；通道在但静默 ⇒ 300ms；通道关掉后 60s 内保持慢档（**待命窗口**，否则下一条新连接要等一整个 sleep）。`working_time` 窗口外不加速 |
+| `Proxyfire.cpp` | 非阻塞 `connect` 之后只 `select` **100ms**，等不到就判 `WSAETIMEDOUT` —— 握手 >100ms 的目标（跨城/CDN/国外站点）**一律打不开** | 连接在途时交给 `CheckProxy` 状态机收尾，deadline 用 `AX_TUNNEL_CONNECT_TIMEOUT_MS`（默认 10s）；`CheckProxy` 的 select 超时 100ms→0，避免 N 个待连通道把一轮心跳拖成 N×100ms |
+| `Proxyfire.cpp` | `gethostbyname` 同步阻塞在心跳线程里，目标机 DNS 慢/黑洞会冻住**整条链路** | 三层：**IP 直通**（客户端给的就是 IP 时不查）→ **缓存**（64 槽，正 10min / 负 1min）→ **常驻解析线程**（懒创建，只有真用到代理才建，睡在事件上，永不退出） |
+
+实测（同一台机、`sleep=5`、内网目标）：首字节 TTFB **10.12s → 0.23s**；静置后再连接 CONNECT **1.8~5.1s → 0.20s**；
+握手 >100ms 的站点从「当场 0x04 主机不可达」变成 **200 OK**；解析不出来的域名 **0.27s 快速失败**（原来挂住不返回）；
+4MB 下载 0.8s（≈4.9 MB/s）；24 并发 p50 0.5s；静置心跳仍是 5s 一跳（待命窗口过期自动回归）。
+三个阈值都可在构建时用 `-DAX_TUNNEL_POLL_MS` / `AX_TUNNEL_ARMED_MS` / `AX_TUNNEL_POLL_IDLE_MS` /
+`AX_TUNNEL_CONNECT_TIMEOUT_MS` 覆盖，`AX_TUNNEL_POLL_MS=0` 即整条行为关闭。
+
+> ⚠️ 解析线程用**朴素 `CreateThread`**，不是 `Opsec_CreateAsyncBofThread`。实测（三次独立构建、
+> 两个调用路径、两种收尾方式）从 Proxyfire 用那个 spoofed 封装起线程会让 beacon **进程退出或主循环停摆**，
+> 疑似其 `Indirect_NtCreateThreadEx` 的 SSN/gadget 在本机 ntdll 上取错；该封装本身未改动。
+> **同一现象也出现在异步 BOF 上**：`execute bof <obj> -a` 会让 beacon 直接退出（同步 BOF 正常），
+> 且用改动前的 objects 复现同样如此 —— 是**既有问题，不是本次回归**。
+
 ### 仓库只保留源码
 
 - **停止跟踪运行期状态** `AdaptixServer/data/`（操作员库 + Agents / Tasks / Consoles 三张表）。
