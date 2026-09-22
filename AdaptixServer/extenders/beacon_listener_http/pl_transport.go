@@ -98,6 +98,7 @@ type TransportHTTP struct {
 	Config    TransportConfig
 	Name      string
 	Active    bool
+	Guard     *scannerGuard // 扫描器封禁/降噪（见 pl_scanguard.go）
 }
 
 type TransportConfig struct {
@@ -125,6 +126,13 @@ type TransportConfig struct {
 	TrustXForwardedFor bool              `json:"x-forwarded-for"`
 	WebPageError       string            `json:"page-error"`
 	WebPageOutput      string            `json:"page-payload"`
+
+	// 扫描器封禁（见 pl_scanguard.go）。三个数都可以不写：0 = 用代码默认值
+	// （阈值 8 次 / 窗口 60s / 封禁 30min）；scanner_ban_disabled=true 则完全关闭。
+	ScannerBanThreshold   int  `json:"scanner_ban_threshold"`
+	ScannerBanWindowSec   int  `json:"scanner_ban_window_sec"`
+	ScannerBanDurationSec int  `json:"scanner_ban_duration_sec"`
+	ScannerBanDisabled    bool `json:"scanner_ban_disabled"`
 
 	Server_headers string `json:"server_headers"`
 	Protocol       string `json:"protocol"`
@@ -360,6 +368,13 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		responseData []byte
 	)
 
+	// 已被封禁的来源：直接断连、不打日志（见 pl_scanguard.go）
+	clientIP := clientKey(ctx)
+	if t.Guard.banned(clientIP) {
+		t.Guard.drop(ctx, t.Config.TrustXForwardedFor)
+		return
+	}
+
 	// Validate URI against configured URIs (newline-separated)
 	uriValid := false
 	u, err := url.Parse(ctx.Request.RequestURI)
@@ -377,8 +392,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		if u != nil {
 			path = u.Path
 		}
-		fmt.Printf("[listener %s] beacon check-in rejected: URI path %q does not match any configured uri (method=%s)\n", t.Name, path, ctx.Request.Method)
-		t.pageError(ctx)
+		t.reject(ctx, clientIP, fmt.Sprintf("URI path %q does not match any configured uri (method=%s)", path, ctx.Request.Method))
 		return
 	}
 
@@ -392,15 +406,13 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 			}
 		}
 		if !hhValid {
-			fmt.Printf("[listener %s] beacon check-in rejected: Host %q does not match host_header list\n", t.Name, requestHost)
-			t.pageError(ctx)
+			t.reject(ctx, clientIP, fmt.Sprintf("Host %q does not match host_header list", requestHost))
 			return
 		}
 	}
 
 	if !requestHeadersMatch(ctx.Request, t.Config.RequestHeaders) {
-		fmt.Printf("[listener %s] beacon check-in rejected: custom request_headers rules not satisfied\n", t.Name)
-		t.pageError(ctx)
+		t.reject(ctx, clientIP, "custom request_headers rules not satisfied")
 		return
 	}
 
@@ -415,8 +427,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		}
 	}
 	if !uaValid {
-		fmt.Printf("[listener %s] beacon check-in rejected: User-Agent %q does not match any configured user_agent line\n", t.Name, requestUA)
-		t.pageError(ctx)
+		t.reject(ctx, clientIP, fmt.Sprintf("User-Agent %q does not match any configured user_agent line", requestUA))
 		return
 	}
 
@@ -596,4 +607,25 @@ func (t *TransportHTTP) pageError(ctx *gin.Context) {
 	ctx.Writer.WriteHeader(http.StatusNotFound)
 	html := []byte(t.Config.WebPageError)
 	_, _ = ctx.Writer.Write(html)
+}
+
+// reject 统一处理"无效请求"（URI/Host/请求头/UA 不匹配）：
+// 记账 → 该打日志才打 → 已封禁就断连，否则照旧给 404 诱饵页。
+//
+// 日志策略是本方法存在的主要理由：同一个扫描器一个窗口内只会留下**一条**拒绝日志，
+// 跨过阈值时再留一条「banned scanner ...」。以前每个请求都打一行，实测一天 ~900MB。
+func (t *TransportHTTP) reject(ctx *gin.Context, clientIP string, reason string) {
+	banned, logIt := t.Guard.fail(clientIP)
+	if logIt {
+		if banned {
+			fmt.Printf("[listener %s] banned scanner %s for %s (%s)\n", t.Name, clientIP, t.Guard.banFor, reason)
+		} else {
+			fmt.Printf("[listener %s] beacon check-in rejected: %s\n", t.Name, reason)
+		}
+	}
+	if banned {
+		t.Guard.drop(ctx, t.Config.TrustXForwardedFor)
+		return
+	}
+	t.pageError(ctx)
 }

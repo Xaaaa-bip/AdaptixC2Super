@@ -88,6 +88,7 @@ func (p *PluginListener) Create(name string, config string, customData []byte) (
 		Name:      name,
 		Config:    conf,
 		Active:    false,
+		Guard:     newScannerGuard(conf),
 	}
 
 	listenerData = adaptix.ListenerData{
