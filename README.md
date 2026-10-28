@@ -1,5 +1,39 @@
 # AdaptixC2 v2.0
 
+## 快速开始：部署与使用
+
+### 1. 部署服务端（Linux）
+
+推荐直接用 CI 产物 —— GitHub Release 的 **`adaptixc2-linux-amd64.tar.gz`**（完整可部署包，解压即用）：
+
+```bash
+tar xzf adaptixc2-linux-amd64.tar.gz -C /opt/adaptix
+cd /opt/adaptix
+vim profile.yaml        # 至少改掉 Teamserver.password；监听器按需改 extenders/*/config.yaml
+./adaptixserver -profile profile.yaml
+```
+
+- 包内已备齐：服务端二进制、全部插件（`extenders/<p>/`，已铺平）、Web 控制台（`web/`）、Extension-Kit、`404page.html`。
+- **必须在包根目录启动** —— profile 里 extenders / Web / axscripts 全是相对进程 cwd 的路径。
+- TLS：`tls_autogen: true` 时首次启动自动生成自签证书（`server.rsa.crt` / `server.rsa.key`）；要挂正经域名证书就把 `cert` / `key` 指到自己的文件。
+- 运行期状态（操作员库、Agents/Tasks/Consoles、证书、日志）都在 `data/` 与运行目录，升级换代别覆盖。
+- 也可源码构建：`make server-ext`（编 server + 插件 + 拷 web / kit 到 `dist/`，然后在 `dist/` 里启动）。
+
+### 2. 使用 Web 控制台
+
+- 浏览器打开 `https://<ip>:8080<Web.path>/` —— 入口路径见 `profile.yaml` 的 `Web.path`（CI 包里是 `/bf21a14d8b0eb60f8b95ae0df61162b8/`），自签证书点「继续访问」。
+- 登录：默认 `only_password: true`，**任意用户名 + `Teamserver.password`**；改成 `false` 则按 `operators:` 账号表逐个登录。
+- ★ 换控制台入口路径必须**同时**改前端构建前缀 `VITE_BASE` 并重编 web —— 两边不一致就是整页白屏（资源全 404）。
+- API 与控制台同源同端口：REST 在 `Teamserver.endpoint`（默认 `/api`），协作多端走 WebSocket。
+
+### 3. 使用 Android 控制端（AdaptixApp）
+
+Release 下载 **`AdaptixApp-debug.apk`** 装机即可（`AdaptixApp-release-unsigned.apk` 需自签，见 app README）。连接信息与 Web 控制台**完全同源**：
+
+- 地址填 `https://<ip>:8080`（**不带**入口路径），账号密码同上，自签证书无需处理。
+- 功能：Agents / Listeners / Targets / 团队聊天（与 Web 互通）/ 控制台（下发命令、看任务回显），WebSocket 实时推送 + 断线自动重连。
+- 详细说明：[`AdaptixApp/README.md`](AdaptixApp/README.md)（中英双语）。
+
 ## 分支说明
 | 分支 | 说明 |
 |------|------|
