@@ -1,11 +1,32 @@
-# AdaptixC2 v1.6
+# AdaptixC2 v2.0
 
 ## 分支说明
 | 分支 | 说明 |
 |------|------|
-| `main` | 最新代码（**v1.6**）。已并入 `dev` 与全部 `cursor/*` 分支 |
-| `dev` | 原并行开发线（Linux eBPF agent / libp2p 传输 / 参数混淆），**内容已全量并入 `main`**，保留作归档 |
+| `main` | 稳定线（**v1.6**）。v2.0 在 `dev` 验证后并入 |
+| `dev` | **v2.0 预发线**：v1.6 全部内容 + AdaptixApp Android 控制端及其 CI（见下） |
 | `1.3` | v1.3 原始备份 |
+
+## v2.0 更新内容
+
+本版新增 **AdaptixApp** —— Android 团队端控制客户端。服务端（AdaptixServer）与 Web 控制台（AdaptixWeb）源码相对 v1.6 **无改动**。
+
+### 1. AdaptixApp（Android 控制端，全新组件）
+
+- **连接方式与 Web 控制台完全一致**：同一服务器地址（`https://<ip>:<port>`，不用带控制台入口路径）、同一组操作员账号；自签证书开箱即用。
+- 连接流程对齐服务端规范：`POST /api/login`（Bearer）→ `POST /api/otp/generate` → `WS /api/connect?otp=…`（`client_type=2`，订阅 targets / agents / tasks / chat 等事件）。
+- **仪表盘五页签**：Agents（在线状态）、Listeners、Targets、团队聊天（与 Web 控制台互通）、控制台（选 Agent 下发命令、看任务历史与回显）。
+- 多套服务器配置本地保存、一键回填；WebSocket 断线自动重连；新消息/任务通知（Android 13+ 需授权）。
+- 要求 Android 7.0+（minSdk 24），Kotlin + Compose，详见 `AdaptixApp/README.md`（中英双语）。
+
+### 2. CI：workflow 新增 `adaptix-app` 编译
+
+- push 到 main / 打 tag 自动编译 APK 并直传 GitHub Release（沿用「产物进 Release、不用 upload-artifact」的既定策略）。
+- 产物两个：`AdaptixApp-debug.apk`（直接安装）、`AdaptixApp-release-unsigned.apk`（未签名，README 附 zipalign + apksigner 自签指引）。
+
+### 3. 仓库整理
+
+- 旧根级 Android 工程残留（`app/`、根级 gradle 文件）退场，工程归位 `AdaptixApp/`；本机产物（`build/`、`.gradle/`、`local.properties`）全部挡在库外。
 
 ## v1.6 更新内容
 
