@@ -113,11 +113,23 @@ logonpasswords
 
 Same operator flow as Cobalt Strike `bmimikatz` / `bmimikatz_small` (inline PE via No-Consolation BOF, not a rewrite of gentilkiwi as `.o`). Access-menu items cover logonpasswords, tickets, SAM, LSA secrets, cache, vault, ekeys, and coffee.
 
+## Build and diagnostics
+
+Build the native Creds-BOF artifacts from the repository root, then reload the AxScript group in the teamserver:
+
+```bash
+make -C Extension-Kit/Creds-BOF
+make -C Extension-Kit/Execution-BOF
+node scripts/verify_extension_kit.mjs
+```
+
+Commands now check their architecture-specific `.o` file before queuing a task. If a file is missing, the error includes the exact build command and the AxScript reload step. The Mimikatz PE is intentionally not committed; fetch it separately as described in `mimikatz/README.md`.
+
 
 
 ## nanodump
 
-A flexible tool that creates a minidump of the LSASS process. [More details](https://github.com/Adaptix-Framework/Extension-Kit/blob/main/Creds-BOF/nanodumnp/README.md)
+A flexible tool that creates a minidump of the LSASS process. [More details](https://github.com/Adaptix-Framework/Extension-Kit/blob/main/Creds-BOF/nanodump/README.md)
 
 
 

@@ -6,7 +6,16 @@ set -euo pipefail
 VER="${MIMIKATZ_VERSION:-2.2.0-20220919}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="${SCRIPT_DIR}/_bin"
-ZIP_URL="https://github.com/gentilkiwi/mimikatz/releases/download/${VER}/mimikatz_trunk.zip"
+ZIP_URL="${MIMIKATZ_URL:-https://github.com/gentilkiwi/mimikatz/releases/download/${VER}/mimikatz_trunk.zip}"
+
+if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+  echo "[!] Need curl or wget to download Mimikatz" >&2
+  exit 1
+fi
+if ! command -v unzip >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+  echo "[!] Need unzip or python3 to extract Mimikatz" >&2
+  exit 1
+fi
 
 mkdir -p "$OUT_DIR"
 TMP="$(mktemp -d)"
@@ -34,6 +43,11 @@ zf.extractall(dest)
 PY
 fi
 
+if command -v unzip >/dev/null 2>&1 && ! unzip -tq "$TMP/mimikatz.zip" >/dev/null; then
+  echo "[!] Downloaded archive is not a valid ZIP: $ZIP_URL" >&2
+  exit 1
+fi
+
 copied=0
 while IFS= read -r -d '' f; do
   case "$f" in
@@ -53,6 +67,11 @@ done < <(find "$TMP/out" -type f -name 'mimikatz.exe' -print0)
 if [[ ! -f "$OUT_DIR/mimikatz.x64.exe" ]]; then
   echo "[!] mimikatz.x64.exe missing after extract" >&2
   find "$TMP/out" -type f | head -n 50 >&2
+  exit 1
+fi
+
+if [[ "$copied" -eq 0 ]]; then
+  echo "[!] No supported Mimikatz executable was found in the archive" >&2
   exit 1
 fi
 

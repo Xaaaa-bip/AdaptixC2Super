@@ -8,6 +8,13 @@ The PE is **not** stored in git. Fetch it on the teamserver, then reload axscrip
 bash Extension-Kit/Creds-BOF/mimikatz/fetch_mimikatz.sh
 ```
 
+The default release is pinned to `2.2.0-20220919`. Set `MIMIKATZ_VERSION` to use another release tag or `MIMIKATZ_URL` to use an internal mirror:
+
+```bash
+MIMIKATZ_VERSION=2.2.0-20220919 bash Extension-Kit/Creds-BOF/mimikatz/fetch_mimikatz.sh
+MIMIKATZ_URL=https://mirror.example/mimikatz_trunk.zip bash Extension-Kit/Creds-BOF/mimikatz/fetch_mimikatz.sh
+```
+
 Requires `Execution-BOF` to be built (`NoConsolation.x64.o`).
 
 ## Why this is not a `mimikatz.x64.o` rewrite
@@ -70,7 +77,24 @@ mimikatz [--timeout 120] [-f /path/to/mimikatz.exe] [--no-exit] [--dont-save] [-
 
 Empty module list defaults to `privilege::debug sekurlsa::logonpasswords` and appends `exit` so the inline PE returns.
 
+`--timeout` accepts `0..900` seconds; `0` disables the wait. The current No-Consolation loader requires a 64-bit agent.
+
 Plaintext and NTLM from the output are added to the Adaptix credentials store. Access-menu shortcuts cover logonpasswords, tickets, ekeys, SAM, LSA secrets, cache, vault, and coffee.
+
+## Troubleshooting
+
+| Message | Fix |
+|---|---|
+| `mimikatz.x64.exe not found` | Run `bash Extension-Kit/Creds-BOF/mimikatz/fetch_mimikatz.sh` on the teamserver, then reload the Creds-BOF AxScript. |
+| `No-Consolation loader ... is missing` | Run `make -C Extension-Kit/Execution-BOF` and reload the Creds-BOF AxScript. |
+| `Mimikatz PE could not be read` | Make sure the `Creds-BOF` directory is included in the AxScript sandbox roots and that the PE is readable by the teamserver process. |
+| `requires a 64-bit agent` | Use a 64-bit agent; the current No-Consolation integration does not support 32-bit/WoW64 agents. |
+
+The validator can check the repository layout without executing a BOF:
+
+```bash
+node scripts/verify_extension_kit.mjs
+```
 
 ## License
 
