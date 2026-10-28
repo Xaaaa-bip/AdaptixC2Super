@@ -83,8 +83,8 @@ VITE_BASE=/bf21a14d8b0eb60f8b95ae0df61162b8/ npm run build   # → dist/
 ## 分支说明
 | 分支 | 说明 |
 |------|------|
-| `main` | 稳定线（**v1.6**）。v2.0 在 `dev` 验证后并入 |
-| `dev` | **v2.0 预发线**：v1.6 全部内容 + AdaptixApp Android 控制端及其 CI（见下） |
+| `main` | 最新代码（**v2.0**，AdaptixApp 已并入） |
+| `dev` | v2.0 预发线（已并入 `main`，保留作归档） |
 | `1.3` | v1.3 原始备份 |
 
 ## v2.0 更新内容

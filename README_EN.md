@@ -84,8 +84,8 @@ VITE_BASE=/bf21a14d8b0eb60f8b95ae0df61162b8/ npm run build   # → dist/
 
 | Branch | Description |
 |--------|-------------|
-| `main` | Stable line (**v1.6**). v2.0 merges in after validation on `dev` |
-| `dev` | **v2.0 pre-release line**: everything in v1.6 + the AdaptixApp Android console and its CI (see below) |
+| `main` | Latest code (**v2.0**, AdaptixApp merged in) |
+| `dev` | v2.0 pre-release line (merged into `main`, kept as archive) |
 | `1.3` | Original v1.3 backup |
 
 ## What's new in v2.0
