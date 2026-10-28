@@ -51,6 +51,7 @@ export function CommandPalette({ open, onClose, go }: Props) {
       { id: 'nav-creds', group: '导航', label: '凭据仓库', keywords: 'credentials', run: () => go('creds') },
       { id: 'nav-targets', group: '导航', label: '目标资产', keywords: 'targets', run: () => go('targets') },
       { id: 'nav-logs', group: '导航', label: '系统日志', keywords: 'logs events', run: () => go('logs') },
+      { id: 'nav-ai', group: '协作', label: 'AI 协作平台', hint: 'G I', keywords: 'ai assistant copilot collaboration context analysis', run: () => go('ai') },
     ]
 
     const sys: PaletteAction[] = [
@@ -92,7 +93,6 @@ export function CommandPalette({ open, onClose, go }: Props) {
             run: () => {
               selectAgent(a.a_id)
               openConsole(a.a_id)
-              go('sessions')
             },
           },
         ]

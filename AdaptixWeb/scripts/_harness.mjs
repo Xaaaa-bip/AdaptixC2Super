@@ -88,7 +88,8 @@ export async function launchConsole(o = {}) {
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
   const url = `http://127.0.0.1:${server.address().port}/`
 
-  const browser = await chromium.launch()
+  // 无下载浏览器时走系统 Chrome（channel），有 playwright 缓存则默认行为不变
+  const browser = await chromium.launch(o.launch || (process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : undefined))
   // permissions 走显式开关：默认不给。要给的话得是真的需要
   //（比如量剪贴板保真 —— 不授权时 navigator.clipboard.writeText 会抛，
   //  代码会静默退到 execCommand 兜底，于是「剪贴板内容对不对」这条断言
@@ -101,7 +102,11 @@ export async function launchConsole(o = {}) {
 
   // WS：接受连接后保持静默。必须有 —— finishConnect 会 await 建连，
   // 不接的话页面一直停在 syncing。
-  await page.routeWebSocket(o.wsPattern || /\/api\/connect/, () => { /* 静默 */ })
+  await page.routeWebSocket(o.wsPattern || /\/api\/connect/, async (ws) => {
+    // 测试壳要模拟一个保持打开的实时通道；只注册路由但不 accept 会让
+    // Playwright 主动关闭连接，截图里就会出现与 UI 无关的降级 toast。
+    await ws.accept()
+  })
 
   await page.route('**/api/**', async (route) => {
     const p = new URL(route.request().url()).pathname
@@ -135,15 +140,20 @@ export async function launchConsole(o = {}) {
 
   return {
     page, sent, seen, url,
-    /** 点左侧导航进某个视图（按文案匹配） */
+    /** 点导航进某个视图：客户端壳按工具条按钮 title 匹配，兼容旧脚本的文案参数 */
     async gotoView(label) {
       const ok = await page.evaluate((label) => {
-        const it = [...document.querySelectorAll('.rail-item')].find((e) => (e.textContent || '').includes(label))
-        if (!it) return false
-        it.click()
-        return true
+        // 新壳：工具条按钮 title 以 label 开头（如 "载荷 (G P)"）
+        const btn = [...document.querySelectorAll('.cl-btn')]
+          .find((e) => (e.getAttribute('title') || '').startsWith(label))
+        if (btn) { btn.click(); return true }
+        // 兜底：已打开的标签条文案
+        const tab = [...document.querySelectorAll('.cl-tab')]
+          .find((e) => (e.textContent || '').includes(label))
+        if (tab) { tab.click(); return true }
+        return false
       }, label)
-      if (!ok) throw new Error(`左栏没有「${label}」`)
+      if (!ok) throw new Error(`工具条/标签条没有「${label}」`)
       await page.waitForTimeout(900)
     },
     async close() { await browser.close(); server.close() },

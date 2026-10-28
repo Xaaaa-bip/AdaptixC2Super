@@ -6,7 +6,6 @@ import { lookupIpGeoSync, preloadIpGeo } from '../utils/ipdb'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
-import { PageTips } from './PageTips'
 
 type Ctx = { x: number; y: number; id: string } | null
 
@@ -375,11 +374,6 @@ export function Hosts() {
               <span className="dim">点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量</span>
             )}
           </div>
-          <PageTips id="hosts">
-            <p><b>右键</b>主机行打开操作菜单：终端 / PTY / 文件 / 进程 / 隧道 / 执行命令。</p>
-            <p><code>Ctrl+Shift+F</code> 文件管理 · <code>Ctrl+Shift+P</code> 进程管理 · <code>/</code> 聚焦搜索 · 双击行打开控制台。</p>
-            <p>Linux 主机无截图与 sleep 交互加速（菜单已自动隐藏）。</p>
-          </PageTips>
         </div>
 
         <div className="sess-table-wrap">

@@ -105,7 +105,7 @@ const checkedRows = (page) => page.$$eval(`${ROW}.checked`, (e) => e.length)
 const agentTabs = (page) => page.$$eval(TERM_TABS, (e) => e.map((x) => x.getAttribute('title')))
 const barText = (page) => page.$eval(BAR, (e) => e.textContent.replace(/\s+/g, ' ').trim())
   .catch(() => '')
-const uiTabs = (page) => page.$$eval('.ops-tabs .ops-tab', (e) => e.map((x) => x.textContent.replace(/×$/, '').trim()))
+const uiTabs = (page) => page.$$eval('.cl-tabs .cl-tab', (e) => e.map((x) => x.textContent.replace(/×$/, '').trim()))
 
 /** 点某行的复选框。点的是 <input> 本身：事件冒泡到 <label> 时被 stopPropagation 拦下。 */
 async function tick(page, host) {

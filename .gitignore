@@ -62,3 +62,7 @@ AdaptixServer/extenders/*/dist/
 AdaptixServer/adaptixserver_linux_amd64*
 AdaptixServer/server.rsa.crt
 AdaptixServer/server.rsa.key
+
+# Web local artifacts (regenerable: shot_client_shell.mjs / review agent output)
+AdaptixWeb/screenshots/
+AdaptixWeb/REVIEW_UI_SCORE.md

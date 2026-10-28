@@ -6,7 +6,6 @@ import { convertCallbackAddrs, deriveCircuitAddrs, firstTcpPort, normalizeGopher
 import { pickCallbackHost, dialableInterfaces } from '../lib/callbackHost'
 import { fileToB64 } from '../utils'
 import { EmptyState } from './ui'
-import { PageTips } from './PageTips'
 
 type FormState = {
   name: string
@@ -870,22 +869,25 @@ export function Listeners() {
   }
 
   return (
-    <div className="page">
-      <div className="toolbar">
-        <button className="primary" onClick={() => openCreate('BeaconHTTP')}>+ Windows HTTP</button>
-        <button onClick={() => openCreate('BeaconWS')}>+ Linux WS</button>
-        <input type="search" placeholder="搜索名称 / 类型 / 端口" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
-        <div className="stats">
-          <span>{filtered.length} / {list.length}</span>
-          <span className="dim">Windows 用 HTTP · Linux 用 WS</span>
+    <div className="page listener-page">
+      <div className="listener-toolbar">
+        <div className="listener-heading">
+          <span className="listener-kicker">INGRESS</span>
+          <h2>监听器</h2>
+          <span className="listener-count mono">{filtered.length} / {list.length}</span>
         </div>
-        <PageTips id="listeners">
-          <p>按「新建监听器」选择类型并填写表单；状态列可启停/暂停/恢复。</p>
-          <p><b>GopherTCP</b> 为改造监听器（ChaCha20 会话加密 + 随机化信标）。</p>
-          <p>传输协议选 <b>libp2p</b> 即走 circuit 中继：agent 只拨 relay 的 <span className="mono">/p2p-circuit</span> 地址，C2 真实 IP:端口不进载荷。</p>
-          <p>回连地址决定 agent 从外网回连的入口，需与目标机可达性一致。</p>
-        </PageTips>
+        <div className="listener-controls">
+          <button className="primary" onClick={() => openCreate('BeaconHTTP')}>新建 HTTP</button>
+          <button onClick={() => openCreate('BeaconWS')}>新建 WS</button>
+          <input type="search" placeholder="搜索名称 / 类型 / 端口" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="listener-refresh" onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
+        </div>
+      </div>
+      <div className="listener-context">
+        <span className="listener-context-mark" />
+        <span>入口状态</span>
+        <span className="dim">Windows 常用 HTTP · Linux 常用 WS</span>
+        <span className="listener-context-note">选中一行编辑配置，暂停只影响新的回连</span>
       </div>
 
       <div className="table-wrap">

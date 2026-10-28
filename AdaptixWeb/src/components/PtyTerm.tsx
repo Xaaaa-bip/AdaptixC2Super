@@ -23,7 +23,7 @@ const PRESETS_NIX = [
   { label: 'sh', path: '/bin/sh' },
 ]
 
-export function PtyTerm({ agentId, active = true }: { agentId: string; active?: boolean }) {
+export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; tabId?: string; active?: boolean }) {
   const api = useStore((s) => s.api)
   const agents = useStore((s) => s.agents) || {}
   const closeUiTab = useStore((s) => s.closeUiTab)
@@ -313,7 +313,7 @@ export function PtyTerm({ agentId, active = true }: { agentId: string; active?: 
             if (termRef.current) setGeom({ cols: termRef.current.cols || 80, rows: termRef.current.rows || 24 })
           } catch { /* */ }
         }}>适配</button>
-        <button className="ghost" onClick={() => closeUiTab(`pty:${agentId}` as any)}>关闭</button>
+        <button className="ghost" onClick={() => closeUiTab((tabId || `pty:${agentId}`) as any)}>关闭</button>
         <PageTips id="pty">
           <p>交互式 PTY 终端：预设 bash/sh 或自定义程序。</p>
           <p>WebSocket 建立后需等待 agent 下一次回连完成通道握手。</p>

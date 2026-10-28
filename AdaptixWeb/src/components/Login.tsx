@@ -7,7 +7,8 @@ export function Login() {
   const pushLog = useStore((s) => s.pushLog)
   const prefs = loadLoginPrefs()
   const [baseUrl, setBaseUrl] = useState(prefs.baseUrl)
-  const [username, setUsername] = useState(prefs.username || 'admin')
+  // 只回填**自己上次输过**的用户名；不给陌生访客预填 admin
+  const [username, setUsername] = useState(prefs.username || '')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -49,13 +50,6 @@ export function Login() {
 
   return (
     <div className="lx">
-      <div className="lx-ambient" aria-hidden />
-      <div className="ink-scape lx-scape" aria-hidden>
-        <div className="ink-wash ink-wash-a" />
-        <div className="ink-wash ink-wash-b" />
-        <div className="ink-ridge" />
-        <div className="ink-mist" />
-      </div>
       <div className="lx-card">
         {/* 品牌行：`> Console▊` 整行由光标动画逐字打出
             （样式见 hacker.css 的 .lx-brandline*）。

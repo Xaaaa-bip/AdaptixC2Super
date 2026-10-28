@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { copyText, isAgentOnline, isLinuxAgent } from '../utils'
+import { copyText, fmtRelative, isAgentOnline, isLinuxAgent } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
@@ -29,6 +29,8 @@ export function CmdExec({ agentId }: { agentId: string }) {
   const selectAgent = useStore((s) => s.selectAgent)
   const clearConsole = useStore((s) => s.clearConsole)
   const pushToast = useStore((s) => s.pushToast)
+  const tasks = useStore((s) => s.tasks) || []
+  const openUiTab = useStore((s) => s.openUiTab)
 
   const agent = agents[agentId]
   const online = isAgentOnline(agent)
@@ -61,6 +63,20 @@ export function CmdExec({ agentId }: { agentId: string }) {
   })
 
   const mine = useMemo(() => lines.filter((l) => l.agentId === agentId), [lines, agentId])
+  const mineTasks = useMemo(
+    () => tasks.filter((t) => t.a_id === agentId).slice(0, 10),
+    [tasks, agentId],
+  )
+  const runningTasks = mineTasks.filter((t) => !t.a_completed).length
+  const latestTask = mineTasks[0]
+  const quick = useMemo(() => {
+    const preferred = linux
+      ? ['getuid', 'pwd', 'ls', 'ps', 'netstat', 'help', 'shell']
+      : ['whoami', 'pwd', 'ps', 'ipconfig', 'hostname', 'help', 'shell']
+    if (!comp.availableCommands.size) return preferred
+    const available = comp.availableCommands
+    return preferred.filter((name) => name === 'help' || available.has(name))
+  }, [comp.availableCommands, linux])
 
   // 新回显自动滚到底 —— 终端不跟着滚，就得手动往下拖才能看到刚跑那条的回报
   useEffect(() => {
@@ -70,8 +86,8 @@ export function CmdExec({ agentId }: { agentId: string }) {
 
   useEffect(() => { inputRef.current?.focus() }, [agentId])
 
-  async function submit() {
-    const c = cmd.trim()
+  async function submitLine(raw: string) {
+    const c = raw.trim()
     if (!c) return
     if (inFlight.current) return      // 上一条还在发（连按回车不会重复下发）
     if (!online) { pushToast('warn', '主机离线，命令无法执行'); return }
@@ -91,6 +107,10 @@ export function CmdExec({ agentId }: { agentId: string }) {
       //（也兜住"发送失败后光标被别处抢走"的情况）。
       inputRef.current?.focus()
     }
+  }
+
+  async function submit() {
+    await submitLine(cmd)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -113,33 +133,85 @@ export function CmdExec({ agentId }: { agentId: string }) {
     pushToast(ok ? 'ok' : 'err', ok ? '回显已复制' : '复制失败')
   }
 
+  function taskLabel() {
+    if (!latestTask) return '尚无任务'
+    if (!latestTask.a_completed) return '执行中'
+    return '已完成'
+  }
+
   return (
     <div className="cmd-exec">
       <div className="cmd-exec-hd">
         <span className="cmd-exec-prompt">❯</span>
         <span className="cmd-exec-title">命令执行</span>
+        <span className="cmd-exec-mode">RAW COMMAND</span>
         <span className="dim mono" style={{ fontSize: 12 }}>
           {String(agent?.a_computer || agentId)}
           {agent?.a_username ? ` · ${agent.a_username}` : ''}
         </span>
         <span className={`sdot ${online ? 'on' : 'off'}`} title={online ? '在线' : '离线'} />
         <span className="dim" style={{ fontSize: 12 }}>{online ? '在线' : '离线（命令可排队）'}</span>
+        <span className="cmd-exec-host-meta mono">{agent?.a_name || 'agent'} · {agent?.a_internal_ip || agent?.a_external_ip || '无地址'}</span>
         <span style={{ flex: 1 }} />
-        <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>复制</button>
-        <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>清空</button>
+        <button className="ghost" onClick={() => openUiTab('tasks')} title="查看这台主机的任务">任务 {mineTasks.length}</button>
+        <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>复制回显</button>
+        <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>清空回显</button>
+      </div>
+
+      <div className="cmd-exec-workbar">
+        <div className="cmd-exec-state">
+          <span className={`cmd-state-dot ${runningTasks ? 'running' : latestTask ? 'done' : ''}`} />
+          <span className="cmd-state-main">{taskLabel()}</span>
+          <span className="cmd-state-detail">
+            {latestTask?.a_cmdline ? latestTask.a_cmdline : '每条命令都会形成独立任务并回流到任务中心'}
+          </span>
+        </div>
+        <div className="cmd-exec-quick" aria-label="常用命令">
+          {quick.slice(0, 6).map((name) => (
+            <button key={name} className="cmd-chip" disabled={!online || inFlight.current} onClick={() => { setCmd(name); void submitLine(name) }}>
+              {name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 终端主体：回显在上、提示符钉在底部（shell 的读法） */}
-      <div className="cmd-exec-body" ref={outRef} onClick={() => inputRef.current?.focus()}>
-        {mine.length === 0 ? (
-          <div className="cmd-exec-tip">
-            {online
-              ? `在上面敲一条命令 —— 共 ${linux ? 'linux_agent' : 'beacon'} 的命令集，↑↓ 翻历史，Tab 补全`
-              : '主机离线；命令可排队，上线后自动下发'}
+      <div className="cmd-exec-workspace">
+        <div className="cmd-exec-body" ref={outRef} onClick={() => inputRef.current?.focus()}>
+          {mine.length === 0 ? (
+            <div className="cmd-exec-tip">
+              {online
+                ? `输入命令开始执行 · ${linux ? 'linux_agent' : '当前 agent'} · ↑↓ 历史 · Tab 补全`
+                : '主机离线；恢复在线后再发送命令'}
+            </div>
+          ) : (
+            mine.map((l) => (
+              <div key={l.id} className={`ln ${l.kind}`} title="双击复制此行" onDoubleClick={() => void copyText(l.text)}>
+                <span className="cmd-line-time">{new Date(l.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                {l.text}
+              </div>
+            ))
+          )}
+        </div>
+        <aside className="cmd-exec-history">
+          <div className="cmd-side-hd">
+            <span>最近命令</span>
+            <button className="ghost" disabled={!hist.length} onClick={() => setHist([])}>清除</button>
           </div>
-        ) : (
-          mine.map((l) => <div key={l.id} className={`ln ${l.kind}`}>{l.text}</div>)
-        )}
+          {hist.length === 0 ? <div className="cmd-side-empty">提交过的命令会出现在这里，可点击重放。</div> : (
+            <div className="cmd-side-list">
+              {[...hist].reverse().slice(0, 12).map((item) => (
+                <button key={item} className="cmd-history-item" disabled={!online} onClick={() => void submitLine(item)} title={`重放 ${item}`}>
+                  <span className="mono">{item}</span><span>↗</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="cmd-side-foot">
+            <span>{mine.length} 条回显</span>
+            {latestTask?.a_start_time ? <span>最近 {fmtRelative(latestTask.a_start_time)}</span> : null}
+          </div>
+        </aside>
       </div>
 
       <div className="cmd-exec-in">
@@ -154,6 +226,10 @@ export function CmdExec({ agentId }: { agentId: string }) {
           spellCheck={false}
           autoComplete="off"
         />
+        <span className="cmd-exec-shortcuts">Enter 执行 · ↑↓ 历史 · Tab 补全</span>
+        <button className="primary cmd-exec-submit" disabled={!cmd.trim() || !online} onClick={() => void submit()}>
+          执行
+        </button>
         {comp.open && (
           <CmdSuggest
             items={comp.items}

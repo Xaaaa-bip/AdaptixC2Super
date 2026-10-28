@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore } from '../store'
+import { cmdTabId, useStore } from '../store'
 import { copyText, isAgentOnline } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS, normType } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
-import { PageTips } from './PageTips'
 
 function fmtClock(ts?: number): string {
   if (!ts) return ''
@@ -100,6 +99,8 @@ export function Term() {
   const openUiTab = useStore((s) => s.openUiTab)
   const pushToast = useStore((s) => s.pushToast)
   const selectedAgentId = useStore((s) => s.selectedAgentId)
+  const tasks = useStore((s) => s.tasks) || []
+  const uiTabs = useStore((s) => s.uiTabs) || []
 
   const [cmd, setCmd] = useState('')
   const [busy, setBusy] = useState(false)
@@ -147,6 +148,19 @@ export function Term() {
   const quick = comp.availableCommands.size
     ? quickAll.filter((q) => q.cmd === 'help' || comp.availableCommands.has(q.cmd))
     : quickAll
+
+  const agentTasks = agentId
+    ? tasks.filter((t) => t.a_id === agentId).slice(0, 8)
+    : []
+  const runningTasks = agentTasks.filter((t) => !t.a_completed).length
+  const latestTask = agentTasks[0]
+
+  function openCommandExec() {
+    if (!agentId) return
+    let n = 0
+    while (uiTabs.includes(cmdTabId(agentId, n))) n++
+    openUiTab(cmdTabId(agentId, n))
+  }
 
   const view = lines
     .filter((l) => l.agentId === agentId)
@@ -240,6 +254,7 @@ export function Term() {
         <span style={{ flex: 1 }} />
         {agentId && (
           <div className="term-quick">
+            <button className="ghost term-exec-link" disabled={busy} onClick={openCommandExec} title="打开任务式命令执行台">命令执行</button>
             {quick.map((q) => (
               <button key={q.label} className="ghost" disabled={busy || !live} onClick={() => run(q.cmd)}>{q.label}</button>
             ))}
@@ -259,13 +274,27 @@ export function Term() {
         )}
         <button className="ghost ico" style={{ color: '#94a3b8', border: 'none' }} disabled={!agentId || !view.length}
           title="复制输出" onClick={copyAll}>⧉</button>
-        <PageTips id="term">
-          <p>每台主机独立页签与命令历史；<code>↑/↓</code> 翻历史、<code>Ctrl+L</code> 清屏。</p>
-          <p>快捷组按 <b>agent 类型</b>切换（linux_agent / gopher-on-Linux / Windows 系各一套），且只显示服务端确实认得的命令；<b>BOF 入口</b>按该 agent 是否真有 BOF 加载器显示。</p>
-          <p>主机离线时命令会排队，上线后自动执行；文件/进程管理仅在线可用。</p>
-        </PageTips>
         <button className="ghost ico" style={{ color: '#94a3b8', border: 'none' }} disabled={!agentId}
           title="清空 (Ctrl+L)" onClick={() => agentId && clearConsole(agentId)}>⌫</button>
+      </div>
+      <div className="term-context">
+        {agentId ? (
+          <>
+            <div className="term-context-target">
+              <span className={`sdot ${live ? 'on' : 'off'}`} />
+              <strong>{agent?.a_computer || agentId}</strong>
+              <span className="term-context-meta">{agent?.a_username || '未知用户'} · {agent?.a_name || 'agent'} · {agent?.a_internal_ip || agent?.a_external_ip || '无地址'}</span>
+            </div>
+            <div className="term-context-stats">
+              <span className={runningTasks ? 'is-running' : ''}>{runningTasks ? `${runningTasks} 个任务执行中` : '无执行中任务'}</span>
+              <span>{agentTasks.length} 条最近任务</span>
+              {latestTask?.a_cmdline ? <span className="mono" title={latestTask.a_cmdline}>最近：{latestTask.a_cmdline}</span> : null}
+            </div>
+            <button className="ghost term-task-link" onClick={() => openUiTab('tasks')} title="查看任务中心">任务中心</button>
+          </>
+        ) : (
+          <span className="term-context-empty">从主机列表选择一个目标，终端会保留每台主机自己的页签与历史。</span>
+        )}
       </div>
       <div
         className="term-out"

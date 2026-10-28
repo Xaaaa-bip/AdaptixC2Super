@@ -210,8 +210,6 @@ export function Graph() {
   const listeners = useStore((s) => s.listeners) || {}
   const selectAgent = useStore((s) => s.selectAgent)
   const openConsole = useStore((s) => s.openConsole)
-  const setTab = useStore((s) => s.setTab)
-  const openUiTab = useStore((s) => s.openUiTab)
   const api = useStore((s) => s.api)
   const refreshRest = useStore((s) => s.refreshRest)
   const pushToast = useStore((s) => s.pushToast)
@@ -648,8 +646,6 @@ export function Graph() {
     if (movedRef.current) { movedRef.current = false; return }
     selectAgent(id)
     openConsole(id)
-    setTab('sessions')
-    openUiTab('sessions')
   }
 
   /* ─────────────── 菜单构造 ─────────────── */

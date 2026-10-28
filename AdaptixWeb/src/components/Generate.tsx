@@ -10,7 +10,6 @@ import { ApiClient } from '../api/http'
 import { loadBuildSchema, visibleFields } from '../api/buildSchema'
 import type { BuildSchema } from '../api/types'
 import { downloadBytes, fmtSize } from '../utils'
-import { PageTips } from './PageTips'
 import { BuildSchemaFields } from './BuildSchemaFields'
 
 /**
@@ -391,17 +390,26 @@ export function Generate() {
 
   return (
     <div className="gen-page">
+      <div className="gen-pagebar">
+        <div className="gen-page-title">
+          <span className="gen-kicker">BUILD</span>
+          <h2>生成载荷</h2>
+          <span className="gen-page-note">从一个可用监听器生成可投递的产物</span>
+        </div>
+        <div className="gen-flow" aria-label="生成流程">
+          <span className="active"><i>01</i>目标</span>
+          <b>→</b>
+          <span><i>02</i>监听</span>
+          <b>→</b>
+          <span><i>03</i>输出</span>
+        </div>
+      </div>
       <div className="gen-layout">
         <div className="gen-main card">
           <div className="card-hd">
-            <h3>生成载荷</h3>
+            <h3>配置参数</h3>
             <span className="spacer" />
-            <span className="dim" style={{ fontSize: 12 }}>选平台 → 选监听 → 选格式 → 下载</span>
-            <PageTips id="generate">
-              <p>选择平台 → 格式/架构 → 兼容监听器 → 生成后浏览器下载 payload。</p>
-              <p>Linux 载荷可配置<b>重连间隔/次数与 OPSEC 检测</b>；<b>Stager</b> 为一次性载荷（24 小时 TTL）。</p>
-              <p>生成产物为 base64 编码，本地解码后投递。</p>
-            </PageTips>
+            <span className="gen-hint">必填项按当前 Agent 自动筛选</span>
           </div>
           <div className="card-bd gen-body">
             <div className="gen-section-title">1. 目标平台</div>
@@ -741,7 +749,8 @@ export function Generate() {
 
         <aside className="gen-side card">
           <div className="card-hd">
-            <h3>摘要</h3>
+            <h3>当前选择</h3>
+            <span className="gen-side-status">实时</span>
           </div>
           <div className="card-bd" style={{ padding: 14 }}>
             <div className="gen-summary">

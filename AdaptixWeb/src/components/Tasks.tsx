@@ -86,8 +86,6 @@ export function Tasks() {
                     if (t.a_id) {
                       selectAgent(t.a_id)
                       openConsole(t.a_id)
-                      setTab('sessions')
-                      openUiTab('sessions')
                     }
                   }}>
                   <td>
@@ -153,8 +151,6 @@ export function Tasks() {
                 <button onClick={() => {
                   selectAgent(detail.a_id)
                   openConsole(detail.a_id)
-                  setTab('sessions')
-                  openUiTab('sessions')
                   setDetail(null)
                 }}>打开终端</button>
               </div>

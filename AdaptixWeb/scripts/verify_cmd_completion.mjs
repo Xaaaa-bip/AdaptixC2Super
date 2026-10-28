@@ -127,14 +127,17 @@ const routes = (cmdReply, execReply = () => BOF_EXEC_LINUX) => ({
   '/api/bofs/exec': (route, body, json) => { execBodies.push(body); return json(execReply(body)) },
 })
 
-const TERM_IN = '.term-in input'
+const TERM_IN = '.cmd-exec-in input'
 const DLG_IN = '.dlg input'
 
-/** 打开「主机」视图并点开某台主机的控制台页签 —— Term 要有页签才有目标主机。 */
+/** 打开「主机」视图并右键开「执行命令…」页签 —— 命令执行台（cmd: tab）才有输入行。
+ *  （主机页底部 Terminal 已于 b78879a 移除，命令入口 = 右键「执行命令…」） */
 async function openTerm(h, host = 'hx-node-01') {
   await h.gotoView('主机')
-  await h.page.locator('.sess-table tbody tr', { hasText: host }).first().click()
-  await h.page.waitForTimeout(400)
+  await h.page.locator('.sess-table tbody tr', { hasText: host }).first().click({ button: 'right' })
+  await h.page.waitForTimeout(250)
+  await h.page.locator('.sess-ctx button', { hasText: '执行命令' }).first().click()
+  await h.page.waitForTimeout(500)
 }
 
 /** 逐字键入。逐字是必须的 —— 「按键不该发请求」这条判据只有在真的按了键时才算数。 */

@@ -12,7 +12,7 @@ const check = (id, desc, pass, detail) => {
   console.log(`        ${detail}`)
 }
 
-const b = await chromium.launch()
+const b = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : undefined)
 const ctx = await b.newContext({ viewport: { width: 1600, height: 950 }, ignoreHTTPSErrors: true })
 const page = await ctx.newPage()
 await page.goto(process.env.ADAPTIX_URL || 'https://154.198.162.34:38212/', { waitUntil: 'load' })

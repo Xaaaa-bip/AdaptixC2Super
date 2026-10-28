@@ -1,153 +1,157 @@
-/* AdaptixWeb — 太极水墨（黑白为主，默认阳面宣纸） */
+/* AdaptixWeb — 客户端主题（Adaptix Dark / AdaptixClient adaptix_dark.json 为蓝本）
+   ★ 约定：默认 :root 即暗色客户端。任何**功能性**规则不得写进
+     html[data-theme] 作用域 —— 只允许在这里换令牌值。
+     （主题作用域 CSS 陷阱：功能规则被关进 dark 作用域 ⇒ 切浅色时整页裸 HTML。） */
 
-:root,
-html[data-theme="light"] {
-  /* 宣纸：冷白，非米黄 */
-  --paper: #f3f3f1;
-  --surface: #fafaf8;
-  --surface-2: #ecece8;
-  --panel-elevated: #ffffff;
-
-  /* 墨分五色 */
-  --ink: #141414;
-  --ink-2: #4a4a4a;
-  --ink-3: #8a8a8a;
-
-  --line: rgba(20, 20, 20, 0.1);
-  --line-2: rgba(20, 20, 20, 0.055);
-
-  /* 唯一强调：焦墨（黑白太极，不用石青/靛） */
-  --accent: #1a1a1a;
-  --accent-2: #2e2e2e;
-  --accent-soft: rgba(20, 20, 20, 0.07);
-  --accent-glow: rgba(20, 20, 20, 0.1);
-
-  /* 语义：在线用浓墨点；危险朱砂一点即可 */
-  --live: #1a1a1a;
-  --live-soft: rgba(20, 20, 20, 0.08);
-  --cinnabar: #b54a3c;
-  --cinnabar-soft: rgba(181, 74, 60, 0.12);
-  --warn: #8a6a2b;
-  --warn-soft: rgba(138, 106, 43, 0.12);
-
-  --sider-w: 56px;
-  --header-h: 50px;
-  --tabs-h: 36px;
-  --term-h: 280px;
-  --radius: 8px;
-  --radius-sm: 6px;
-
-  --mono: "Cascadia Mono", "SF Mono", Consolas, ui-monospace, monospace;
-  --sans: "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", "Segoe UI", system-ui, -apple-system, sans-serif;
-
-  --shadow: 0 0 0 1px rgba(20, 20, 20, 0.05), 0 6px 18px rgba(20, 20, 20, 0.04);
-  --shadow-float: 0 0 0 1px rgba(20, 20, 20, 0.07), 0 14px 36px rgba(20, 20, 20, 0.1);
-
-  --row-hover: rgba(20, 20, 20, 0.035);
-  --row-selected: rgba(20, 20, 20, 0.07);
-  --th-bg: #ecece8;
-
-  /* legacy aliases */
-  --bg: var(--paper);
-  --panel: var(--surface);
-  --panel-2: var(--surface-2);
-  --text: var(--ink);
-  --text-2: var(--ink-2);
-  --text-3: var(--ink-3);
-  --primary: var(--accent);
-  --primary-2: var(--accent-2);
-  --signal: var(--live);
-  --signal-soft: var(--live-soft);
-  --signal-dim: #1a1a1a;
-  --signal-glow: var(--live-soft);
-  --success: var(--live);
-  --ok: var(--live);
-  --warning: var(--warn);
-  --error: var(--cinnabar);
-  --danger: var(--cinnabar);
-  --sider: var(--surface-2);
-  --sider-2: var(--surface-2);
-  --header: var(--surface);
-  --void: var(--paper);
-}
-
-/* 阴面：淡墨，非 OLED 工业黑 */
-html[data-theme="dark"] {
-  --paper: #1c1c1c;
-  --surface: #242424;
-  --surface-2: #2c2c2c;
-  --panel-elevated: #303030;
-
-  --ink: #f2f2f0;
-  --ink-2: #b5b5b0;
-  --ink-3: #7a7a75;
-
-  --line: rgba(242, 242, 240, 0.1);
-  --line-2: rgba(242, 242, 240, 0.055);
-
-  --accent: #f0f0ec;
-  --accent-2: #ffffff;
-  --accent-soft: rgba(242, 242, 240, 0.1);
-  --accent-glow: rgba(242, 242, 240, 0.12);
-
-  --live: #f0f0ec;
-  --live-soft: rgba(242, 242, 240, 0.1);
-  --cinnabar: #d4786a;
-  --cinnabar-soft: rgba(212, 120, 106, 0.14);
-  --warn: #c4a35a;
-  --warn-soft: rgba(196, 163, 90, 0.14);
-
-  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 12px 28px rgba(0, 0, 0, 0.35);
-  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.45);
-
-  --row-hover: rgba(242, 242, 240, 0.05);
-  --row-selected: rgba(242, 242, 240, 0.1);
-  --th-bg: #2c2c2c;
-
-  --bg: var(--paper);
-  --panel: var(--surface);
-  --panel-2: var(--surface-2);
-  --text: var(--ink);
-  --text-2: var(--ink-2);
-  --text-3: var(--ink-3);
-  --primary: var(--accent);
-  --primary-2: var(--accent-2);
-  --signal: var(--live);
-  --signal-soft: var(--live-soft);
-  --signal-dim: #f0f0ec;
-  --signal-glow: var(--live-soft);
-  --success: var(--live);
-  --ok: var(--live);
-  --warning: var(--warn);
-  --error: var(--cinnabar);
-  --danger: var(--cinnabar);
-  --sider: var(--surface-2);
-  --sider-2: var(--surface-2);
-  --header: var(--surface);
-  --void: var(--paper);
-}
-
-html[data-density="compact"] {
-  --header-h: 46px;
-  --tabs-h: 32px;
-}
-
-
-/* ═══ 兼容层：dev 的 hacker/glass 引用的 20 个深色变量 → 太极令牌 ═══════
-   ★ 只换 tokens.css 是不够的：hacker.css / glass.css 里引用了一批只有
-   冷石墨那套 tokens 才有的变量（--glass-* / --glitch-* / --ambient-* / --term-* …）。
-   不补这些定义，那 500 多处 var() 全部解析成空值 —— 深色屏保会变成一片白。
-   这里把它们映射到太极令牌（或直接关掉特效），于是 dev 的**布局与结构规则原样保留**，
-   配色跟着宣纸/墨色走。 */
 :root {
+  /* 分层画布：工作区最暗，面板逐级抬升（对齐客户端 main1..workspace） */
+  --paper: #121212;            /* 工作区底 */
+  --surface: #161616;          /* 面板底 */
+  --surface-2: #1a1a1a;        /* 抬升面 / 标签条 */
+  --panel-elevated: #1e1e1e;   /* 最高层（对话框 / 悬浮卡） */
+
+  --ink: #e4e4e2;
+  --ink-2: #a6a6a2;
+  /* muted 文字也要过 4.5:1（评审实测 3.40~3.53 不达标）—— #8d8d89 在最浅面板上 ≥5.2 */
+  --ink-3: #8d8d89;
+
+  --line: #333333;
+  --line-2: #262626;
+
+  /* 主色：客户端绿（primary #3D9E6E） */
+  --accent: #3d9e6e;
+  --accent-2: #4dae7e;
+  /* 深绿：白字小控件（徽标/主按钮）达标底色 —— #3D9E6E 上白字仅 3.35 */
+  --accent-deep: #256e49;
+  /* 强调前景（激活态文字 on accent-soft 底，需 ≥4.5）：暗色亮绿 */
+  --accent-strong: #4dae7e;
+  --accent-soft: rgba(61, 158, 110, 0.16);
+  --accent-glow: rgba(61, 158, 110, 0.28);
+
+  /* 交互填充：悬停/按下（暗色白染 / 浅色黑染），替代散落的 rgba 硬编码 */
+  --fill-1: rgba(255, 255, 255, 0.06);
+  --fill-2: rgba(255, 255, 255, 0.1);
+  --scroll-thumb: #3a3a3a;
+  --scroll-thumb-hover: #4a4a4a;
+  /* muted 徽标的实底（白字 ≥4.5）—— 不能拿 --ink-3 当底（那是文字色，太亮 3.33） */
+  --badge-muted-bg: #5a5a56;
+
+  /* 语义状态（客户端 statusColor 系列） */
+  --live: #4dae7e;
+  --live-soft: rgba(77, 174, 126, 0.14);
+  --info: #1ba8d5;
+  --info-soft: rgba(27, 168, 213, 0.14);
+  --cinnabar: #e96b72;
+  --cinnabar-soft: rgba(233, 107, 114, 0.15);
+  --warn: #fbc064;
+  --warn-soft: rgba(251, 192, 100, 0.15);
+
+  --sider-w: 0px;              /* 客户端布局无侧栏，保留变量名兼容 */
+  --header-h: 42px;            /* 工具条 */
+  --tabs-h: 32px;              /* 工作区标签条 */
+  --hosts-h: 232px;            /* 主机 dock 高度（JS 可覆写 --hosts-h-px） */
+  --events-h: 148px;           /* 事件日志 dock 高度 */
+  --term-h: 280px;
+  --radius: 4px;               /* 客户端 borderRadius 4 */
+  --radius-sm: 3px;
+
+  --mono: "Cascadia Mono", "JetBrains Mono", "SF Mono", Consolas, ui-monospace, monospace;
+  --sans: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+  --row-hover: rgba(255, 255, 255, 0.04);
+  --row-selected: rgba(61, 158, 110, 0.14);
+  --th-bg: #1a1a1a;
+
+  /* legacy aliases —— 老组件样式仍引用这些名字 */
+  --bg: var(--paper);
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --text: var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-3);
+  --primary: var(--accent);
+  --primary-2: var(--accent-2);
+  --signal: var(--live);
+  --signal-soft: var(--live-soft);
+  --signal-dim: var(--live);
+  --signal-glow: var(--live-soft);
+  --success: var(--live);
+  --ok: var(--live);
+  --warning: var(--warn);
+  --error: var(--cinnabar);
+  --danger: var(--cinnabar);
+  --sider: var(--surface);
+  --sider-2: var(--surface-2);
+  --header: var(--surface-2);
+  --void: var(--paper);
+
+  /* 兼容层：hacker/glass 引用的深色特效变量 → 客户端令牌（特效关闭） */
   --glass-blur: 0px; --glass-blur-lg: 0px; --glass-sat: 100%;
   --glass-chrome: var(--surface); --glass-rail: var(--surface-2);
   --glass-panel: var(--surface); --glass-raised: var(--panel-elevated);
   --glass-line: var(--line); --glass-line-hi: var(--line-2);
   --ambient-1: transparent; --ambient-2: transparent; --crt-line: transparent;
-  --glitch-c: transparent; --glitch-c-soft: transparent;
+  --glitch-c: var(--accent); --glitch-c-soft: var(--accent-soft);
   --glitch-m: transparent; --glitch-m-soft: transparent; --glitch-dur: 0s;
-  --accent-ink: var(--paper); --danger-ink: var(--paper);
-  --term-bg: #141414; --term-ink: #ecece8; --term-ink-dim: #8a8a8a;
-  --status-h: 32px; --toast-lane: calc(var(--status-h) + 12px);
+  --accent-ink: #0f1512; --danger-ink: #161011;
+  --term-bg: #101010; --term-ink: #e4e4e2; --term-ink-dim: #6e6e6a;
+  --status-h: 26px; --toast-lane: calc(var(--status-h) + 12px);
+}
+
+/* 浅色档：客户端 light 变体（adaptix_light 精神：冷灰白 + 同一主色降饱和） */
+html[data-theme="light"] {
+  --paper: #efefef;
+  --surface: #f7f7f7;
+  --surface-2: #ebebe9;
+  --panel-elevated: #ffffff;
+
+  --ink: #1c1c1c;
+  --ink-2: #55554f;
+  /* 浅色档 muted：#6d6d67 在 #ebebe9 上 4.36 差一点，再加深到 4.7+ */
+  --ink-3: #676761;
+
+  --line: #d5d5d1;
+  --line-2: #e3e3e0;
+
+  --accent: #237a4b;
+  --accent-2: #2d8b5a;
+  --accent-deep: #256e49;
+  --accent-strong: #1f6b43;
+  --accent-soft: rgba(45, 139, 90, 0.12);
+  --accent-glow: rgba(45, 139, 90, 0.22);
+
+  /* 语义色全部加深过 4.5:1（评审实测 warn 3.04 / ok 3.69 / err 3.88） */
+  --live: #1f7346;
+  --live-soft: rgba(45, 139, 90, 0.12);
+  --info: #0f6e93;
+  --info-soft: rgba(22, 135, 173, 0.12);
+  --cinnabar: #b13a40;
+  --cinnabar-soft: rgba(199, 80, 86, 0.12);
+  --warn: #7e611d;
+  --warn-soft: rgba(168, 132, 47, 0.14);
+
+  --fill-1: rgba(0, 0, 0, 0.05);
+  --fill-2: rgba(0, 0, 0, 0.09);
+  --scroll-thumb: #c4c4c0;
+  --scroll-thumb-hover: #adada8;
+  --badge-muted-bg: #57574f;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.06);
+
+  --row-hover: rgba(0, 0, 0, 0.035);
+  --row-selected: rgba(45, 139, 90, 0.12);
+  --th-bg: var(--surface-2);
+
+  --accent-ink: #ffffff;
+  --danger-ink: #ffffff;
+  --term-bg: #ffffff; --term-ink: #1c1c1c; --term-ink-dim: #8a8a84;
+}
+
+html[data-density="compact"] {
+  --header-h: 38px;
+  --tabs-h: 28px;
 }

@@ -15,7 +15,7 @@ function now() { return Date.now() }
 export type StaticTabId =
   | 'dashboard' | 'sessions' | 'listeners' | 'tasks' | 'downloads' | 'logs'
   | 'generate' | 'delivery' | 'tunnels' | 'screens' | 'creds' | 'targets' | 'chat' | 'graph' | 'bofs'
-  | 'argfuscator' | 'extkit' | 'relay'
+  | 'argfuscator' | 'extkit' | 'relay' | 'terminal' | 'ai'
 export type TabId =
   | StaticTabId
   | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
@@ -148,6 +148,18 @@ type State = {
    */
   checkedIds: Set<string>
 
+  /**
+   * 客户端壳（client.css 布局）：主机表与事件日志是**常驻 dock**，
+   * 不再是普通页面 —— 开合状态与高度由操作员拖出，落 localStorage。
+   */
+  hostsDockOpen: boolean
+  eventsDockOpen: boolean
+  hostsDockH: number
+  eventsDockH: number
+  toggleHostsDock: () => void
+  toggleEventsDock: () => void
+  setDockHeights: (hosts: number, events: number) => void
+
   setTab: (t: TabId) => void
   openConsole: (id: string) => void
   closeConsoleTab: (id: string) => void
@@ -249,7 +261,9 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
 
   // 文件/进程/PTY/VNC 页签（`files:<id>` 这种）随主机一起关
   const kept = s.uiTabs.filter((t) => { const a = tabAgentId(t); return !a || !ids.has(a) })
-  const uiTabs = kept.length ? kept : (['dashboard'] as TabId[])
+  // 终端页本身没有 agent id；删掉最后一个主机终端后不让空壳页签残留。
+  const visibleTabs = openConsoleTabs.length ? kept : kept.filter((t) => t !== 'terminal')
+  const uiTabs = visibleTabs.length ? visibleTabs : (['sessions'] as TabId[])
   const activeUiTab = uiTabs.includes(s.activeUiTab as TabId) ? s.activeUiTab : uiTabs[uiTabs.length - 1]
 
   const downloads: Record<string, DownloadItem> = {}
@@ -273,8 +287,8 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
     openConsoleTabs,
     activeConsoleTab,
     uiTabs,
-    activeUiTab: (activeUiTab || 'dashboard') as TabId,
-    tab: (activeUiTab || 'dashboard') as TabId,
+    activeUiTab: (activeUiTab || 'sessions') as TabId,
+    tab: (activeUiTab || 'sessions') as TabId,
     selectedAgentId: s.selectedAgentId && ids.has(s.selectedAgentId) ? null : s.selectedAgentId,
     tasks: s.tasks.filter((t) => !ids.has(String((t as any)?.a_id || ''))),
     // 勾选集合跟着剪枝：留着已删主机的 id，下次批量删就会把它再发给服务端
@@ -291,7 +305,7 @@ export const useStore = create<State>((set, get) => ({
   syncing: false,
   serverInterfaces: [],
   username: '',
-  tab: 'dashboard',
+  tab: 'sessions',
   agents: {},
   listeners: {},
   tasks: [],
@@ -303,8 +317,8 @@ export const useStore = create<State>((set, get) => ({
   onlyActive: false,
   openConsoleTabs: [],
   activeConsoleTab: null,
-  uiTabs: ['dashboard'],
-  activeUiTab: 'dashboard',
+  uiTabs: ['sessions'],
+  activeUiTab: 'sessions',
   lastError: '',
   toasts: [],
   browserFiles: {},
@@ -315,17 +329,68 @@ export const useStore = create<State>((set, get) => ({
   graph: emptySnapshot(),
   checkedIds: new Set<string>(),
 
+  // dock 初始值从 localStorage 读（utils 里没有专用封装，这里就地读）
+  hostsDockOpen: ((): boolean => {
+    try { return localStorage.getItem('adaptix.dock.hosts') !== '0' } catch { return true }
+  })(),
+  eventsDockOpen: ((): boolean => {
+    try { return localStorage.getItem('adaptix.dock.events') !== '0' } catch { return true }
+  })(),
+  hostsDockH: ((): number => {
+    const v = Number(localStorage.getItem('adaptix.dock.hostsH'))
+    return Number.isFinite(v) && v >= 160 && v <= 640 ? v : 232
+  })(),
+  eventsDockH: ((): number => {
+    const v = Number(localStorage.getItem('adaptix.dock.eventsH'))
+    return Number.isFinite(v) && v >= 100 && v <= 480 ? v : 148
+  })(),
+  toggleHostsDock: () => set((s) => {
+    const open = !s.hostsDockOpen
+    try { localStorage.setItem('adaptix.dock.hosts', open ? '1' : '0') } catch { /* 私密模式等 */ }
+    return { hostsDockOpen: open }
+  }),
+  toggleEventsDock: () => set((s) => {
+    const open = !s.eventsDockOpen
+    try { localStorage.setItem('adaptix.dock.events', open ? '1' : '0') } catch { /* 私密模式等 */ }
+    return { eventsDockOpen: open }
+  }),
+  setDockHeights: (hosts, events) => {
+    try {
+      localStorage.setItem('adaptix.dock.hostsH', String(Math.round(hosts)))
+      localStorage.setItem('adaptix.dock.eventsH', String(Math.round(events)))
+    } catch { /* 私密模式等 */ }
+    set({ hostsDockH: hosts, eventsDockH: events })
+  },
+
   setTab: (t) => set({ tab: t, activeUiTab: t }),
   openConsole: (id) => set((s) => {
     const tabs = s.openConsoleTabs.includes(id) ? s.openConsoleTabs : [...s.openConsoleTabs, id]
-    return { openConsoleTabs: tabs, activeConsoleTab: id, selectedAgentId: id }
+    const uiTabs = s.uiTabs.includes('terminal') ? s.uiTabs : [...s.uiTabs, 'terminal']
+    return {
+      openConsoleTabs: tabs,
+      activeConsoleTab: id,
+      selectedAgentId: id,
+      uiTabs,
+      activeUiTab: 'terminal',
+      tab: 'terminal',
+    }
   }),
   closeConsoleTab: (id) => set((s) => {
     const tabs = s.openConsoleTabs.filter((x) => x !== id)
     const active = s.activeConsoleTab === id ? (tabs[tabs.length - 1] || null) : s.activeConsoleTab
     // 关闭终端页签时清掉该主机的控制台输出，避免下次点开仍残留历史
     const consoleLines = s.consoleLines.filter((l) => l.agentId !== id)
-    return { openConsoleTabs: tabs, activeConsoleTab: active, consoleLines }
+    if (tabs.length) return { openConsoleTabs: tabs, activeConsoleTab: active, consoleLines }
+    const uiTabs = s.uiTabs.filter((t) => t !== 'terminal')
+    const next = uiTabs.length ? uiTabs[uiTabs.length - 1] : 'sessions'
+    return {
+      openConsoleTabs: tabs,
+      activeConsoleTab: active,
+      consoleLines,
+      uiTabs: uiTabs.length ? uiTabs : ['sessions'],
+      activeUiTab: next as TabId,
+      tab: next as TabId,
+    }
   }),
   setActiveConsoleTab: (id) => set({ activeConsoleTab: id, selectedAgentId: id }),
   openUiTab: (id) => set((s) => {
@@ -337,8 +402,8 @@ export const useStore = create<State>((set, get) => ({
     const needRelease = isInteractTab(id)
     set((s) => {
       let tabs = s.uiTabs.filter((x) => x !== id)
-      if (!tabs.length) tabs = ['dashboard']
-      const active = (s.activeUiTab === id ? tabs[tabs.length - 1] : s.activeUiTab) || 'dashboard'
+      if (!tabs.length) tabs = ['sessions']
+      const active = (s.activeUiTab === id ? tabs[tabs.length - 1] : s.activeUiTab) || 'sessions'
       return { uiTabs: tabs, activeUiTab: active, tab: active }
     })
     // 关闭文件/进程/PTY/VNC 页签后尝试恢复 sleep（仍有同主机其他交互页签则不恢复）
@@ -347,7 +412,7 @@ export const useStore = create<State>((set, get) => ({
       get().releaseInteractBoost(agentId).catch(() => {})
     }
   },
-  setActiveUiTab: (id) => set({ activeUiTab: id || 'dashboard', tab: id || 'dashboard' }),
+  setActiveUiTab: (id) => set({ activeUiTab: id || 'sessions', tab: id || 'sessions' }),
   openFilesBrowser: (agentId) => {
     if (!agentId) return
     const agent = get().agents[agentId]
@@ -707,9 +772,9 @@ export const useStore = create<State>((set, get) => ({
       activeConsoleTab: null,
       selectedAgentId: null,
       checkedIds: new Set<string>(),
-      uiTabs: ['dashboard'],
-      activeUiTab: 'dashboard',
-      tab: 'dashboard',
+      uiTabs: ['sessions'],
+      activeUiTab: 'sessions',
+      tab: 'sessions',
     })
 
     try {
@@ -770,7 +835,9 @@ export const useStore = create<State>((set, get) => ({
     } catch (e: any) {
       const msg = e?.message || String(e)
       set({ lastError: `实时通道失败（REST 仍可用）: ${msg}`, syncing: false, wsConnected: false })
-      get().pushLog('warn', `实时通道失败，继续使用 REST: ${msg}`)
+      // 降级状态已经显示在底部状态栏；连接失败只写日志，避免登录后弹窗
+      // 挡住主机表。操作员需要详情时可打开事件流或系统日志查看原文。
+      get().pushLog('warn', `实时通道失败，继续使用 REST: ${msg}`, false)
     } finally {
       if (get().syncing && !get().wsConnected) set({ syncing: false })
     }
@@ -800,9 +867,9 @@ export const useStore = create<State>((set, get) => ({
       consoleLines: [],
       browserFiles: {},
       browserProcs: {},
-      uiTabs: ['dashboard'],
-      activeUiTab: 'dashboard',
-      tab: 'dashboard',
+      uiTabs: ['sessions'],
+      activeUiTab: 'sessions',
+      tab: 'sessions',
     })
   },
 

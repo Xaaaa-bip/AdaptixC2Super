@@ -210,9 +210,9 @@ export function formatHeartbeat(
 
 export function loadTheme(): 'light' | 'dark' {
   const v = localStorage.getItem(LS.theme)
-  // 山水太极默认宣纸阳面；仅显式 dark 走淡墨阴面
-  if (v === 'dark') return 'dark'
-  return 'light'
+  // 客户端主题默认 Adaptix Dark；显式选过浅色才走浅色档
+  if (v === 'light') return 'light'
+  return 'dark'
 }
 
 export function saveTheme(theme: 'light' | 'dark') {

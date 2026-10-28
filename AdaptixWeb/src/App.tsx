@@ -15,6 +15,7 @@ import { Credentials } from './components/Credentials'
 import { Targets } from './components/Targets'
 import { Logs } from './components/Logs'
 import { Chat } from './components/Chat'
+import { AICollab } from './components/AICollab'
 import { Graph } from './components/Graph'
 import { Relay } from './components/Relay'
 import { Bofs } from './components/Bofs'
@@ -24,19 +25,17 @@ import { FileManager } from './components/FileManager'
 import { ProcessManager } from './components/ProcessManager'
 import { PtyTerm } from './components/PtyTerm'
 import { VncPanel } from './components/VncPanel'
+import { EventsDock } from './components/EventsDock'
 import { ToastHost } from './components/Toast'
 import { ConnStatus } from './components/StatusPill'
 import { CommandPalette } from './components/CommandPalette'
 import { ShortcutHelp } from './components/ui'
 import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, isCmdTab, tabAgentId } from './store'
-import {
-  clamp, isAgentOnline, loadDensity, loadTermHeight, loadTheme,
-  saveDensity, saveTermHeight, saveTheme, type Density,
-} from './utils'
+import { isAgentOnline, loadDensity, loadTheme, saveDensity, saveTheme, type Density } from './utils'
 
 type Menu = { id: TabId; label: string; ico: string; group?: string; shortcut?: string }
 
-/** 统一 stroke 图标 — 显式 currentColor，保证墨轨上可见 */
+/** 统一 stroke 图标 — 显式 currentColor，任何底色上都可见 */
 function Icon({ children }: { children: React.ReactNode }) {
   return (
     <svg
@@ -103,7 +102,6 @@ const ICO: Record<string, React.ReactNode> = {
       <path d="M8 3.5v17M16 3.5v17M3.5 8h17M3.5 16h17" />
     </Icon>
   ),
-  // 交叉重排：两条线互换端点，正是「同一个命令、换一种写法」的意思
   argfuscator: (
     <Icon>
       <path d="M3.5 8h4l9 8h4" />
@@ -112,7 +110,6 @@ const ICO: Record<string, React.ReactNode> = {
       <path d="M17.5 13 20.5 16l-3 3" />
     </Icon>
   ),
-  // 货架上的格子：一批现成命令摊开可查，不是「新建」也不是「执行」
   extkit: (
     <Icon>
       <path d="M3.5 4.5h17v15h-17z" />
@@ -156,13 +153,19 @@ const ICO: Record<string, React.ReactNode> = {
   logs: (
     <Icon>
       <path d="M8 6h12M8 12h12M8 18h12" />
-      <path d="M4 6h.01M4 12h.01M4 18h.01" strokeWidth="2.4" />
+      <path d="M4 6h.01M4 12h.01M4 18h.01" strokeWidth={2.4} />
     </Icon>
   ),
   chat: (
     <Icon>
       <path d="M5 6h14v9H8l-3 3V6z" />
       <path d="M9 10h6M9 13h4" />
+    </Icon>
+  ),
+  ai: (
+    <Icon>
+      <path d="M12 3.5 14.2 9l5.3 1.3-5.3 1.4L12 17l-2.2-5.3-5.3-1.4L9.8 9 12 3.5z" />
+      <path d="M18.5 16.5v4M16.5 18.5h4" />
     </Icon>
   ),
   graph: (
@@ -180,11 +183,9 @@ const ICO: Record<string, React.ReactNode> = {
       <path d="M4 4a11.3 11.3 0 0 0 0 16M20 4a11.3 11.3 0 0 1 0 16" />
     </Icon>
   ),
-  command: (
+  events: (
     <Icon>
-      <path d="M8 8H6.5A2.5 2.5 0 1 1 9 5.5V8h6V5.5A2.5 2.5 0 1 1 17.5 8H16" />
-      <path d="M8 16H6.5A2.5 2.5 0 1 0 9 18.5V16h6v2.5a2.5 2.5 0 1 0 2.5-2.5H16" />
-      <path d="M9 8h6M9 16h6" />
+      <path d="M4 12h4l2-5 3 10 2-5h5" />
     </Icon>
   ),
   help: (
@@ -196,9 +197,12 @@ const ICO: Record<string, React.ReactNode> = {
   ),
 }
 
+/**
+ * 工具条菜单。★ 客户端布局里「主机」不再是中央页面而是**常驻顶部 dock**，
+ * 所以 MENUS 里没有 sessions —— go('sessions') 在 go() 里被拦截成开 dock。
+ */
 const MENUS: Menu[] = [
   { id: 'dashboard', label: '概览', ico: 'dashboard', group: '总览', shortcut: 'G D' },
-  { id: 'sessions', label: '主机', ico: 'sessions', group: '作战', shortcut: 'G H' },
   { id: 'delivery', label: '投递', ico: 'delivery', group: '作战', shortcut: 'G W' },
   { id: 'listeners', label: '监听器', ico: 'listeners', group: '作战', shortcut: 'G L' },
   { id: 'generate', label: '载荷', ico: 'generate', group: '作战', shortcut: 'G P' },
@@ -213,9 +217,36 @@ const MENUS: Menu[] = [
   { id: 'targets', label: '目标', ico: 'targets', group: '资产' },
   { id: 'graph', label: '拓扑', ico: 'graph', group: '协作' },
   { id: 'chat', label: '聊天', ico: 'chat', group: '协作' },
+  { id: 'ai', label: 'AI 协作', ico: 'ai', group: '协作', shortcut: 'G I' },
   { id: 'relay', label: '中转', ico: 'relay', group: '系统' },
   { id: 'logs', label: '日志', ico: 'logs', group: '系统', shortcut: 'G O' },
 ]
+
+const PRIMARY_MENU_IDS = ['dashboard', 'delivery', 'listeners', 'generate', 'tasks', 'ai'] as const
+
+/** 主机 dock 高度拖动的钳位（与 store 初始校验一致） */
+const HOSTS_H_MIN = 160, HOSTS_H_MAX = 640
+const EVENTS_H_MIN = 100, EVENTS_H_MAX = 480
+
+/** 分隔条键盘调整（ARIA APG 语义：方向键**移动分隔条本身**）。
+ *  hosts 条在面板**下沿**：↓=条下移=面板增高，↑=减；
+ *  events 条在面板**上沿**：↑=条上移=面板增高，↓=减。Home/End 到边界。 */
+function resizerKeyDown(which: 'hosts' | 'events', e: React.KeyboardEvent) {
+  const s = useStore.getState()
+  const grow = which === 'hosts' ? e.key === 'ArrowDown' : e.key === 'ArrowUp'
+  const shrink = which === 'hosts' ? e.key === 'ArrowUp' : e.key === 'ArrowDown'
+  if (!grow && !shrink && e.key !== 'Home' && e.key !== 'End') return
+  e.preventDefault()
+  if (which === 'hosts') {
+    const h = e.key === 'Home' ? HOSTS_H_MAX : e.key === 'End' ? HOSTS_H_MIN
+      : s.hostsDockH + (grow ? 24 : -24)
+    s.setDockHeights(Math.min(HOSTS_H_MAX, Math.max(HOSTS_H_MIN, h)), s.eventsDockH)
+  } else {
+    const h = e.key === 'Home' ? EVENTS_H_MAX : e.key === 'End' ? EVENTS_H_MIN
+      : s.eventsDockH + (grow ? 24 : -24)
+    s.setDockHeights(s.hostsDockH, Math.min(EVENTS_H_MAX, Math.max(EVENTS_H_MIN, h)))
+  }
+}
 
 export default function App() {
   // ALL hooks must be above any conditional return
@@ -233,7 +264,7 @@ export default function App() {
   const refreshRest = useStore((s) => s.refreshRest)
   const tryRestoreSession = useStore((s) => s.tryRestoreSession)
   const [restoring, setRestoring] = useState(true)
-  const openTabs = useStore((s) => s.uiTabs) || ['dashboard']
+  const openTabs = useStore((s) => s.uiTabs) || ['sessions']
   const activeUiTab = useStore((s) => s.activeUiTab)
   const openUiTab = useStore((s) => s.openUiTab)
   const closeUiTab = useStore((s) => s.closeUiTab)
@@ -241,48 +272,56 @@ export default function App() {
   const lastError = useStore((s) => s.lastError)
   const openFilesBrowser = useStore((s) => s.openFilesBrowser)
   const openProcsBrowser = useStore((s) => s.openProcsBrowser)
-  const openPty = useStore((s) => s.openPty)
-  const openVnc = useStore((s) => s.openVnc)
+
+  // 客户端 dock 状态
+  const eventsDockOpen = useStore((s) => s.eventsDockOpen)
+  const eventsDockH = useStore((s) => s.eventsDockH)
+  const toggleEventsDock = useStore((s) => s.toggleEventsDock)
+  const setDockHeights = useStore((s) => s.setDockHeights)
+  /** 'hosts' | 'events' | null —— 正在拖哪条分隔条 */
+  const [dragging, setDragging] = useState<'hosts' | 'events' | null>(null)
 
   const [density, setDensity] = useState<Density>(loadDensity)
-  // 山水太极：默认宣纸阳面（浅色），仅显式选过深色才走淡墨阴面。
-  // ★ 迁移：旧 Signal Deck 那套深色主题可能在 localStorage 里留了 dark，
-  //   第一次进来强制清成阳面，否则老用户永远停在阴面还以为换肤没生效。
+  // 客户端主题：默认 Adaptix Dark（暗色）。
+  // ★ 迁移：上一代（山水太极）把用户强制留在浅色；客户端布局以暗色为准，
+  //   没打过 'client-dark' 标记的老用户一次性迁到暗色，之后 ☀/☾ 随意切。
   const [dark, setDark] = useState(() => {
-    const t = loadTheme()
-    if (t === 'dark' && localStorage.getItem('adaptix.theme.migrated') !== 'shanshui') {
-      saveTheme('light')
-      localStorage.setItem('adaptix.theme.migrated', 'shanshui')
-      return false
+    if (localStorage.getItem('adaptix.theme.migrated') !== 'client-dark') {
+      saveTheme('dark')
+      localStorage.setItem('adaptix.theme.migrated', 'client-dark')
+      return true
     }
-    return t === 'dark'
+    return loadTheme() === 'dark'
   })
   useEffect(() => {
-    // 壳（.ops 上的 data-theme）与 html 双写 —— token 挂在 html 上时 ops 不会自己同步
     saveTheme(dark ? 'dark' : 'light')
   }, [dark])
-  const [termH, setTermH] = useState(loadTermHeight)
-  const [dragging, setDragging] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [chord, setChord] = useState<string | null>(null)
+
+  // 首页保持干净，主机表和事件流由工具条按需展开。
+  // 迁移一次旧版默认布局，避免已有浏览器把概览夹在两个 dock 中间。
+  useEffect(() => {
+    const key = 'adaptix.layout.simple-v1'
+    if (localStorage.getItem(key)) return
+    useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
+    try {
+      localStorage.setItem('adaptix.dock.hosts', '0')
+      localStorage.setItem('adaptix.dock.events', '0')
+      localStorage.setItem(key, '1')
+    } catch {
+      /* localStorage 不可用时保留内存态 */
+    }
+  }, [])
 
   const agentCount = Object.keys(agents || {}).length
   const listenerCount = Object.keys(listeners || {}).length
   const onlineCount = Object.values(agents || {}).filter((a: any) => isAgentOnline(a)).length
 
-  const badges = useMemo(() => ({
-    sessions: agentCount,
-    listeners: listenerCount,
-  }), [agentCount, listenerCount])
-
   useEffect(() => {
     saveDensity(density)
   }, [density])
-
-  useEffect(() => {
-    document.documentElement.style.setProperty('--term-h', `${termH}px`)
-  }, [termH])
 
   // F5：从 localStorage 恢复 JWT 会话，避免刷新后必须重新登录
   useEffect(() => {
@@ -314,18 +353,28 @@ export default function App() {
     return () => clearInterval(id)
   }, [connected, refreshRest])
 
+  // dock 分隔条拖动：mousemove 全局挂，松手落 localStorage（setDockHeights）
   useEffect(() => {
     if (!dragging) return
     const onMove = (e: MouseEvent) => {
-      const layout = document.querySelector('.content.with-term') as HTMLElement | null
-      if (!layout) return
-      const rect = layout.getBoundingClientRect()
-      const h = clamp(rect.bottom - e.clientY, 160, 560)
-      setTermH(h)
+      const s = useStore.getState()
+      if (dragging === 'hosts') {
+        // hosts dock 在视口顶部（工具条+标签条之下），向下拖增高
+        const top = (document.querySelector('.cl-bar')?.getBoundingClientRect().bottom || 0)
+          + (document.querySelector('.cl-tabs')?.getBoundingClientRect().height || 0)
+        const h = Math.round(Math.min(HOSTS_H_MAX, Math.max(HOSTS_H_MIN, e.clientY - top - 14)))
+        if (h !== s.hostsDockH) useStore.setState({ hostsDockH: h })
+      } else {
+        // events dock 贴底（状态栏之上），向上拖增高
+        const bottom = document.querySelector('.ops-status')?.getBoundingClientRect().top || window.innerHeight
+        const h = Math.round(Math.min(EVENTS_H_MAX, Math.max(EVENTS_H_MIN, bottom - e.clientY - 14)))
+        if (h !== s.eventsDockH) useStore.setState({ eventsDockH: h })
+      }
     }
     const onUp = () => {
-      setDragging(false)
-      setTermH((h) => { saveTermHeight(h); return h })
+      const s = useStore.getState()
+      setDockHeights(s.hostsDockH, s.eventsDockH)
+      setDragging(null)
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -333,11 +382,33 @@ export default function App() {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [dragging])
+  }, [dragging, setDockHeights])
 
   const taskCount = tasks.length
 
+  function focusHostsSearch() {
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLInputElement>('.sess-search')
+      if (el) { el.focus(); el.select() }
+    })
+  }
+
+  /** 主机是默认工作区；导航后直接聚焦搜索（G H / 命令面板共用此路径） */
   function go(id: TabId) {
+    if (id === 'sessions') {
+      useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
+      setTab('sessions')
+      openUiTab?.('sessions')
+      focusHostsSearch()
+      return
+    }
+    if (id === 'dashboard') {
+      useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
+      try {
+        localStorage.setItem('adaptix.dock.hosts', '0')
+        localStorage.setItem('adaptix.dock.events', '0')
+      } catch { /* ignore */ }
+    }
     try {
       setTab(id)
       openUiTab?.(id)
@@ -427,6 +498,7 @@ export default function App() {
           a: 'argfuscator',
           x: 'extkit',
           o: 'logs',
+          i: 'ai',
         }
         const dest = map[k]
         if (dest) go(dest)
@@ -442,23 +514,19 @@ export default function App() {
       }
 
       if (!mod && e.key === '/') {
-        // focus host search if on sessions, else open palette
-        if ((useStore.getState().activeUiTab || useStore.getState().tab) === 'sessions') {
-          const el = document.querySelector<HTMLInputElement>('.sess-search')
-          if (el) { e.preventDefault(); el.focus(); el.select(); return }
-        }
+        // 主机工作区：直接聚焦搜索
         e.preventDefault()
-        setPaletteOpen(true)
+        useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
+        setTab('sessions')
+        openUiTab?.('sessions')
+        focusHostsSearch()
       }
     }
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // ★ `chord` 必须在这里：onKey 里 `if (chord === 'g')` 读的是闭包里的值，
-    //   而 setChord('g') 自己不会让本 effect 重跑 —— 少了它，按 G 只会让页眉
-    //   闪出「G …」提示，接着按的字母永远匹配不上，所有 G 系列快捷键全是死的
-    //   （页眉 tooltip 写着 G H / G L / G X …）。上游两份树都有这个漏项。
-  }, [connected, paletteOpen, helpOpen, selected, openFilesBrowser, openProcsBrowser, closeUiTab, chord])
+    // ★ `chord` 必须在依赖里：onKey 读闭包值，setChord 不会让本 effect 重跑
+  }, [connected, paletteOpen, helpOpen, selected, openFilesBrowser, openProcsBrowser, closeUiTab, chord, openUiTab, setTab])
 
   // early return AFTER all hooks
   if (restoring) {
@@ -481,11 +549,12 @@ export default function App() {
     )
   }
 
-  const current = (activeUiTab || tab || 'dashboard') as TabId
+  const current = (activeUiTab || tab || 'sessions') as TabId
   const tabs = openTabs?.length ? openTabs : [current]
-  const selectedAgent = selected ? agents[selected] : null
 
   function tabLabel(id: string) {
+    if (id === 'sessions') return '主机'
+    if (id === 'terminal') return '命令终端'
     const staticLabel = MENUS.find((m) => m.id === id)?.label
     if (staticLabel) return staticLabel
     if (isFilesTab(id)) {
@@ -503,6 +572,11 @@ export default function App() {
       const a = aid ? agents[aid] : null
       return `PTY · ${a?.a_computer || aid || '?'}`
     }
+    if (isCmdTab(id)) {
+      const aid = tabAgentId(id)
+      const a = aid ? agents[aid] : null
+      return `命令执行 · ${a?.a_computer || aid || '?'}`
+    }
     if (isVncTab(id)) {
       const aid = tabAgentId(id)
       const a = aid ? agents[aid] : null
@@ -511,132 +585,90 @@ export default function App() {
     return id
   }
 
-  const title = tabLabel(current)
   const filesAgent = isFilesTab(current) ? tabAgentId(current) : null
   const procsAgent = isProcsTab(current) ? tabAgentId(current) : null
   // Keep ALL open PTY/VNC sessions mounted so switching tabs does not kill WS
   const openPtyTabs = tabs.filter((id) => isPtyTab(id))
   const openVncTabs = tabs.filter((id) => isVncTab(id))
 
-  const primaryMenus = MENUS.filter((m) => m.group === '总览' || m.group === '作战')
-  // 协作（拓扑/聊天）与资产、系统一并进侧栏
-  const assetMenus = MENUS.filter((m) => m.group === '资产' || m.group === '协作' || m.group === '系统')
-
   return (
-    <div
-      className="ops"
-      data-theme={dark ? 'dark' : 'light'}
-      data-density={density}
-    >
-      <div className="ink-scape" aria-hidden>
-        <div className="ink-wash ink-wash-a" />
-        <div className="ink-wash ink-wash-b" />
-        <div className="ink-ridge" />
-        <div className="ink-mist" />
-      </div>
-      <nav className="rail" aria-label="主导航" data-rail="ink">
-        <button type="button" className="rail-brand" onClick={() => go('dashboard')} title="Console">
-          <span className="rail-mark" aria-hidden>{'>_'}</span>
-          <span className="rail-brand-txt">Console</span>
+    <div className="ops" data-theme={dark ? 'dark' : 'light'} data-density={density}>
+      {/* ── 顶部工具条（Qt 客户端 topHLayout 的 Web 形态） ── */}
+      <header className="cl-bar">
+        <button type="button" className="cl-brand" onClick={() => go('dashboard')} title="Console">
+          <span className="cl-mark" aria-hidden>{'>_'}</span>
+          <span className="cl-brand-name">Console</span>
         </button>
-        <div className="rail-section">
-          {primaryMenus.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`rail-item ${current === m.id || (m.id === 'sessions' && isInteractTab(current)) ? 'active' : ''}`}
-              onClick={() => go(m.id)}
-              title={m.shortcut ? `${m.label} (${m.shortcut})` : m.label}
-            >
-              <span className="rail-ico" aria-hidden>{ICO[m.ico] || null}</span>
-              <span className="rail-label">{m.label}</span>
-              {(m.id === 'sessions' || m.id === 'listeners') && (
-                <span className="rail-badge">{(badges as any)[m.id] ?? 0}</span>
-              )}
-            </button>
-          ))}
-        </div>
-        <div className="rail-gap" />
-        <div className="rail-section muted-sec">
-          {assetMenus.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`rail-item ${current === m.id ? 'active' : ''}`}
-              onClick={() => go(m.id)}
-              title={m.label}
-            >
-              <span className="rail-ico" aria-hidden>{ICO[m.ico] || null}</span>
-              <span className="rail-label">{m.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="rail-foot">
-          <button type="button" className="rail-item" onClick={() => setPaletteOpen(true)} title="命令面板 ⌘K">
-            <span className="rail-ico" aria-hidden>{ICO.command}</span>
-            <span className="rail-label">命令</span>
+        <div className="cl-tools">
+          {/* 高频工作区：保持浩劫式的菜单密度，低频功能走命令面板 */}
+          <button
+            type="button"
+            className={`cl-btn ${current === 'sessions' ? 'active' : ''}`}
+            onClick={() => go('sessions')}
+            title={`主机 (${onlineCount}/${agentCount}) — G H`}
+          >
+            {ICO.sessions}
+            <span className="cl-btn-label">主机</span>
+            <span className={`cl-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
           </button>
-          <button type="button" className="rail-item" onClick={() => setHelpOpen(true)} title="快捷键">
-            <span className="rail-ico" aria-hidden>{ICO.help}</span>
-            <span className="rail-label">帮助</span>
+          <span className="cl-sep" />
+          {PRIMARY_MENU_IDS.map((id) => {
+            const m = MENUS.find((item) => item.id === id)
+            if (!m) return null
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={`cl-btn ${current === m.id ? 'active' : ''}`}
+                onClick={() => go(m.id)}
+                title={m.shortcut ? `${m.label} (${m.shortcut})` : m.label}
+              >
+                {ICO[m.ico] || null}
+                <span className="cl-btn-label">{m.label}</span>
+              </button>
+            )
+          })}
+          <span className="cl-sep" />
+          <button
+            type="button"
+            className={`cl-btn ${eventsDockOpen ? 'active' : ''}`}
+            onClick={toggleEventsDock}
+            title="事件日志"
+          >
+            {ICO.events}
+            <span className="cl-btn-label">事件</span>
           </button>
+          {chord === 'g' && <span className="cl-chord">G …</span>}
         </div>
-      </nav>
+        <div className="cl-right">
+          <span className="cl-pill">
+            <span className="signal">{onlineCount}</span>
+            <span>/{agentCount}</span>
+          </span>
+          <span className="cl-pill">{listenerCount} 监听</span>
+          <button type="button" className="cl-ghost" onClick={() => setPaletteOpen(true)} title="更多功能与命令面板 ⌘K">更多</button>
+          <button type="button" className="cl-ghost" title="刷新" onClick={() => refreshRest().catch(() => {})}>↻</button>
+          <button type="button" className="cl-ghost" title={dark ? '浅色' : '深色'} onClick={() => setDark((v) => !v)}>
+            {dark ? '☀' : '☾'}
+          </button>
+          <button type="button" className="cl-ghost" title="密度" onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
+            {density === 'compact' ? '▣' : '▢'}
+          </button>
+          <span className="cl-user" title={username}>{username}</span>
+          <button type="button" className="cl-ghost" onClick={() => disconnect()}>退出</button>
+        </div>
+      </header>
 
-      <div className="ops-main">
-        <header className="ops-top">
-          <div className="ops-top-left">
-            <div className="ops-title">
-              <span className="ops-page">{title}</span>
-              {selectedAgent ? (
-                <span className="ops-target">
-                  <span className={`sdot ${isAgentOnline(selectedAgent) ? 'on' : 'off'}`} />
-                  <span className="mono">{selectedAgent.a_computer || selected}</span>
-                  {selectedAgent.a_internal_ip ? <span className="mono dim"> · {selectedAgent.a_internal_ip}</span> : null}
-                </span>
-              ) : null}
-              {chord === 'g' && <span className="chord-hint">G …</span>}
-            </div>
-          </div>
-          <div className="ops-top-center">
-            <button type="button" className="ops-search" onClick={() => setPaletteOpen(true)}>
-              <span>搜索</span>
-              <kbd className="kbd">⌘K</kbd>
-            </button>
-          </div>
-          <div className="ops-top-right">
-            <div className="ops-pills">
-              <span className="ops-pill">
-                <span className="signal">{onlineCount}</span>
-                <span className="dim">/{agentCount}</span>
-              </span>
-              <span className="ops-pill dim">{listenerCount} 监听</span>
-              {/* 连接状态芯片（实时/轮询/离线）不在这里放。
-                  同一个 <ConnStatus> 在底栏已经常驻一份，顶栏再来一份就是
-                  同屏把同一件事说两遍 —— 而且底栏那份旁边就是在线数/监听数/
-                  任务数，是成套的；顶栏这份夹在搜索框和 退出 之间，只是噪音。
-                  状态归状态栏，顶栏留给控件和身份。 */}
-            </div>
-            <span className="ops-user">{username}</span>
-            <button type="button" className="ghost ico" title="刷新" onClick={() => refreshRest().catch(() => {})}>↻</button>
-            <button type="button" className="ghost ico" title={dark ? '浅色（宣纸阳面）' : '深色（淡墨阴面）'} onClick={() => setDark((v) => !v)}>
-              {dark ? '☀' : '☾'}
-            </button>
-            <button type="button" className="ghost ico" title="密度" onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
-              {density === 'compact' ? '▣' : '▢'}
-            </button>
-            <button type="button" className="ghost" onClick={() => disconnect()}>退出</button>
-          </div>
-        </header>
-
-        <div className="ops-tabs">
+      {/* ── 中央工作区：标签条 + 面板 ── */}
+      <div className="cl-main">
+        <div className="cl-tabs">
           {tabs.map((id) => {
             const label = tabLabel(id)
             return (
               <button
                 key={id}
                 type="button"
-                className={`ops-tab ${current === id ? 'active' : ''}`}
+                className={`cl-tab ${current === id ? 'active' : ''}`}
                 onClick={() => { setActiveUiTab?.(id as TabId); setTab(id as TabId) }}
                 title={id}
               >
@@ -650,8 +682,9 @@ export default function App() {
         </div>
 
         <div className="ops-body content">
-          {current === 'dashboard' && <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />}
           {current === 'sessions' && <Hosts />}
+          {current === 'terminal' && <Term />}
+          {current === 'dashboard' && <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />}
           {current === 'listeners' && <Listeners />}
           {current === 'generate' && <Generate />}
           {current === 'delivery' && <WebDelivery />}
@@ -663,6 +696,7 @@ export default function App() {
           {current === 'targets' && <Targets />}
           {current === 'graph' && <Graph />}
           {current === 'chat' && <Chat />}
+          {current === 'ai' && <AICollab />}
           {current === 'bofs' && <Bofs />}
           {current === 'argfuscator' && <ArgFuscator />}
           {current === 'extkit' && <ExtKit />}
@@ -673,7 +707,7 @@ export default function App() {
           {openPtyTabs.map((id) => {
             const aid = tabAgentId(id)
             if (!aid) return null
-            return <PtyTerm key={id} agentId={aid} active={current === id} />
+            return <PtyTerm key={id} tabId={id} agentId={aid} active={current === id} />
           })}
           {/* 命令执行台：全屏终端式，一台主机可多开（cmd:<id>#n）。
               与 VNC 一样 keep mounted —— 切走再切回来，草稿和滚动位置都还在。 */}
@@ -697,16 +731,43 @@ export default function App() {
             )
           })}
         </div>
-
-        <footer className="ops-status">
-          <ConnStatus connected={connected} wsConnected={wsConnected} syncing={syncing} />
-          {lastError && !wsConnected ? <span className="ops-status-note warn">通道降级</span> : null}
-          <span className="vsep" />
-          <span className="ops-status-counts">{onlineCount} 在线 · {listenerCount} 监听 · {taskCount} 任务</span>
-          <span className="spacer" />
-          <span className="dim">⌘K 命令 · G H 主机 · ? 帮助</span>
-        </footer>
       </div>
+
+      {/* ── 事件日志 dock（底部常驻，Qt LogsDock 的 Web 形态） ── */}
+      {eventsDockOpen && (
+        <>
+          <div
+            className={`cl-resizer ${dragging === 'events' ? 'dragging' : ''}`}
+            onMouseDown={() => setDragging('events')}
+            onKeyDown={(e) => resizerKeyDown('events', e)}
+            tabIndex={0}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="调整事件面板高度（方向键 ±24px）"
+          />
+          <section className="cl-dock events" style={{ height: eventsDockH }}>
+            <div className="cl-dock-hd">
+              <span className="cl-dock-title">事件日志</span>
+              <div className="cl-dock-tools">
+                <button type="button" className="cl-dock-btn" title="收起事件面板" onClick={toggleEventsDock}>▴</button>
+              </div>
+            </div>
+            <div className="cl-dock-bd">
+              <EventsDock />
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* ── 状态栏（连接态与计数，客户端底部状态行的 Web 形态） ── */}
+      <footer className="ops-status">
+        <ConnStatus connected={connected} wsConnected={wsConnected} syncing={syncing} />
+        {lastError && !wsConnected ? <span className="ops-status-note warn">通道降级</span> : null}
+        <span className="vsep" />
+        <span className="ops-status-counts">{onlineCount} 在线 · {listenerCount} 监听 · {taskCount} 任务</span>
+        <span className="spacer" />
+        <span className="dim">⌘K 命令 · G H 主机 · ? 帮助</span>
+      </footer>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} go={go} />
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
