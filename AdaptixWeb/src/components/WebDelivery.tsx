@@ -27,7 +27,7 @@ function joinUrl(base: string, route: string) {
 /**
  * 「C2 Host URL」（目标机访问 teamserver 的地址，含 /api）的缺省值。
  *
- * ★ 这里原本在 apiBase 为空或相对时回退到写死的 'https://110.41.87.17:8080/api' —— 上游
+ * ★ 这里原本在 apiBase 为空或相对时回退到写死的 'https://上游作者的IP:8080/api' —— 上游
  *   作者自己的机器。而同源部署下 apiBase 恰恰就是空的（ApiClient 拿到 ''），于是这一栏
  *   开箱即填着别人的地址，投递出去的一行命令会指向那台机器。
  *

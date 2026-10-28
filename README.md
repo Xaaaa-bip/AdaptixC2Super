@@ -442,7 +442,7 @@ https://127.0.0.1:8843/api/login
 默认示例账号来自 `AdaptixServer/profile.yaml`：
 
 - 用户名：`admin`
-- 密码：`cnmd@qax666`
+- 密码：`changeme`（示例值，部署时必须改掉）
 
 补充说明：
 

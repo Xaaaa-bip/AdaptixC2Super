@@ -146,7 +146,7 @@ func normalizeConfig(c *WebDeliveryConfig) {
 }
 
 // normalizeC2Host keeps only a real teamserver API origin (scheme + /api).
-// Listener bind addresses like "110.41.87.17:4433" must not become deliver URLs.
+// Listener bind addresses like "203.0.113.10:4433" must not become deliver URLs.
 func normalizeC2Host(u string) string {
 	u = strings.TrimSpace(u)
 	if u == "" {
