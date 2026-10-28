@@ -12,6 +12,9 @@
 **/[Oo]bj/
 **/build-*/
 
+# 旧根级 Android 工程残留（工程已搬到 AdaptixApp/，其 .gradle 只挡自己目录）
+.gradle/
+
 # Build outputs
 /dist/
 AdaptixServer/adaptixserver
