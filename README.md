@@ -1,5 +1,19 @@
 # AdaptixC2 v2.0
 
+[English](README_EN.md)
+
+## 项目介绍
+
+AdaptixC2 是面向红队的 C2 框架（基于 [Adaptix-Framework/AdaptixC2](https://github.com/Adaptix-Framework/AdaptixC2) 的深度二开分支）。Go 编写的团队服务端 + 插件化架构，服务端**单端口同源**提供 Web 控制台、REST API（`/api`）与 WebSocket 协作信道。
+
+| 组件 | 说明 |
+|------|------|
+| `AdaptixServer/` | Go 团队服务端（操作员认证、任务/数据持久化、WebSocket 多端协作），插件以 `-buildmode=plugin` 动态加载 |
+| `AdaptixServer/extenders/*` | 监听器与 Agent 插件：HTTP / HTTPS 仿真 / SMB / TCP / WS / DNS / Discord 监听、Kharon、libp2p 中继、Linux eBPF agent、macOS agent、VNC/HVNC 等 |
+| `AdaptixWeb/` | Web 控制台前端（React + Vite，构建产物由服务端托管） |
+| `AdaptixApp/` | Android 控制端（**v2.0 新增**，与 Web 控制台同一套 API） |
+| `Extension-Kit/` | BOF / 脚本扩展包（`extension-kit.axs`） |
+
 ## 快速开始：部署与使用
 
 ### 1. 部署服务端（Linux）
@@ -33,6 +47,38 @@ Release 下载 **`AdaptixApp-debug.apk`** 装机即可（`AdaptixApp-release-uns
 - 地址填 `https://<ip>:8080`（**不带**入口路径），账号密码同上，自签证书无需处理。
 - 功能：Agents / Listeners / Targets / 团队聊天（与 Web 互通）/ 控制台（下发命令、看任务回显），WebSocket 实时推送 + 断线自动重连。
 - 详细说明：[`AdaptixApp/README.md`](AdaptixApp/README.md)（中英双语）。
+
+### 4. Web 控制台：本地开发 / 构建 / 启动
+
+前端是 React 18 + Vite（需 Node 20+），仓库只跟源码，产物都是现编：
+
+```bash
+cd AdaptixWeb
+npm ci
+
+# 开发模式（热更）：起在 http://localhost:5173，
+# /api 与 WebSocket 自动代理到 teamserver（默认 https://127.0.0.1:8080）
+VITE_API_TARGET=https://<你的服务端>:8080 npm run dev
+
+# 产物构建（VITE_BASE 必须与 profile.yaml 的 Web.path 一致，见下节）
+VITE_BASE=/bf21a14d8b0eb60f8b95ae0df61162b8/ npm run build   # → dist/
+```
+
+- 把构建产物接入服务端：包根目录跑 `make web`（把 `AdaptixWeb/dist/` 拷到运行目录的 `web/`，Makefile 不执行 npm，编要自己先编）；CI 完整包则在流水线里自动 `npm ci && npm run build`。
+- `npm run preview` 可本地预览构建产物（同为 5173 端口）。
+
+### 5. 更换 Web 控制台 URL
+
+**换入口路径**（两处必须逐字符一致，否则控制台白屏——资源全 404）：
+
+1. 改 `profile.yaml`：`Web.path` 设为新路径（如 `/newpath/`，保留首尾斜杠）；
+2. 用**同一个值**重编前端：`VITE_BASE=/newpath/ npm run build`，再 `make web` 拷入运行目录；
+3. 重启 adaptixserver，浏览器访问 `https://<ip>:<port>/newpath/`。
+   （用 CI 完整包的，`build.yml` 里的 `VITE_BASE` 也要同步改，它是打包时的前端构建前缀。）
+
+**换端口**：改 `Teamserver.port`（控制台与 API 同源同端口，改一处即可），防火墙/安全组放行新端口，重启。
+
+**换域名 / 证书**：`tls_autogen_common_name` / `tls_autogen_dns_names` 填你的域名后删掉旧证书让其重签；或直接把 `cert` / `key` 指向自己的证书文件。自签证书在浏览器和 AdaptixApp 里都能直接用。
 
 ## 分支说明
 | 分支 | 说明 |
