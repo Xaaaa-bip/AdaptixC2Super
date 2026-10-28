@@ -173,11 +173,8 @@ jobs:
           distribution: temurin
           java-version: "25"
 
+      # 缓存按 wrapper 自动推导（cache-dependency-path 不是本 action 的输入）。
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-dependency-path: |
-            AdaptixApp/gradle/libs.versions.toml
-            AdaptixApp/gradle/wrapper/gradle-wrapper.properties
 
       # runner 自带 Android SDK 且 licenses 已接受；compileSdk 37 较新时
       # AGP 要自动补装 platform / build-tools，这里 yes 一遍保险。
