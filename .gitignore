@@ -25,7 +25,6 @@ AdaptixWeb/.npm-cache/
 # Runtime state (operator DB, agents/tasks/consoles) — never commit
 AdaptixServer/data/
 
-# NOTE: AdaptixWeb/dist/ is deliberately NOT ignored — the Makefile `web` target
 # only copies (no npm build), so this is its input, not an artifact.
 
 # Prebuilt objects copied in by src_beacon/Makefile from files/
@@ -66,3 +65,11 @@ AdaptixServer/server.rsa.key
 # Web local artifacts (regenerable: shot_client_shell.mjs / review agent output)
 AdaptixWeb/screenshots/
 AdaptixWeb/REVIEW_UI_SCORE.md
+
+# Web：只跟源码（src/ public/ 根配置）。dist 是本地产物（CI 的完整包自己 npm run build，
+# 不依赖 commit 的 dist；本地 make web 仍读磁盘上的 dist）；scripts/ dev-harness/ 和 _* 是
+# 会话工具/临时脚本 —— 全部只留磁盘，不进 git。
+AdaptixWeb/dist/
+AdaptixWeb/scripts/
+AdaptixWeb/dev-harness/
+AdaptixWeb/_*
