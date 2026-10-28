@@ -8,8 +8,8 @@ data class C2ServerConfig(
 ) {
     /**
      * 获取规范化的 HTTP REST API Base URL (带 /api 前缀)
-     * 例: "https://110.41.87.17:8080" -> "https://110.41.87.17:8080/api"
-     * 例: "https://110.41.87.17:8080/api" -> "https://110.41.87.17:8080/api"
+     * 例: "https://203.0.113.10:8080" -> "https://203.0.113.10:8080/api"
+     * 例: "https://203.0.113.10:8080/api" -> "https://203.0.113.10:8080/api"
      */
     val httpApiBaseUrl: String
         get() {
@@ -27,7 +27,7 @@ data class C2ServerConfig(
 
     /**
      * 获取规范化的 WebSocket 实时连接 Endpoint URL
-     * 例: "https://110.41.87.17:8080/api" -> "wss://110.41.87.17:8080/api/connect"
+     * 例: "https://203.0.113.10:8080/api" -> "wss://203.0.113.10:8080/api/connect"
      */
     val wsConnectUrl: String
         get() {

@@ -45,7 +45,7 @@ ps aux | grep '[a]daptixserver-e2e' || { echo "teamserver 没起来，看 $E2E/t
 
 echo ""
 echo "旁路 teamserver 已起（18080）。接下来的手工验收："
-echo "  1) Web 打开 https://110.41.87.17:18080/<Web.path> 登录（门禁必须拦住匿名访问）"
+echo "  1) Web 打开 https://203.0.113.10:18080/<Web.path> 登录（门禁必须拦住匿名访问）"
 echo "  2) 监听器页建 LinuxTCP（地址可填域名 —— 验证 DNS 链路）"
 echo "  3) 载荷页生成 Binary ELF：默认 OPSEC 勾选 + opsec_vm_exit 不勾"
 echo "     → 在本 VPS（本身是 KVM 云主机！）上执行 → 必须能上线"
