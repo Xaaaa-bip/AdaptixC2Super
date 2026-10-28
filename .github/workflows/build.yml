@@ -154,6 +154,63 @@ jobs:
           cp "${{ matrix.output }}" "$RUNNER_TEMP/$ASSET"
           gh release upload "$TAG" "$RUNNER_TEMP/$ASSET" --clobber
 
+  adaptix-app:
+    name: AdaptixApp (Android APK)
+    needs: [prepare-release]
+    if: always() && (needs.prepare-release.result == 'success' || github.event_name == 'pull_request')
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: AdaptixApp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # daemon JVM 锁的是 toolchain 25（gradle-daemon-jvm.properties）。
+      # foojay resolver 也能自动拉，但 CI 里显式装好省一次下载。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-dependency-path: |
+            AdaptixApp/gradle/libs.versions.toml
+            AdaptixApp/gradle/wrapper/gradle-wrapper.properties
+
+      # runner 自带 Android SDK 且 licenses 已接受；compileSdk 37 较新时
+      # AGP 要自动补装 platform / build-tools，这里 yes 一遍保险。
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Build APKs (debug + release)
+        run: |
+          set -euxo pipefail
+          ./gradlew assembleDebug assembleRelease
+
+      # ★ release 没有 signingConfig ⇒ 产物是 **unsigned**，装不了：
+      #   要直接装用 debug 那个；release 包拿去得先自己签。
+      - name: Collect APKs
+        run: |
+          set -euxo pipefail
+          ls -lh app/build/outputs/apk/debug/ app/build/outputs/apk/release/
+          cp app/build/outputs/apk/debug/*.apk "$RUNNER_TEMP/AdaptixApp-debug.apk"
+          cp app/build/outputs/apk/release/*.apk "$RUNNER_TEMP/AdaptixApp-release-unsigned.apk"
+
+      - name: Publish APKs to Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          set -euxo pipefail
+          gh release upload "$TAG" \
+            "$RUNNER_TEMP/AdaptixApp-debug.apk" \
+            "$RUNNER_TEMP/AdaptixApp-release-unsigned.apk" \
+            --clobber
+
   adaptix-linux-package:
     name: Linux package (server + plugins + web + kit)
     needs: [prepare-release]
