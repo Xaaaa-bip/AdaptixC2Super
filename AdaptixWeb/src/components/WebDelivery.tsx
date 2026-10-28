@@ -25,7 +25,7 @@ function joinUrl(base: string, route: string) {
 
 function defaultC2Host(apiBase: string) {
   if (!apiBase || apiBase.startsWith('/')) {
-    return 'https://110.41.87.17:8080/api'
+    return 'https://203.0.113.10:8080/api'
   }
   return apiBase.replace(/\/+$/, '')
 }
@@ -309,7 +309,7 @@ export function WebDelivery() {
               <input
                 value={c2Host}
                 onChange={(e) => setC2Host(e.target.value)}
-                placeholder="https://110.41.87.17:8080/api"
+                placeholder="https://203.0.113.10:8080/api"
               />
               <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
                 one-liner 拼：<code className="mono">{scriptUrl || '…'}</code>
