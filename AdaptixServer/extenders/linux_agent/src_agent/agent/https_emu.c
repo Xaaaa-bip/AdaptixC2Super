@@ -11,6 +11,7 @@
 #include "ws_connector.h"
 #include "crt.h"
 #include "types.h"
+#include "dns.h"
 
 #ifdef ARCH_X86_64
 #include "syscalls_x64.h"
@@ -30,35 +31,10 @@ struct hs_sockaddr_in {
     uint8_t  sin_zero[8];
 };
 
-// Parse "a.b.c.d:port" (IP only — no DNS in nostdlib)
+// Parse "host:port" — host 支持 IPv4 字面量或域名（内置 DNS，dns.c）。
+// 输出语义不变：*ip / *port 均为网络字节序。
 static int https_parse_address(const char* address, uint32_t* ip, uint16_t* port) {
-    const char* colon = (const char*)0;
-    for (const char* p = address; *p; p++) {
-        if (*p == ':') colon = p;
-    }
-    if (!colon) return -1;
-
-    uint32_t octets[4] = {0};
-    int octet_idx = 0;
-    for (const char* p = address; p < colon && octet_idx < 4; p++) {
-        if (*p == '.') { octet_idx++; continue; }
-        if (*p < '0' || *p > '9' || octet_idx > 3) return -1;
-        octets[octet_idx] = octets[octet_idx] * 10 + (uint32_t)(*p - '0');
-        if (octets[octet_idx] > 255) return -1;
-    }
-    if (octet_idx != 3) return -1;
-
-    // Network byte order: octets[0] in the lowest byte (kernel reads the
-    // uint32 big-endian → first octet first), same as ws_parse_address.
-    *ip = (octets[0]) | (octets[1] << 8) | (octets[2] << 16) | (octets[3] << 24);
-
-    uint32_t p = 0;
-    for (const char* c = colon + 1; *c >= '0' && *c <= '9'; c++) {
-        p = p * 10 + (uint32_t)(*c - '0');
-        if (p > 65535) return -1;
-    }
-    *port = (uint16_t)((p >> 8) | (p << 8));  // network byte order
-    return 0;
+    return ax_parse_endpoint(address, ip, port);
 }
 
 // TCP connect + optional TLS (embedded mbedtls via the ws connector)

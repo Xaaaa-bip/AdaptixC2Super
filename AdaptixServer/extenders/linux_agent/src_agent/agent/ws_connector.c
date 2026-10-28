@@ -1,6 +1,7 @@
 #include "ws_connector.h"
 #include "crt.h"
 #include "types.h"
+#include "dns.h"
 
 #ifdef ARCH_X86_64
 #include "syscalls_x64.h"
@@ -122,43 +123,10 @@ static int ws_b64_encode(const uint8_t* in, size_t in_len, char* out, size_t out
     return 0;
 }
 
-// Parse "host:port" string (IP only, no DNS for nostdlib)
+// Parse "host:port" — host 支持 IPv4 字面量或域名（内置 DNS，dns.c）。
+// 输出语义不变：*ip / *port 均为网络字节序。
 static int ws_parse_address(const char* address, uint32_t* ip, uint16_t* port) {
-    const char* colon = (const char*)0;
-    for (const char* p = address; *p; p++) {
-        if (*p == ':') colon = p;
-    }
-    if (!colon) return -1;
-
-    uint32_t octets[4] = {0};
-    int octet_idx = 0;
-    for (const char* p = address; p < colon && octet_idx < 4; p++) {
-        if (*p == '.') {
-            octet_idx++;
-        } else if (*p >= '0' && *p <= '9') {
-            octets[octet_idx] = octets[octet_idx] * 10 + (*p - '0');
-        } else {
-            return -1;
-        }
-    }
-    if (octet_idx != 3) return -1;
-    for (int i = 0; i < 4; i++) {
-        if (octets[i] > 255) return -1;
-    }
-
-    // Network byte order (big-endian)
-    *ip = (octets[0]) | (octets[1] << 8) | (octets[2] << 16) | (octets[3] << 24);
-
-    // Parse port
-    *port = 0;
-    for (const char* p = colon + 1; *p >= '0' && *p <= '9'; p++) {
-        *port = *port * 10 + (*p - '0');
-    }
-    if (*port == 0) return -1;
-
-    // Convert port to network byte order
-    *port = ((*port >> 8) & 0xFF) | ((*port & 0xFF) << 8);
-    return 0;
+    return ax_parse_endpoint(address, ip, port);
 }
 
 // Read exactly n bytes from fd

