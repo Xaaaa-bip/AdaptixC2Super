@@ -45,7 +45,7 @@ const DEFAULT_ERROR_PAGE = `<!DOCTYPE html>
 const HTTP_PAYLOAD = `{"status": "ok", "data": "<<<PAYLOAD_DATA>>>", "metrics": "sync"}`
 const WS_PAYLOAD = `{"type":"sync","channel":"presence","payload":"<<<PAYLOAD_DATA>>>"}`
 
-export function defaultListenerConfig(type: string, publicHost = '110.41.87.17'): Record<string, any> {
+export function defaultListenerConfig(type: string, publicHost = '203.0.113.10'): Record<string, any> {
   const key = randomEncryptKey()
   switch (type) {
     case 'BeaconHTTP':

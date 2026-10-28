@@ -8,11 +8,11 @@ Teamserver:
   # Client "endpoint" is the URL path prefix; login URL = https://host:port<endpoint>/login (must match server).
   endpoint: "/api"
   # only_password=true：任意用户名 + 统一密码即可登录（多操作员聊天/协作）
-  password: "cnmd@qax666"
+  password: "changeme"
   # true = only Teamserver.password is checked (any username). false = use operators: username -> password.
   only_password: true
   operators:
-    admin: "cnmd@qax666"
+    admin: "changeme"
   cert: "server.rsa.crt"
   key: "server.rsa.key"
   # Auto-create self-signed PEM if missing (random gateway-style CN + generic O/OU/C; no .example). Use your own domain:
