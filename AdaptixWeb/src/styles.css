@@ -1579,21 +1579,26 @@ a.buttonish:hover { border-color: var(--primary); color: var(--primary); }
      12px 的壳级 padding，内容本来就和别的页一样是 1584px 宽。再垫一层 14px，
      内容就被吃到 1539，右侧空出 62px（实测：1664 → 1608 → 1584 → 1567 → 1539）。 */
 .gen-layout {
-  /* 单栏 + **高度也铺满**：原来是 grid(1fr) + height:auto，卡片只长到内容那么高，
-     内容在 1400px 处就结束、下面 600px 全是空底（1680×2000 实测）。
-     改 flex 列：主卡 flex:1 吃掉剩余高度，摘要卡按内容高。内容真的超出时由
-     .gen-page 的 overflow:auto 滚动。 */
-  display: flex;
-  flex-direction: column;
+  /* 宽屏 = 两栏并列各自滚（配套上方 .gen-page height:100% + .card-bd overflow:auto）：
+     grid 行不压缩内容，配合 align-items:start + max-height:100%（1192），
+     短卡保持自然高度、长卡封顶到视口并在卡身内部滚 —— 投递页右栏展开 10 条命令时
+     左栏表单仍在视野里。曾经改成 flex column 单栏堆叠（整页滚方案的遗产），两卡在
+     钉死的 .gen-page 里按 flex-shrink 抢高度，投递页主卡被压到 28px（2026-11-02 实测）。
+     ≤980px 单栏整页滚在文件尾 @media 块（display:flex 覆盖此处）。 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 12px;
-  min-height: 100%;
-  height: auto;
+  height: 100%;
+  min-height: 0;
+  align-items: start;
 }
-.gen-main { flex: 1 1 auto; }
-.gen-side { flex: 0 0 auto; }
-.gen-page { overflow: auto; }
-.gen-main, .gen-side { max-height: none; }
-.gen-body { overflow: visible; padding: 0; }
+/* 滚动方案只留一套：宽屏 = 卡内滚（.gen-page 钉高 hidden + .card-bd 内部滚，见上方 1178/1193），
+   ≤980px = 整页滚（@media 块里 .gen-page{overflow:auto} + .gen-main .card-bd{overflow:visible}）。
+   下面三条曾经裸写在这里，把宽屏的卡身滚动通道也关了 —— .gen-page height:100% 钉死高度、
+   .gen-body overflow:visible 禁止卡身滚、.card overflow:hidden 裁掉溢出，三层夹击的结果是
+   参数区和「生成并下载」按钮被永久裁掉且任何一层都滚不动（1366×768 实测 card 内 575px 只露 214px）。
+   窄屏的等价规则在 @media(max-width:980px) 里已有（.gen-page overflow / max-height:none /
+   .gen-main .card-bd overflow:visible），此处不再重复。 */
 .gen-side { margin-top: 0; }
 .gen-main.card, .gen-side.card { width: 100%; }
 
