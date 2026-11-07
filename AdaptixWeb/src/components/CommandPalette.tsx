@@ -76,8 +76,15 @@ export function CommandPalette({ open, onClose, go }: Props) {
       },
     ]
 
+    // 排序键用恒定的 a_create_time（与 Hosts.tsx 同一修法）：按 a_last_tick 排
+    // 会让面板里这份主机清单随 WS 心跳不停换序，↑↓ 刚对准的条目被顶走。
     const hostActs: PaletteAction[] = Object.values(agents)
-      .sort((a, b) => (b.a_last_tick || 0) - (a.a_last_tick || 0))
+      .sort((a, b) => {
+        const ta = a.a_create_time || 0
+        const tb = b.a_create_time || 0
+        if (ta !== tb) return tb - ta
+        return String(a.a_id).localeCompare(String(b.a_id))
+      })
       .slice(0, 40)
       .flatMap((a) => {
         const live = isAgentOnline(a)

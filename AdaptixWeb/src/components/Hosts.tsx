@@ -166,7 +166,18 @@ export function Hosts() {
         [a.a_id, a.a_computer, a.a_username, a.a_internal_ip, a.a_external_ip, a.a_process, a.a_listener, a.a_tags, a.a_domain]
           .filter(Boolean).some((x) => String(x).toLowerCase().includes(q)))
     }
-    return arr.sort((a, b) => (b.a_last_tick || 0) - (a.a_last_tick || 0))
+    // ★ 排序键是 a_create_time（首次注册时间，恒定），不是 a_last_tick：
+    //   last_tick 每次 WS 心跳推送都变，按它排在线主机每次回连都跳到表格
+    //   顶部，正在点的行被顶走。AGENT_TICK 只改 a_last_tick（store.ts），
+    //   AGENT_UPDATE 包里没有 CreateTime 字段（utils.go SyncPackerAgentUpdate），
+    //   所以按注册时间排完后心跳不再触发重排。缺 create_time 的旧包回退
+    //   a_id 字典序 —— 不能回退 last_tick，否则同样的跳动又回来。
+    return arr.sort((a, b) => {
+      const ta = a.a_create_time || 0
+      const tb = b.a_create_time || 0
+      if (ta !== tb) return tb - ta // 新注册在前，贴近原「最新在顶部」的习惯
+      return String(a.a_id).localeCompare(String(b.a_id))
+    })
   }, [agents, filter, onlyActive])
 
   const online = filteredFixed.filter((a) => isAgentOnline(a))
