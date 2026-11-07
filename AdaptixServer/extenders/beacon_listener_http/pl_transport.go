@@ -366,6 +366,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		beat         []byte
 		bodyData     []byte
 		responseData []byte
+		isB64Agent   bool
 	)
 
 	// 已被封禁的来源：直接断连、不打日志（见 pl_scanguard.go）
@@ -463,7 +464,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 	// (Verified end-to-end on the linux path; the raw-binary wire between this
 	// listener and the linux agent never worked — the task cipher the core
 	// produced for it did not match the agent's session material.)
-	isB64Agent := false
+	isB64Agent = false
 	if cleaned := strings.Map(func(r rune) rune {
 		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
 			return -1
