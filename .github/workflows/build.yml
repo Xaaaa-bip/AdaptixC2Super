@@ -273,6 +273,21 @@ jobs:
           test -f dist/index.html
           grep -q "$VITE_BASE" dist/index.html
 
+      # ── 3.5 Extension-Kit 的 BOF：仓库只跟源码（.gitignore 排了 _bin），
+      #        不在这里编的话，包里的 kit 只有 .axs 没有 .o —— 命令能注册、
+      #        execute bof 却找不到二进制。工具链用上面装好的 mingw-w64
+      #        （x86_64/i686-w64-mingw32-gcc），与各套件 Makefile 的一致。
+      #        SAL-BOF/privcheck 会联网拉漏洞驱动清单（github raw）生成头文件。
+      - name: Build Extension-Kit BOFs
+        run: |
+          set -eux
+          make -C Extension-Kit all
+          n="$(find Extension-Kit -name '*.o' | wc -l)"
+          echo "BOF objects built: $n"
+          # 本地手工构建约 221 个；明显偏少说明有套件编挂了（各套件 Makefile
+          # 单行失败只 echo 不中断，必须靠数量兜底）。
+          [ "$n" -gt 150 ] || { echo "[ERROR] BOF objects too few: $n"; exit 1; }
+
       # ── 4. 拼部署目录 ──
       - name: Assemble dist/
         run: |
@@ -309,6 +324,11 @@ jobs:
           rm -rf "$DIST/Extension-Kit"
           cp -a Extension-Kit "$DIST/Extension-Kit"
           test -f "$DIST/Extension-Kit/extension-kit.axs"
+          # 包里的 kit 必须带着编好的 BOF 二进制（_bin/*.o）—— 没有它
+          # execute bof 全军覆没（.gitignore 排 _bin，漏编就是纯源码包）。
+          on="$(find "$DIST/Extension-Kit" -name '*.o' | wc -l)"
+          echo "Extension-Kit BOF objects in package: $on"
+          [ "$on" -gt 150 ] || { echo "[ERROR] kit packed without BOF objects"; exit 1; }
 
       # ── 5. 自检：逐个核对 profile.yaml 声明的插件在包里真的存在 ──
       #    这道检查就是用来防"打包布局又错了"的 —— 布局一错，这里立刻红，

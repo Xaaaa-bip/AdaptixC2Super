@@ -21,7 +21,9 @@ bof: clean
 	@($(CC64) $(CFLAGS) uptime/uptime.c -o _bin/uptime.x64.o && $(STRIP64) _bin/uptime.x64.o) && echo '[+] uptime x64' || echo '[!] uptime x64'
 	@($(CC64) $(CFLAGS) useridletime/useridletime.c -o _bin/useridletime.x64.o && $(STRIP64) _bin/useridletime.x64.o) && echo '[+] useridletime x64' || echo '[!] useridletime x64'
 	@($(CC64) $(CFLAGS) whoami/whoami.c -o _bin/whoami.x64.o && $(STRIP64) _bin/whoami.x64.o) && echo '[+] whoami x64' || echo '[!] whoami x64'
-	@(python3 ./privcheck/download_vulnerable_driver_list.py)
+	# 联网拉 loldrivers 清单生成 vulndrivers.h —— 拉不到（离线/被墙）只少这一个
+	# BOF，不能把整个套件的 make 打断（下载脚本失败时以非零退出）。
+	@-(python3 ./privcheck/download_vulnerable_driver_list.py) || echo '[!] vulndrivers list download failed'
 	@($(CC64) $(CFLAGS) privcheck/vulnerabledrivers.c -o _bin/vulndrivers.x64.o && $(STRIP64) _bin/vulndrivers.x64.o) && echo '[+] vulndrivers x64' || echo '[!] vulndrivers x64'
 	@($(CC64) $(CFLAGS) privcheck/alwaysinstallelevated.c -o _bin/alwayselevated.x64.o && $(STRIP64) _bin/alwayselevated.x64.o) && echo '[+] alwayselevated x64' || echo '[!] alwayselevated x64'
 	@($(CC64) $(CFLAGS) privcheck/hijackablepath.c -o _bin/hijackablepath.x64.o && $(STRIP64) _bin/hijackablepath.x64.o) && echo '[+] hijackablepath x64' || echo '[!] hijackablepath x64'
