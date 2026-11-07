@@ -92,11 +92,13 @@ int ws_build_beat(const uint8_t* enc_key, uint32_t agent_type, uint32_t agent_id
 // TCP connect (+ embedded TLS when use_ssl). Reuses ws_connector_t plumbing.
 int https_connect(ws_connector_t* ws, const char* host, uint16_t port, int use_ssl);
 
-// POST a payload: body = b64(data) + random '\n' padding, beat in hb_header.
-// Returns 0 on success, -1 on failure.
+// POST a payload. raw_body=0 (https_emu): body = b64(data) + random '\n'
+// padding, beat in hb_header. raw_body=1 (BeaconHTTP): body = raw binary
+// bytes — beacon_listener_http reads the body straight into the session
+// decryptor, no base64 on either side. Returns 0 on success, -1 on failure.
 int https_send(ws_connector_t* ws, const char* uri, const char* user_agent,
                const char* hb_header_name, const char* beat,
-               const uint8_t* data, size_t len);
+               const uint8_t* data, size_t len, int raw_body);
 
 // Read an HTTP response body (headers then Content-Length bytes).
 // Allocates *out_data (caller frees). Returns 0 on success, -1 on failure.

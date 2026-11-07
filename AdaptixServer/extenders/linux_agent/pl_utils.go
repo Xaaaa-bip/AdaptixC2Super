@@ -34,6 +34,10 @@ type Profile struct {
 	// HTTPS-emulation fields (H1 Phase 1b)
 	IsHttpsEmu        bool     `msgpack:"is_https_emu,omitempty"`
 	HeartbeatHeader   string   `msgpack:"heartbeat_header,omitempty"`
+	// BeaconHTTP raw wire (2026-11-07): body/response carry raw binary — no
+	// base64 on either side (beacon_listener_http serves beacon semantics).
+	// Shares the https-emulation loop skeleton in the agent.
+	IsRawHttp         bool     `msgpack:"is_raw_http,omitempty"`
 }
 
 type SessionInfo struct {
