@@ -44,6 +44,24 @@ vim profile.yaml        # 至少改掉 Teamserver.password；监听器按需改 
 - ★ 换控制台入口路径必须**同时**改前端构建前缀 `VITE_BASE` 并重编 web —— 两边不一致就是整页白屏（资源全 404）。
 - API 与控制台同源同端口：REST 在 `Teamserver.endpoint`（默认 `/api`），协作多端走 WebSocket。
 
+### MCP 服务（AI 客户端接入，2026-11-09 起）
+
+服务端内置 **MCP**（Model Context Protocol **2025-06-18**，Streamable HTTP，无状态实现），把 C2 核心操作暴露给 AI 客户端（Claude / Cursor / Cline / 自研 Agent…）：
+
+- 端点：`https://<ip>:8080/api/mcp`（与 REST 同源同端口同证书，仅 POST 有语义）
+- 认证：与 REST 同一套 Bearer JWT —— 先 `POST /api/login` 拿 `access_token`，MCP 客户端配 `Authorization: Bearer <token>`；不支持自定义 header 的客户端可用 `https://<ip>:8080/api/mcp?access_token=<token>`
+- Tools（12 个）：`server_status` / `list_agents` / `get_agent` / `agent_command`（对主机下发命令）/ `agent_tasks`（轮询任务输出）/ `list_listeners` / `listener_create` / `listener_stop` / `generate_payload`（生成载荷，返回 base64）/ `credentials_list` / `targets_list` / `chat_send`
+
+Claude Desktop（自定义连接器）示例：URL 填 `https://<ip>:8080/api/mcp`，认证头 `Authorization: Bearer <access_token>`。
+
+#### MCP Service (English)
+
+The teamserver ships a built-in **MCP** server (Model Context Protocol **2025-06-18**, Streamable HTTP, stateless) exposing core C2 operations to AI clients (Claude / Cursor / Cline / custom agents):
+
+- Endpoint: `https://<ip>:8080/api/mcp` (same origin, port and certificate as REST; POST only)
+- Auth: same Bearer JWT as REST — `POST /api/login` first, then set `Authorization: Bearer <access_token>`; clients without custom-header support can use `https://<ip>:8080/api/mcp?access_token=<token>`
+- Tools (12): `server_status` / `list_agents` / `get_agent` / `agent_command` (queue a command on a host) / `agent_tasks` (poll task output) / `list_listeners` / `listener_create` / `listener_stop` / `generate_payload` (returns base64) / `credentials_list` / `targets_list` / `chat_send`
+
 #### Web Console (English)
 
 - Open `https://<ip>:8080<Web.path>/` (the entry path is `Web.path` in `profile.yaml`; the CI package ships `/bf21a14d8b0eb60f8b95ae0df61162b8/`). Accept the self-signed certificate warning.
