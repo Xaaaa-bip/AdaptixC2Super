@@ -222,7 +222,9 @@ const MENUS: Menu[] = [
   { id: 'logs', label: '日志', ico: 'logs', group: '系统', shortcut: 'G O' },
 ]
 
-const PRIMARY_MENU_IDS = ['dashboard', 'delivery', 'listeners', 'generate', 'tasks', 'ai'] as const
+// ★ 2026-11-09：用户要求「更多里的都放出来」—— 全部 MENUS 上工具条，
+//   按 group 加分隔。窄屏靠 .cl-tools 的 overflow-x 滚动（本来就有）。
+const PRIMARY_MENU_IDS = MENUS.map((m) => m.id)
 
 /** 主机 dock 高度拖动的钳位（与 store 初始校验一致） */
 const HOSTS_H_MIN = 160, HOSTS_H_MAX = 640
@@ -617,20 +619,22 @@ export default function App() {
             <span className={`cl-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
           </button>
           <span className="cl-sep" />
-          {PRIMARY_MENU_IDS.map((id) => {
-            const m = MENUS.find((item) => item.id === id)
-            if (!m) return null
+          {MENUS.map((m, i) => {
+            // 组间分隔：第一项不插（前面已有主机组的 cl-sep）
+            const prevGroup = i > 0 ? MENUS[i - 1].group : null
             return (
-              <button
-                key={m.id}
-                type="button"
-                className={`cl-btn ${current === m.id ? 'active' : ''}`}
-                onClick={() => go(m.id)}
-                title={m.shortcut ? `${m.label} (${m.shortcut})` : m.label}
-              >
-                {ICO[m.ico] || null}
-                <span className="cl-btn-label">{m.label}</span>
-              </button>
+              <span key={m.id} style={{ display: 'contents' }}>
+                {m.group !== prevGroup && <span className="cl-sep" />}
+                <button
+                  type="button"
+                  className={`cl-btn ${current === m.id ? 'active' : ''}`}
+                  onClick={() => go(m.id)}
+                  title={m.shortcut ? `${m.label} (${m.shortcut})` : m.label}
+                >
+                  {ICO[m.ico] || null}
+                  <span className="cl-btn-label">{m.label}</span>
+                </button>
+              </span>
             )
           })}
           <span className="cl-sep" />
