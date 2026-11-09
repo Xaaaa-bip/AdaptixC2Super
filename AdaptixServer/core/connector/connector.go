@@ -403,6 +403,12 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 		api_group.POST("/agent/task/hook", connector.TcAgentTaskHook)
 		api_group.POST("/agent/task/save", connector.TcAgentTaskSave)
 
+		// MCP（Model Context Protocol，2025-06-18 Streamable HTTP，无状态）：
+		// 与 REST 同源同端口同认证，AI 客户端配置 Bearer JWT 即可调用。
+		api_group.POST("/mcp", connector.TcMcpPost)
+		api_group.GET("/mcp", connector.TcMcpGet)
+		api_group.DELETE("/mcp", connector.TcMcpGet)
+
 		api_group.POST("/chat/send", connector.TcChatSendMessage)
 
 		api_group.GET("/download/list", connector.TcDownloadList)

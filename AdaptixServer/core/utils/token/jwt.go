@@ -78,6 +78,14 @@ func ValidateAccessToken() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		tokenString := ctx.GetHeader("Authorization")
 		if tokenString == "" {
+			// ★ 2026-11-09 MCP：部分 MCP 客户端只能把凭证拼进 URL —— 允许
+			//   ?access_token= 兜底（与 header 同一 JWT，权限完全相同）。
+			tokenString = ctx.Query("access_token")
+			if tokenString != "" {
+				tokenString = "Bearer " + tokenString
+			}
+		}
+		if tokenString == "" {
 			_ = ctx.Error(errors.New("authorization token required"))
 			return
 		}
