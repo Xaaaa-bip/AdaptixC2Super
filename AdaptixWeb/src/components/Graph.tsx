@@ -987,11 +987,11 @@ export function Graph() {
               连线到… <span className="dim">{allTargets.find((t) => t.id === linkFrom)?.label || ''}</span>
             </div>
             <div className="graph-link-list">
-              {allTargets.filter((t) => t.id !== linkFrom).map((t) => (
-                <button key={t.id} type="button" onClick={() => addEdge(linkFrom, t.id)}>
-                  {t.kind && <span className="graph-link-ico"><DeviceIcon kind={t.kind} size={15} /></span>}
-                  <span className="graph-link-name">{t.label}</span>
-                  <span className="dim">{t.sub}</span>
+              {allTargets.filter((x) => x.id !== linkFrom).map((x) => (
+                <button key={x.id} type="button" onClick={() => addEdge(linkFrom, x.id)}>
+                  {x.kind && <span className="graph-link-ico"><DeviceIcon kind={x.kind} size={15} /></span>}
+                  <span className="graph-link-name">{x.label}</span>
+                  <span className="dim">{x.sub}</span>
                 </button>
               ))}
               {allTargets.length <= 1 && <div className="dim" style={{ padding: '6px 8px' }}>{t('图上还没有别的节点')}</div>}

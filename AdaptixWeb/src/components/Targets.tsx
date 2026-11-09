@@ -59,16 +59,16 @@ export function Targets() {
               <tr><th>计算机</th><th>域</th><th>{t('地址')}</th><th>{t('系统')}</th><th>{t('标签')}</th><th>备注</th><th></th></tr>
             </thead>
             <tbody>
-              {view.map((t: any, i) => {
-                const id = t.t_target_id || t.target_id || t.id
+              {view.map((tg: any, i) => {
+                const id = tg.t_target_id || tg.target_id || tg.id
                 return (
                   <tr key={id || i}>
-                    <td>{t.t_computer || t.computer || '-'}</td>
-                    <td>{t.t_domain || t.domain || ''}</td>
-                    <td className="mono">{t.t_address || t.address || ''}</td>
-                    <td>{t.t_os_desk || t.os_desk || t.os || ''}</td>
-                    <td>{t.t_tag || t.tag || ''}</td>
-                    <td>{t.t_info || t.info || ''}</td>
+                    <td>{tg.t_computer || tg.computer || '-'}</td>
+                    <td>{tg.t_domain || tg.domain || ''}</td>
+                    <td className="mono">{tg.t_address || tg.address || ''}</td>
+                    <td>{tg.t_os_desk || tg.os_desk || tg.os || ''}</td>
+                    <td>{tg.t_tag || tg.tag || ''}</td>
+                    <td>{tg.t_info || tg.info || ''}</td>
                     <td>
                       {/* 按钮文案原来是「删」一个字 —— 它既是按钮文字又是这一格唯一的标签，
                           而表头那格又是空的，整个操作列在页面上没有名字。补全文案，
