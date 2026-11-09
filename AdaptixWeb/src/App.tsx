@@ -620,9 +620,14 @@ export default function App() {
             <span className={`cl-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
           </button>
           <span className="cl-sep" />
-          {MENUS.map((m, i) => {
+          {(() => {
+          // ★ 2026-11-09：BOF 模块 / 参数混淆 / 扩展命令从工具条拿掉（挤），
+          //   入口保留：命令面板 ⌘K + 快捷键 G B / G A / G X。
+          const TOOLBAR_HIDDEN = new Set(['bofs', 'argfuscator', 'extkit'])
+          const visible = MENUS.filter((m) => !TOOLBAR_HIDDEN.has(m.id))
+          return visible.map((m, i) => {
             // 组间分隔：第一项不插（前面已有主机组的 cl-sep）
-            const prevGroup = i > 0 ? MENUS[i - 1].group : null
+            const prevGroup = i > 0 ? visible[i - 1].group : null
             return (
               <span key={m.id} style={{ display: 'contents' }}>
                 {m.group !== prevGroup && <span className="cl-sep" />}
@@ -637,7 +642,7 @@ export default function App() {
                 </button>
               </span>
             )
-          })}
+          })})()}
           <span className="cl-sep" />
           <button
             type="button"
@@ -651,18 +656,15 @@ export default function App() {
           {chord === 'g' && <span className="cl-chord">G …</span>}
         </div>
         <div className="cl-right">
-          <span className="cl-pill">
-            <span className="signal">{onlineCount}</span>
-            <span>/{agentCount}</span>
-          </span>
-          <span className="cl-pill">{listenerCount} {t('监听')}</span>
+          {/* ★ 2026-11-09 瘦身：两个计数 pill（主机按钮 badge 与状态栏已有）
+              和「更多」按钮（⌘K / Ctrl+K 快捷键 + 状态栏提示已有）拿掉 ——
+              它们挤占 ~130px，是工具条按钮放不下的主因。 */}
           <button
             type="button"
             className="cl-ghost"
             title={LANG === 'zh' ? 'Switch to English' : '切换到中文'}
             onClick={() => setLang(LANG === 'zh' ? 'en' : 'zh')}
           >{LANG === 'zh' ? 'EN' : '中'}</button>
-          <button type="button" className="cl-ghost" onClick={() => setPaletteOpen(true)} title={t('更多功能与命令面板 ⌘K')}>{t('更多')}</button>
           <button type="button" className="cl-ghost" title={t('刷新')} onClick={() => refreshRest().catch(() => {})}>↻</button>
           <button type="button" className="cl-ghost" title={dark ? t('浅色') : t('深色')} onClick={() => setDark((v) => !v)}>
             {dark ? '☀' : '☾'}
@@ -670,6 +672,7 @@ export default function App() {
           <button type="button" className="cl-ghost" title={t('密度')} onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
             {density === 'compact' ? '▣' : '▢'}
           </button>
+          <button type="button" className="cl-ghost" onClick={() => setPaletteOpen(true)} title={t('命令面板') + ' ⌘K'}>⌘K</button>
           <span className="cl-user" title={username}>{username}</span>
           <button type="button" className="cl-ghost" onClick={() => disconnect()}>{t('退出')}</button>
         </div>

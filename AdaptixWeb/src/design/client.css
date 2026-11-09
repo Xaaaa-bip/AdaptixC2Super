@@ -1038,3 +1038,10 @@ button.danger:hover:not(:disabled) { background: var(--cinnabar-soft); }
   .ops .home-panel.wide { min-height: 190px; }
 }
 
+
+/* ★ 窄屏（≤1700px）工具条转图标模式：17 个带字按钮放不下时藏 label，
+ *   只留图标（title 悬停可看全名），避免挤压变形/滚动找按钮。 */
+@media (max-width: 1700px) {
+  .cl-tools .cl-btn-label { display: none; }
+  .cl-tools .cl-btn { gap: 0; }
+}
