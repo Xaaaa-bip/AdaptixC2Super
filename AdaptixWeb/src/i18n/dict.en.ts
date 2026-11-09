@@ -1,7 +1,9 @@
 /* 英文字典 —— 键 = 中文原文（t() 缺键回退中文，补翻译只改本文件）。
  * 覆盖：壳/工具条/登录/主机/监听器/载荷/任务/命令面板/通用控件/状态栏。 */
 
-export const EN_DICT: Record<string, string> = {
+import { EN_DICT2 } from './dict2.en'
+
+const BASE: Record<string, string> = {
   /* ── 壳：工具条 / 状态栏 / 标签 ── */
   '主机': 'Hosts',
   '概览': 'Overview',
@@ -254,3 +256,5 @@ export const EN_DICT: Record<string, string> = {
   '解析中/未知': 'resolving/unknown',
   '生产建议：gcc + 关闭 iat_hiding。反复扫描同模式会触发云学习；单次投递优先': 'Production tip: gcc + iat_hiding off. Repeated scans of the same pattern feed cloud learning; prefer single deliveries',
 }
+
+export const EN_DICT: Record<string, string> = { ...BASE, ...EN_DICT2 }

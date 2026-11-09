@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { copyText } from '../utils'
 import { EmptyState, PageShell } from './ui'
 import { PageTips } from './PageTips'
@@ -40,23 +41,23 @@ export function Credentials() {
       <PageShell
         toolbar={
           <>
-            <button className="primary" onClick={() => setShow(true)}>+ 添加凭据</button>
-            <input type="search" placeholder="搜索用户 / 主机 / 标签" value={q} onChange={(e) => setQ(e.target.value)} />
-            <button onClick={() => refresh()}>刷新</button>
+            <button className="primary" onClick={() => setShow(true)}>{t('+ 添加凭据')}</button>
+            <input type="search" placeholder={t('搜索用户 / 主机 / 标签')} value={q} onChange={(e) => setQ(e.target.value)} />
+            <button onClick={() => refresh()}>{t('刷新')}</button>
             <div className="stats"><span>{view.length} 条</span></div>
             <PageTips id="creds">
-              <p>团队凭据仓库：手动录入 username/password/realm/host/tag。</p>
+              <p>{t('团队凭据仓库：手动录入 username/password/realm/host/tag。')}</p>
               <p>与 agent 端的 <code>creds</code> 收割命令（控制台输出）相互独立，需手动同步。</p>
             </PageTips>
           </>
         }
       >
         {view.length === 0 ? (
-          <EmptyState icon="⚿" title="暂无凭据" hint="收集到的账号口令可集中管理" />
+          <EmptyState icon="⚿" title={t('暂无凭据')} hint={t('收集到的账号口令可集中管理')} />
         ) : (
           <table>
             <thead>
-              <tr><th>用户</th><th>密码</th><th>域</th><th>主机</th><th>类型</th><th>标签</th><th style={{ width: 120 }}></th></tr>
+              <tr><th>{t('用户')}</th><th>{t('密码')}</th><th>域</th><th>{t('主机')}</th><th>{t('类型')}</th><th>{t('标签')}</th><th style={{ width: 120 }}></th></tr>
             </thead>
             <tbody>
               {view.map((c: any, i) => {
@@ -75,7 +76,7 @@ export function Credentials() {
                       <button className="ghost" onClick={async () => {
                         const ok = await copyText(`${user}:${pass}`)
                         pushToast(ok ? 'ok' : 'err', ok ? '已复制 user:pass' : '复制失败')
-                      }}>复制</button>
+                      }}>{t('复制')}</button>
                       <button className="danger" onClick={async () => {
                         if (!id || !confirm('删除凭据？')) return
                         try {
@@ -96,13 +97,13 @@ export function Credentials() {
         <div className="mask" onClick={() => !busy && setShow(false)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()}>
             <h2>添加凭据</h2>
-            <div className="field"><label>用户名</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
-            <div className="field"><label>密码</label><input value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+            <div className="field"><label>{t('用户名')}</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
+            <div className="field"><label>{t('密码')}</label><input value={password} onChange={(e) => setPassword(e.target.value)} /></div>
             <div className="field"><label>域</label><input value={realm} onChange={(e) => setRealm(e.target.value)} /></div>
-            <div className="field"><label>主机</label><input value={host} onChange={(e) => setHost(e.target.value)} /></div>
-            <div className="field"><label>标签</label><input value={tag} onChange={(e) => setTag(e.target.value)} /></div>
+            <div className="field"><label>{t('主机')}</label><input value={host} onChange={(e) => setHost(e.target.value)} /></div>
+            <div className="field"><label>{t('标签')}</label><input value={tag} onChange={(e) => setTag(e.target.value)} /></div>
             <div className="btns">
-              <button disabled={busy} onClick={() => setShow(false)}>取消</button>
+              <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !username} onClick={async () => {
                 setBusy(true)
                 try {
@@ -116,7 +117,7 @@ export function Credentials() {
                 } catch (e: any) {
                   pushLog('err', e.message || String(e))
                 } finally { setBusy(false) }
-              }}>保存</button>
+              }}>{t('保存')}</button>
             </div>
           </div>
         </div>

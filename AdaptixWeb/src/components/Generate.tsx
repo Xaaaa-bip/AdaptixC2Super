@@ -394,15 +394,15 @@ export function Generate() {
       <div className="gen-pagebar">
         <div className="gen-page-title">
           <span className="gen-kicker">BUILD</span>
-          <h2>t('生成载荷')</h2>
-          <span className="gen-page-note">从一个可用监听器生成可投递的产物</span>
+          <h2>{t('生成载荷')}</h2>
+          <span className="gen-page-note">{t('从一个可用监听器生成可投递的产物')}</span>
         </div>
         <div className="gen-flow" aria-label="生成流程">
-          <span className="active"><i>01</i>目标</span>
+          <span className="active"><i>01</i>{t('目标')}</span>
           <b>→</b>
-          <span><i>02</i>监听</span>
+          <span><i>02</i>{t('监听')}</span>
           <b>→</b>
-          <span><i>03</i>输出</span>
+          <span><i>03</i>{t('输出')}</span>
         </div>
       </div>
       <div className="gen-layout">
@@ -413,7 +413,7 @@ export function Generate() {
             <span className="gen-hint">必填项按当前 Agent 自动筛选</span>
           </div>
           <div className="card-bd gen-body">
-            <div className="gen-section-title">1. 目标平台</div>
+            <div className="gen-section-title">{t('1. 目标平台')}</div>
             <div className="gen-presets gen-presets-platform">
               {PLATFORM_PRESETS.map((p) => (
                 <button
@@ -526,7 +526,7 @@ export function Generate() {
               ) : (
               <>
               <div className="field">
-                <label>格式</label>
+                <label>{t('格式')}</label>
                 <div className="chip-row gen-format-row">
                   {formatOptions.map((f) => (
                     <button
@@ -545,7 +545,7 @@ export function Generate() {
               <div className="field-grid-2">
                 {profile.arches.length > 0 && (
                   <div className="field">
-                    <label>架构</label>
+                    <label>{t('架构')}</label>
                     <div className="chip-row">
                       {profile.arches.map((a) => (
                         <button
@@ -562,7 +562,7 @@ export function Generate() {
                 )}
                 {profile.osOptions ? (
                   <div className="field">
-                    <label>系统</label>
+                    <label>{t('系统')}</label>
                     <div className="chip-row">
                       {profile.osOptions.map((o) => (
                         <button
@@ -583,7 +583,7 @@ export function Generate() {
 
               {isStager && (
                 <>
-                  <div className="gen-section-title">Stager 下载端点</div>
+                  <div className="gen-section-title">{t('Stager 下载端点')}</div>
                   <div className="hint muted-hint" style={{ marginBottom: 4 }}>
                     内层载荷由 <b>teamserver 自己</b>托管（<code>/api/s/&lt;token&gt;</code>），
                     不是监听器端口。默认已填当前控制台地址；目标机若从别的出口访问，
@@ -600,7 +600,7 @@ export function Generate() {
                       />
                     </div>
                     <div className="field">
-                      <label>端口</label>
+                      <label>{t('端口')}</label>
                       <input
                         type="number"
                         min={0}
@@ -634,7 +634,7 @@ export function Generate() {
                 <>
                   <div className="field-grid-2">
                     <div className="field">
-                      <label>重连间隔(秒)</label>
+                      <label>{t('重连间隔(秒)')}</label>
                       <input
                         type="number"
                         min={0}
@@ -644,7 +644,7 @@ export function Generate() {
                       />
                     </div>
                     <div className="field">
-                      <label>重连次数</label>
+                      <label>{t('重连次数')}</label>
                       <input
                         type="number"
                         min={0}
@@ -751,12 +751,12 @@ export function Generate() {
         <aside className="gen-side card">
           <div className="card-hd">
             <h3>t('当前选择')</h3>
-            <span className="gen-side-status">实时</span>
+            <span className="gen-side-status">{t('实时')}</span>
           </div>
           <div className="card-bd" style={{ padding: 14 }}>
             <div className="gen-summary">
               <div>
-                <span className="k">平台</span>
+                <span className="k">{t('平台')}</span>
                 <b>{preset.title}</b>
               </div>
               <div>
@@ -766,26 +766,26 @@ export function Generate() {
                 </b>
               </div>
               <div>
-                <span className="k">格式</span>
+                <span className="k">{t('格式')}</span>
                 <b>{format}</b>
               </div>
               <div>
-                <span className="k">架构</span>
+                <span className="k">{t('架构')}</span>
                 <b className="mono">{arch}</b>
               </div>
               {profile.osOptions && (
                 <div>
-                  <span className="k">系统</span>
+                  <span className="k">{t('系统')}</span>
                   <b>{os}</b>
                 </div>
               )}
               <div>
-                <span className="k">监听</span>
+                <span className="k">{t('监听')}</span>
                 <b className="mono">{listener || '未选'}</b>
               </div>
               {selectedListener && (
                 <div>
-                  <span className="k">绑定</span>
+                  <span className="k">{t('绑定')}</span>
                   <b className="mono">
                     {selectedListener.l_bind_host || '-'}:{selectedListener.l_bind_port || '-'}
                   </b>
@@ -793,7 +793,7 @@ export function Generate() {
               )}
               {isStager && (
                 <div>
-                  <span className="k">Stager 端点</span>
+                  <span className="k">{t('Stager 端点')}</span>
                   <b className="mono">
                     {stagerEp.ssl ? 'https' : 'http'}://{stagerEp.host || '?'}:{stagerEp.port || '?'}
                   </b>

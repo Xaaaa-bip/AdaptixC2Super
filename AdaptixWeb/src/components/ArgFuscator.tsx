@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { copyText } from '../utils'
 import { PageTips } from './PageTips'
 
@@ -145,7 +146,7 @@ export function ArgFuscator() {
       <div className="gen-layout">
         <div className="gen-main card">
           <div className="card-hd">
-            <h3>参数混淆 · PowerShell 命令行变形</h3>
+            <h3>{t('参数混淆 · PowerShell 命令行变形')}</h3>
             <span className="spacer" />
             <span className="dim" style={{ fontSize: 12 }}>服务端 pwsh 执行</span>
             <PageTips id="argfuscator">
@@ -171,7 +172,7 @@ export function ArgFuscator() {
               </div>
             )}
 
-            <div className="gen-section-title">1. 待混淆的命令</div>
+            <div className="gen-section-title">{t('1. 待混淆的命令')}</div>
             <div className="field">
               <label>PowerShell 命令</label>
               <textarea
@@ -224,7 +225,7 @@ export function ArgFuscator() {
             <div className="gen-section-title">2. 变形参数</div>
             <div className="field-grid-2">
               <div className="field">
-                <label>平台</label>
+                <label>{t('平台')}</label>
                 <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
                   {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
@@ -259,7 +260,7 @@ export function ArgFuscator() {
               <>
                 <div className="gen-section-title axf-res-hd">
                   <span>3. 结果 · {variants.length} 个变体</span>
-                  <button type="button" className="ghost" onClick={copyAll}>复制全部</button>
+                  <button type="button" className="ghost" onClick={copyAll}>{t('复制全部')}</button>
                 </div>
                 <div className="axf-list">
                   {variants.map((v, i) => (
@@ -267,7 +268,7 @@ export function ArgFuscator() {
                       <div className="axf-item-hd">
                         <span className="axf-n">#{i + 1}</span>
                         <span className="spacer" />
-                        <button type="button" className="ghost" onClick={() => copyOne(v, i)}>复制</button>
+                        <button type="button" className="ghost" onClick={() => copyOne(v, i)}>{t('复制')}</button>
                       </div>
                       {/* pre-wrap：多行命令是合法的，变体内部的换行属于内容，不能折叠 */}
                       <pre className="axf-cmd">{v}</pre>

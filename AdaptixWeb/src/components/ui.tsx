@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { t } from '../i18n'
 
 export function EmptyState({
   icon,
@@ -77,10 +78,10 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
       <div className="dlg shortcut-dlg" onMouseDown={(e) => e.stopPropagation()}>
         <div className="dlg-hd">
           <div>
-            <h2>键盘快捷键</h2>
-            <div className="dim" style={{ fontSize: 12 }}>面向操作员的高效路径</div>
+            <h2>{t('键盘快捷键')}</h2>
+            <div className="dim" style={{ fontSize: 12 }}>{t('面向操作员的高效路径')}</div>
           </div>
-          <button className="ghost" onClick={onClose}>关闭</button>
+          <button className="ghost" onClick={onClose}>{t('关闭')}</button>
         </div>
         <div className="shortcut-grid">
           {rows.map(([k, v]) => (
@@ -92,7 +93,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           ))}
         </div>
-        <div className="dlg-foot dim">侧栏可切换紧凑密度与主题；状态会保存在本机浏览器。</div>
+        <div className="dlg-foot dim">{t('侧栏可切换紧凑密度与主题；状态会保存在本机浏览器。')}</div>
       </div>
     </div>
   )

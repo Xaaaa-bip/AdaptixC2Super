@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { isAgentOnline } from '../utils'
 import { ensureXterm } from '../lib/xtermLoader'
 import { openTerminalChannel, randomTerminalId } from '../api/channel'
@@ -273,7 +274,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
   return (
     <div className="pty-page" style={{ display: active ? 'flex' : 'none' }} data-active={active ? '1' : '0'}>
       <div className="toolbar">
-        <strong>交互 PTY</strong>
+        <strong>{t('交互 PTY')}</strong>
         <span className="mono dim">{agent?.a_computer || agentId}</span>
         {agent?.a_process ? <span className="mono dim" title={agent.a_process}>{agent.a_process}</span> : null}
         <span className={`tag ${live ? 'online' : 'offline'}`}>{live ? '在线' : '离线'}</span>
@@ -305,7 +306,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
         <button className="primary" disabled={!live || status === 'connecting' || status === 'running'} onClick={start}>
           {status === 'connecting' ? '连接中…' : '启动'}
         </button>
-        <button disabled={status !== 'running' && status !== 'connecting'} onClick={() => stop()}>停止</button>
+        <button disabled={status !== 'running' && status !== 'connecting'} onClick={() => stop()}>{t('停止')}</button>
         <button className="ghost" onClick={() => {
           try {
             fitRef.current?.fit()
@@ -313,7 +314,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
             if (termRef.current) setGeom({ cols: termRef.current.cols || 80, rows: termRef.current.rows || 24 })
           } catch { /* */ }
         }}>适配</button>
-        <button className="ghost" onClick={() => closeUiTab((tabId || `pty:${agentId}`) as any)}>关闭</button>
+        <button className="ghost" onClick={() => closeUiTab((tabId || `pty:${agentId}`) as any)}>{t('关闭')}</button>
         <PageTips id="pty">
           <p>交互式 PTY 终端：预设 bash/sh 或自定义程序。</p>
           <p>WebSocket 建立后需等待 agent 下一次回连完成通道握手。</p>
@@ -348,7 +349,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
             }
           }}
         />
-        <button className="primary" disabled={status !== 'running'} onClick={() => submitLine()}>发送</button>
+        <button className="primary" disabled={status !== 'running'} onClick={() => submitLine()}>{t('发送')}</button>
       </div>
       <div className="pty-foot dim">
         底部输入框发送到 shell · 点终端也可聚焦输入框

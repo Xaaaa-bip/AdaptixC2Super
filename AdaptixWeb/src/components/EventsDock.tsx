@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 
 /**
  * 底部常驻事件日志 dock（客户端 LogsDock 的 Web 形态）。
@@ -65,7 +66,7 @@ export function EventsDock() {
         )}
       </div>
       <div className="ev-list" ref={listRef} onScroll={onScroll}>
-        {list.length === 0 && <div className="ev-empty">暂无事件 — 操作与同步事件会出现在这里</div>}
+        {list.length === 0 && <div className="ev-empty">{t('暂无事件 — 操作与同步事件会出现在这里')}</div>}
         {list.map((l) => (
           <div key={l.id} className={`ev-line lv-${l.level}`}>
             <span className="t">{new Date(l.ts).toLocaleTimeString()} </span>

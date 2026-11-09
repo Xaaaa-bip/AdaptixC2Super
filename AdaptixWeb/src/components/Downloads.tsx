@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { copyText, fmtSize } from '../utils'
 import { EmptyState, PageShell } from './ui'
 import { PageTips } from './PageTips'
@@ -89,25 +90,25 @@ export function Downloads() {
     <PageShell
       toolbar={
         <>
-          <input type="search" placeholder="搜索文件名 / 主机 / 用户" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input type="search" placeholder={t('搜索文件名 / 主机 / 用户')} value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="stats"><span>{list.length} 个文件</span></div>
-          <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
+          <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>{t('刷新')}</button>
           <PageTips id="downloads">
-            <p>agent 回传的文件在此统一管理；「同步到本机」下载到浏览器。</p>
+            <p>{t('agent 回传的文件在此统一管理；「同步到本机」下载到浏览器。')}</p>
             <p>右键可复制 <code>curl/wget</code> 下载命令（含 file_id 说明）。</p>
           </PageTips>
         </>
       }
     >
       {list.length === 0 ? (
-        <EmptyState icon="⇩" title="暂无下载文件" hint="在文件管理中对目标文件点「下载」" />
+        <EmptyState icon="⇩" title={t('暂无下载文件')} hint="在文件管理中对目标文件点「下载」" />
       ) : (
         <table>
           <thead>
             <tr>
-              <th>文件名</th>
-              <th>主机</th>
-              <th>用户</th>
+              <th>{t('文件名')}</th>
+              <th>{t('主机')}</th>
+              <th>{t('用户')}</th>
               <th>计算机</th>
               <th>大小</th>
               <th style={{ width: 220 }}></th>
@@ -139,7 +140,7 @@ export function Downloads() {
                     </button>
                     <button disabled={!d.d_file_id} onClick={() => d.d_file_id && void copySyncCmd('curl', d.d_file_id)}>curl</button>
                     <button disabled={!d.d_file_id} onClick={() => d.d_file_id && void copySyncCmd('wget', d.d_file_id)}>wget</button>
-                    <button className="danger" disabled={!d.d_file_id} onClick={() => d.d_file_id && void doDelete(d.d_file_id)}>删除</button>
+                    <button className="danger" disabled={!d.d_file_id} onClick={() => d.d_file_id && void doDelete(d.d_file_id)}>{t('删除')}</button>
                   </td>
                 </tr>
               )

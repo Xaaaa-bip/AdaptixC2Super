@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { ConnStatus } from './StatusPill'
 
 export function Dashboard({ online, total, listeners }: { online: number; total: number; listeners: number }) {
@@ -16,12 +17,12 @@ export function Dashboard({ online, total, listeners }: { online: number; total:
     <div className="home overview">
       <header className="home-head">
         <div>
-          <h1 className="home-title">概览</h1>
+          <h1 className="home-title">{t('概览')}</h1>
           <p className="home-desc">控制台状态和连接信息。</p>
         </div>
         <div className="home-actions">
-          <button type="button" onClick={() => go('sessions')}>主机</button>
-          <button type="button" className="primary" onClick={() => go('delivery')}>一键投递</button>
+          <button type="button" onClick={() => go('sessions')}>{t('主机')}</button>
+          <button type="button" className="primary" onClick={() => go('delivery')}>{t('一键投递')}</button>
         </div>
       </header>
 

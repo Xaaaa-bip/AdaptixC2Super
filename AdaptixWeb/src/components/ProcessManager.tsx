@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { browserKillProc, browserListProcs } from '../api/browser'
 import type { ProcItem } from '../utils/browserParse'
 import { copyText, isLinuxAgent } from '../utils'
@@ -111,7 +112,7 @@ export function ProcessManager({ agentId }: { agentId: string }) {
     <div className="page browser-page pm-page">
       <div className="toolbar pm-toolbar">
         <div className="pm-title">
-          <strong>进程管理</strong>
+          <strong>{t('进程管理')}</strong>
           <span className="mono dim">{agent?.a_computer || agentId}</span>
           {linux ? (
             <span className="fm-boost">Linux 进程</span>
@@ -145,10 +146,10 @@ export function ProcessManager({ agentId }: { agentId: string }) {
           {message ? <span className="dim">{message}</span> : null}
           {err ? <span className="err">{err}</span> : null}
         </div>
-        <button className="ghost" onClick={() => closeUiTab(`procs:${agentId}` as any)}>关闭</button>
+        <button className="ghost" onClick={() => closeUiTab(`procs:${agentId}` as any)}>{t('关闭')}</button>
         <PageTips id="procs">
           <p>进程列表 + 搜索过滤；选中行后「结束进程」。</p>
-          <p>Linux 主机的结束操作经由 <code>kill &lt;pid&gt;</code> 命令完成（列表随后自动刷新）。</p>
+          <p>Linux 主机的结束操作经由 <code>kill &lt;pid&gt;</code> {t('命令完成（列表随后自动刷新）。')}</p>
         </PageTips>
       </div>
 
@@ -163,9 +164,9 @@ export function ProcessManager({ agentId }: { agentId: string }) {
               <tr>
                 <th style={{ width: 72 }}>PID</th>
                 <th style={{ width: 72 }}>PPID</th>
-                <th>进程</th>
-                <th style={{ minWidth: 140 }}>用户</th>
-                <th style={{ width: 72 }}>架构</th>
+                <th>{t('进程')}</th>
+                <th style={{ minWidth: 140 }}>{t('用户')}</th>
+                <th style={{ width: 72 }}>{t('架构')}</th>
                 <th style={{ width: 72 }}>会话</th>
                 <th style={{ width: 88 }}></th>
               </tr>

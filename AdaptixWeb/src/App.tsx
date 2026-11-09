@@ -672,7 +672,19 @@ export default function App() {
           <button type="button" className="cl-ghost" title={t('密度')} onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
             {density === 'compact' ? '▣' : '▢'}
           </button>
-          <button type="button" className="cl-ghost" onClick={() => setPaletteOpen(true)} title={t('命令面板') + ' ⌘K'}>⌘K</button>
+          <button
+            type="button"
+            className="cl-ghost"
+            onClick={() => setPaletteOpen(true)}
+            title={t('命令面板（搜页面 / 主机 / 操作）') + ' ⌘K / Ctrl+K'}
+            style={{ gap: 5 }}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="M15.5 15.5 21 21" />
+            </svg>
+            {t('命令面板')}
+          </button>
           <span className="cl-user" title={username}>{username}</span>
           <button type="button" className="cl-ghost" onClick={() => disconnect()}>{t('退出')}</button>
         </div>

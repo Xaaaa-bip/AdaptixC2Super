@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import type { RelayStatus } from '../api/http'
 import { copyText } from '../utils'
 import { PageTips } from './PageTips'
@@ -146,12 +147,12 @@ export function Relay() {
         <button className="danger" onClick={() => act('stop')} disabled={disabled || !running}>
           {busy === 'stop' ? '停止中…' : '停止'}
         </button>
-        <button onClick={() => void refresh()} disabled={!!busy}>刷新</button>
+        <button onClick={() => void refresh()} disabled={!!busy}>{t('刷新')}</button>
         <PageTips id="relay">
           <p>这一页管的是 <b>libp2p 中转进程（axrelay）本身</b>，不是监听器。</p>
           <p>按钮转发给 systemd（<span className="mono">{st?.unit || 'axrelay.service'}</span>），
             不会另起一个进程 —— relay 的生死只能有一个 owner。</p>
-          <p>载荷要连的地址来自<b>监听器</b>的 <span className="mono">l2p_relays</span>
+          <p>载荷要连的地址来自<b>{t('监听器')}</b>的 <span className="mono">l2p_relays</span>
             （gopher_listener_tcp 的字段，不是本插件）—— 本页只管 relay 进程本身。</p>
           <p>改 <span className="mono">/etc/axrelay/relaynode.key</span> 会换 peer id，
             于是 <span className="mono">l2p_relays</span> 与<b>所有已发出的 agent 地址一起失效</b>。</p>

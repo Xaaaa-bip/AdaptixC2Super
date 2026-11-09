@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { loadCmdTree } from '../api/cmdTree'
 import type { CmdArgDef, CmdBatch, CmdDef, CmdGroup } from '../api/types'
 import { copyText, isAgentOnline } from '../utils'
@@ -303,7 +304,7 @@ export function ExtKit() {
   return (
     <div className="page">
       <div className="toolbar">
-        <span className="xkit-title">Extension-Kit 命令</span>
+        <span className="xkit-title">{t('Extension-Kit 命令')}</span>
         <span className="dim" style={{ fontSize: 12 }}>
           {blocks.length
             ? <>{blocks.length} 个 agent 批次 · 当前 <b>{totalCmds}</b> 条 / <b>{block?.groups.length || 0}</b> 组 · 命令树 source=profile</>
@@ -342,7 +343,7 @@ export function ExtKit() {
         )}
         <input
           className="xkit-search"
-          placeholder="搜索命令 / 参数 / 示例…"
+          placeholder={t('搜索命令 / 参数 / 示例…')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -354,7 +355,7 @@ export function ExtKit() {
           <p><b>为什么给「示例」而不是「参数表单」。</b>这些命令带预钩子：服务端拿到命令行后先跑 <code>.axs</code> 的钩子，把它展开成 <code>execute bof …_bin/&lt;file&gt;.&lt;arch&gt;.o</code>。参数怎么写由钩子决定，参数表只是 schema。所以示例是权威用法，参数表是参考，两者冲突时以示例为准。</p>
           <p><b>下发按钮为什么只出现在一部分命令上。</b>只有「命令名本身就是一条完整命令」的才给下发，三条全中才算：没有必填值参数、<b>没有子命令</b>、示例里没有 <code>&lt;dn&gt;</code>/<code>&#123;subcommand&#125;</code>/<code>[options]</code> 这类占位符。全表 62 条里只有 18 条合格（<code>whoami</code>、<code>hashdump</code>、<code>ipconfig</code>…）；其余一律只给复制。最容易看错的是子命令那条：子命令是必选的，但它不在参数表里，所以「无参数」不等于「无输入」—— <code>dcsync</code> 的示例就是 <code>dcsync &#123;subcommand&#125; [options]</code>，发一个光秃秃的 <code>dcsync</code> 出去不会报错，只是没有意义。</p>
           <p><b>下发到哪台。</b>只发给主机页当前选中的那台，且必须与页面上显示的 agent 名一致（<span className="mono">主机 a_name == 批次 agent</span>）；不一致时按钮是灰的，不会拿 gopher 的命令去发给 beacon。</p>
-          <p><b>产物缺失不会报错。</b>这些命令最终落到 <code>&lt;script_dir&gt;_bin/</code> 下的 <code>.o</code>；产物没编译时下发不报错、也没有回显。到 <b>BOF 模块</b>页确认真有那个产物，别在控制台里等一个永远不来的输出。</p>
+          <p><b>产物缺失不会报错。</b>这些命令最终落到 <code>&lt;script_dir&gt;_bin/</code> 下的 <code>.o</code>；产物没编译时下发不报错、也没有回显。到 <b>{t('BOF 模块')}</b>页确认真有那个产物，别在控制台里等一个永远不来的输出。</p>
           <p><b>跨 agent 差异。</b>{uniform ? '当前各 agent 的命令集合完全相同。' : '各 agent 的命令集合不一致，差异标在对应命令上（「仅 xx」）。'}</p>
         </PageTips>
       </div>

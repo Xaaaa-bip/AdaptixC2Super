@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import {
   browserCat, browserDownloadFile, browserListDisks, browserListFiles, browserRm, browserUploadFile,
 } from '../api/browser'
@@ -684,13 +685,13 @@ export function FileManager({ agentId }: { agentId: string }) {
         <div className="fm-title">
           <span className="fm-appico">📁</span>
           <div>
-            <div className="fm-appname">文件管理</div>
+            <div className="fm-appname">{t('文件管理')}</div>
             <div className="fm-appsub mono">{hostTitle}{agent?.a_internal_ip ? ` · ${agent.a_internal_ip}` : ''} · {agentId}</div>
           </div>
         </div>
         <div className="fm-title-actions">
           {isLinux ? (
-            <span className="fm-boost" title="Linux beacon：编译期固定节拍，无 sleep 0 交互加速">Linux</span>
+            <span className="fm-boost" title={t('Linux beacon：编译期固定节拍，无 sleep 0 交互加速')}>Linux</span>
           ) : (
             <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`} title="打开本页会自动 sleep 0；关闭页签后恢复">
               {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
@@ -714,11 +715,11 @@ export function FileManager({ agentId }: { agentId: string }) {
           <button className="ghost" disabled={busy || uploading} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))}>
             {busy ? '刷新中…' : '刷新'}
           </button>
-          <button className="ghost" onClick={() => closeUiTab(`files:${agentId}` as any)}>关闭</button>
+          <button className="ghost" onClick={() => closeUiTab(`files:${agentId}` as any)}>{t('关闭')}</button>
           <PageTips id="files">
             <p>双击目录进入；面包屑/上级按钮导航；右键下载/删除/复制路径。</p>
             <p><b>Linux 主机显示挂载点</b>（无盘符）；预览自动识别编码（UTF-8 优先）。</p>
-            <p>多选支持 Ctrl/Shift，可批量下载/删除；「上传」投递本地文件到当前目录。</p>
+            <p>{t('多选支持 Ctrl/Shift，可批量下载/删除；「上传」投递本地文件到当前目录。')}</p>
           </PageTips>
         </div>
       </div>
@@ -728,11 +729,11 @@ export function FileManager({ agentId }: { agentId: string }) {
         <button className="ico" disabled={histIdx <= 0 || busy} onClick={goBack} title="后退">←</button>
         <button className="ico" disabled={histIdx >= history.length - 1 || busy} onClick={goForward} title="前进">→</button>
         <button className="ico" disabled={!canUp || busy} onClick={() => load(parentOf(path || '.'))} title="上级">↑</button>
-        <button className="ico" disabled={busy} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))} title="刷新">↻</button>
+        <button className="ico" disabled={busy} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))} title={t('刷新')}>↻</button>
         <div className="sep" />
         <button disabled={busy} onClick={() => loadDisks()}>{isLinux ? '挂载点' : '此电脑'}</button>
         {!isLinux && <button disabled={busy} onClick={() => load('C:\\')}>C:\</button>}
-        <button disabled={busy} onClick={() => load('.')}>当前目录</button>
+        <button disabled={busy} onClick={() => load('.')}>{t('当前目录')}</button>
         <div className="sep" />
         <div className="fm-crumbs">
           {crumbs.map((c, i) => (
@@ -786,11 +787,11 @@ export function FileManager({ agentId }: { agentId: string }) {
       {/* Body: tree + table + detail */}
       <div className="fm-body">
         <aside className="fm-tree">
-          <div className="fm-tree-hd">导航</div>
+          <div className="fm-tree-hd">{t('导航')}</div>
           <div className="fm-tree-bd">
             {renderTree('')}
           </div>
-          <div className="fm-tree-ft dim">双击目录进入 · 右键更多操作</div>
+          <div className="fm-tree-ft dim">{t('双击目录进入 · 右键更多操作')}</div>
         </aside>
 
         <section className="fm-main">
@@ -842,7 +843,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                     <th style={{ width: 150 }} className="sortable" onClick={() => toggleSort('date')}>
                       修改时间 {sortKey === 'date' ? (sortAsc ? '↑' : '↓') : ''}
                     </th>
-                    <th style={{ width: 90 }}>类型</th>
+                    <th style={{ width: 90 }}>{t('类型')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -906,7 +907,7 @@ export function FileManager({ agentId }: { agentId: string }) {
             ) : null}
             {selectedSet.size > 1 && mode !== 'disks' && (
               <span className="fm-multi-actions">
-                <button className="ghost" disabled={busy || uploading} onClick={() => doDownloadMulti(multiItems)}>批量下载</button>
+                <button className="ghost" disabled={busy || uploading} onClick={() => doDownloadMulti(multiItems)}>{t('批量下载')}</button>
                 <button className="danger" disabled={busy || uploading} onClick={() => doRmMulti(multiItems)}>批量删除</button>
               </span>
             )}
@@ -922,9 +923,9 @@ export function FileManager({ agentId }: { agentId: string }) {
               <div className="fm-detail-ico">{fileIcon(selectedItem, mode === 'disks', isLinux)}</div>
               <div className="fm-detail-name" title={selectedItem.name}>{selectedItem.name}</div>
               <div className="fm-kv">
-                <div><span>类型</span><b>{mode === 'disks' ? diskLabel : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || '文件')}</b></div>
+                <div><span>{t('类型')}</span><b>{mode === 'disks' ? diskLabel : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || '文件')}</b></div>
                 <div><span>大小</span><b>{displaySize(selectedItem)}</b></div>
-                <div><span>修改</span><b>{selectedItem.dateText || '—'}</b></div>
+                <div><span>{t('修改')}</span><b>{selectedItem.dateText || '—'}</b></div>
                 <div><span>路径</span><b className="mono">{itemPath(selectedItem)}</b></div>
               </div>
               <div className="fm-detail-actions">
@@ -932,13 +933,13 @@ export function FileManager({ agentId }: { agentId: string }) {
                   <button className="primary" disabled={busy} onClick={() => openItem(selectedItem)}>打开</button>
                 ) : (
                   <>
-                    <button className="primary" disabled={busy} onClick={() => doDownload(selectedItem)}>下载</button>
+                    <button className="primary" disabled={busy} onClick={() => doDownload(selectedItem)}>{t('下载')}</button>
                     <button disabled={busy} onClick={() => doCat(selectedItem)}>查看</button>
                   </>
                 )}
                 <button disabled={busy} onClick={() => copyPath(selectedItem)}>复制路径</button>
                 {mode !== 'disks' && (
-                  <button className="danger" disabled={busy} onClick={() => doRm(selectedItem)}>删除</button>
+                  <button className="danger" disabled={busy} onClick={() => doRm(selectedItem)}>{t('删除')}</button>
                 )}
               </div>
             </div>
@@ -962,7 +963,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                     disabled={!!preview.busy}
                     value={preview.encoding}
                     onChange={(e) => setPreviewEncoding(e.target.value as TextEncodingId)}
-                    title="切换文本编码以修复乱码"
+                    title={t('切换文本编码以修复乱码')}
                   >
                     {TEXT_ENCODING_OPTIONS.map((opt) => (
                       <option key={opt.id} value={opt.id}>
@@ -973,7 +974,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                     ))}
                   </select>
                 </label>
-                <button className="ghost" disabled={!!preview.busy} onClick={() => setPreview(null)}>关闭</button>
+                <button className="ghost" disabled={!!preview.busy} onClick={() => setPreview(null)}>{t('关闭')}</button>
               </div>
             </div>
             <div className="fm-preview-body mono">
@@ -1011,7 +1012,7 @@ export function FileManager({ agentId }: { agentId: string }) {
           {selectedSet.size > 1 ? (
             <>
               <div className="dim" style={{ padding: '4px 10px', fontSize: 11 }}>已选 {selectedSet.size} 项</div>
-              <button onClick={() => { doDownloadMulti(multiItems); setCtx(null) }}>批量下载文件</button>
+              <button onClick={() => { doDownloadMulti(multiItems); setCtx(null) }}>{t('批量下载文件')}</button>
               {mode !== 'disks' && (
                 <button className="danger" onClick={() => { doRmMulti(multiItems); setCtx(null) }}>批量删除</button>
               )}
@@ -1023,7 +1024,7 @@ export function FileManager({ agentId }: { agentId: string }) {
               )}
               {!ctx.item.isDir && mode !== 'disks' && (
                 <>
-                  <button onClick={() => { doDownload(ctx.item); setCtx(null) }}>下载</button>
+                  <button onClick={() => { doDownload(ctx.item); setCtx(null) }}>{t('下载')}</button>
                   <button onClick={() => { doCat(ctx.item); setCtx(null) }}>查看内容</button>
                 </>
               )}
@@ -1037,7 +1038,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                 <>
                   <div className="sep" />
                   <button disabled={uploading} onClick={() => { fileInputRef.current?.click(); setCtx(null) }}>上传到此目录</button>
-                  <button className="danger" onClick={() => { doRm(ctx.item); setCtx(null) }}>删除</button>
+                  <button className="danger" onClick={() => { doRm(ctx.item); setCtx(null) }}>{t('删除')}</button>
                 </>
               )}
             </>

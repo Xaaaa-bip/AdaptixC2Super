@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { t } from '../i18n'
 import { cmdTabId, useStore } from '../store'
 import { copyText, isAgentOnline } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS, normType } from '../lib/completions'
@@ -254,7 +255,7 @@ export function Term() {
         <span style={{ flex: 1 }} />
         {agentId && (
           <div className="term-quick">
-            <button className="ghost term-exec-link" disabled={busy} onClick={openCommandExec} title="打开任务式命令执行台">命令执行</button>
+            <button className="ghost term-exec-link" disabled={busy} onClick={openCommandExec} title={t('打开任务式命令执行台')}>命令执行</button>
             {quick.map((q) => (
               <button key={q.label} className="ghost" disabled={busy || !live} onClick={() => run(q.cmd)}>{q.label}</button>
             ))}
@@ -264,11 +265,11 @@ export function Term() {
                 `bofCapable` 由服务端回答（/api/bofs/exec 的 capable），
                 前端不复刻那份能力矩阵。拿不到就是 false：不给打不开的门。 */}
             {comp.bofCapable && (
-              <button className="ghost" disabled={busy} onClick={() => openUiTab('bofs')} title="BOF 模块（execute bof 图形入口）">BOF</button>
+              <button className="ghost" disabled={busy} onClick={() => openUiTab('bofs')} title={t('BOF 模块（execute bof 图形入口）')}>BOF</button>
             )}
-            <button className="ghost" disabled={busy || !live} onClick={() => openPty(agentId)} title="交互 PTY">PTY</button>
-            <button className="ghost" disabled={busy || !live} onClick={() => openFilesBrowser(agentId)} title="文件管理">文件</button>
-            <button className="ghost" disabled={busy || !live} onClick={() => openProcsBrowser(agentId)} title="进程管理">进程</button>
+            <button className="ghost" disabled={busy || !live} onClick={() => openPty(agentId)} title={t('交互 PTY')}>PTY</button>
+            <button className="ghost" disabled={busy || !live} onClick={() => openFilesBrowser(agentId)} title={t('文件管理')}>{t('文件')}</button>
+            <button className="ghost" disabled={busy || !live} onClick={() => openProcsBrowser(agentId)} title={t('进程管理')}>{t('进程')}</button>
             <button className="ghost" disabled={busy || !live} onClick={() => openVnc(agentId)} title="VNC">VNC</button>
           </div>
         )}
@@ -290,7 +291,7 @@ export function Term() {
               <span>{agentTasks.length} 条最近任务</span>
               {latestTask?.a_cmdline ? <span className="mono" title={latestTask.a_cmdline}>最近：{latestTask.a_cmdline}</span> : null}
             </div>
-            <button className="ghost term-task-link" onClick={() => openUiTab('tasks')} title="查看任务中心">任务中心</button>
+            <button className="ghost term-task-link" onClick={() => openUiTab('tasks')} title="查看任务中心">{t('任务中心')}</button>
           </>
         ) : (
           <span className="term-context-empty">从主机列表选择一个目标，终端会保留每台主机自己的页签与历史。</span>

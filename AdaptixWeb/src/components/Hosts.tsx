@@ -354,7 +354,7 @@ export function Hosts() {
               两者混在一起，操作员就分不清「删除」删的到底是哪一个。 */}
           {checkedIds.size > 0 && (
             <div className="sess-bulk">
-              <span className="sb-n">已选 <b>{checkedIds.size}</b> 台</span>
+              <span className="sb-n">{t('已选')} <b>{checkedIds.size}</b> {t('台')}</span>
               {hiddenChecked > 0 && (
                 <span className="sb-note" title="勾选不会被搜索收窄悄悄丢掉">
                   （{hiddenChecked} 台不在当前筛选里）
@@ -416,7 +416,7 @@ export function Hosts() {
               <thead>
                 <tr>
                   <th className="sess-cell-check">
-                    <label className="sess-check" title="全选 / 取消全选当前筛选结果">
+                    <label className="sess-check" title={t('全选 / 取消全选当前筛选结果')}>
                       <input
                         type="checkbox"
                         checked={allChecked}
@@ -561,7 +561,7 @@ export function Hosts() {
                   pushToast('ok', '已下发 sleep 0（交互加速）')
                 } catch (e: any) { pushLog('err', e.message || String(e)) }
                 setCtx(null)
-              }}>交互加速 (sleep 0)</button>
+              }}>{t('交互加速 (sleep 0)')}</button>
             </>
           )}
           <div className="sep" />
@@ -655,7 +655,7 @@ export function Hosts() {
             ) : (
               <>
                 <div className="field-grid-2">
-                  <div className="field"><label>Sleep（秒，下发任务）</label>
+                  <div className="field"><label>{t('Sleep（秒，下发任务）')}</label>
                     <input value={dataDlg.sleep} onChange={(e) => setDataDlg({ ...dataDlg, sleep: e.target.value })} />
                   </div>
                   <div className="field"><label>Jitter %</label>
@@ -713,7 +713,7 @@ export function Hosts() {
                 } catch (e: any) {
                   pushToast('err', e?.message || String(e))
                 }
-              }}>保存</button>
+              }}>{t('保存')}</button>
             </div>
           </div>
         </div>

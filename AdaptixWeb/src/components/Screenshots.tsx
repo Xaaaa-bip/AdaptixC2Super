@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { EmptyState } from './ui'
 import { PageTips } from './PageTips'
 
@@ -100,11 +101,11 @@ export function Screenshots() {
   return (
     <div className="page">
       <div className="toolbar">
-        <input type="search" placeholder="搜索截图 / 主机 / 用户" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button onClick={() => refresh()}>刷新</button>
+        <input type="search" placeholder={t('搜索截图 / 主机 / 用户')} value={q} onChange={(e) => setQ(e.target.value)} />
+        <button onClick={() => refresh()}>{t('刷新')}</button>
         <div className="stats"><span>{view.length} 张截图</span></div>
         <PageTips id="screens">
-          <p>截图来源：Windows 主机在终端/右键执行 <code>screenshot_bof</code>。</p>
+          <p>{t('截图来源：Windows 主机在终端/右键执行')} <code>screenshot_bof</code>。</p>
           <p><b>Linux 主机无截图能力</b>，此页不会出现 Linux 截图。</p>
         </PageTips>
       </div>
@@ -115,7 +116,7 @@ export function Screenshots() {
           ) : (
             <table>
               <thead>
-                <tr><th>ID</th><th>用户</th><th>主机</th><th>备注</th><th>时间</th><th style={{ width: 120 }}></th></tr>
+                <tr><th>ID</th><th>{t('用户')}</th><th>{t('主机')}</th><th>备注</th><th>{t('时间')}</th><th style={{ width: 120 }}></th></tr>
               </thead>
               <tbody>
                 {view.map((s: any, i) => {
@@ -128,7 +129,7 @@ export function Screenshots() {
                       <td>{screenNote(s)}</td>
                       <td className="dim">{screenDate(s)}</td>
                       <td style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={(e) => { e.stopPropagation(); openPreview(id) }}>预览</button>
+                        <button onClick={(e) => { e.stopPropagation(); openPreview(id) }}>{t('预览')}</button>
                         <button className="danger" onClick={async (e) => {
                           e.stopPropagation()
                           if (!id || !confirm('删除截图？')) return

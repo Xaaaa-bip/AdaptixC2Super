@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { clamp, isAgentOnline } from '../utils'
 import { PageTips } from './PageTips'
 import { DeviceIcon, DEVICE_KINDS, ROLE_CHOICES, deviceMeta, roleToKind } from './DeviceIcons'
@@ -682,7 +683,7 @@ export function Graph() {
   return (
     <div className="page graph-page">
       <div className="toolbar">
-        <strong>拓扑图</strong>
+        <strong>{t('拓扑图')}</strong>
         <input type="search" placeholder="过滤主机" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 180 }} />
         {/* ★ 这个 stopPropagation 不是可选的。上面那个 window 级 click 监听会把
             addOpen 设回 false；本按钮用的是普通 onClick（右键菜单们由 onContextMenu
@@ -692,7 +693,7 @@ export function Graph() {
         <button
           type="button"
           className="ghost"
-          title="在图上添加一个没有 agent 的设备（交换机 / 防火墙 / 数据库…）"
+          title={t('在图上添加一个没有 agent 的设备（交换机 / 防火墙 / 数据库…）')}
           onClick={(e) => { e.stopPropagation(); setMenu(null); setAddOpen((v) => !v) }}
         >
           添加设备 ▾
@@ -706,14 +707,14 @@ export function Graph() {
           {board.devices.length > 0 && <span className="dim">· {board.devices.length} 设备</span>}
         </div>
         <PageTips id="graph">
-          <p>拓扑图展示主机与 pivot 链路；点击节点打开对应主机控制台。</p>
+          <p>{t('拓扑图展示主机与 pivot 链路；点击节点打开对应主机控制台。')}</p>
           <p>pivot 由控制台 <code>link</code> / <code>unlink</code> 命令建立与拆除。</p>
-          <p><b>滚轮</b>缩放（以鼠标位置为中心），<b>拖动空白处</b>平移，<b>双击空白处</b>回到 100%。</p>
+          <p><b>滚轮</b>缩放（以鼠标位置为中心），<b>拖动空白处</b>平移，<b>{t('双击空白处')}</b>回到 100%。</p>
           <p><b>拖动节点</b>可手工摆放；位置、手工设备与连线都存在<b>服务端</b>，所有操作员共享。</p>
           <p><b>右键节点</b>：连线、标记已控/未控、改名、改类型、删除、设为角色。</p>
           <p>交换机 / 防火墙 / 数据库这类<b>没有 agent 的设备</b>用「添加设备」画；已控=青、未控=灰。</p>
           <p>手工设备可以右键「<b>设置地址</b>」填 <code>IP:PORT</code>（<b>非必须</b>，留空即不显示）。</p>
-          <p>给已有 beacon 的主机打「数据库 / 堡垒机…」<b>标签</b>，卡片上会自动出现对应图标。</p>
+          <p>给已有 beacon 的主机打「数据库 / 堡垒机…」<b>{t('标签')}</b>，卡片上会自动出现对应图标。</p>
         </PageTips>
       </div>
 
@@ -939,8 +940,8 @@ export function Graph() {
 
               {nodes.length === 0 && devices.length === 0 && (
                 <g transform={`translate(${W / 2},${H / 2})`}>
-                  <text textAnchor="middle" className="graph-empty-title">暂无主机</text>
-                  <text y={26} textAnchor="middle" className="graph-empty-hint">agent 上线后自动出现在拓扑中</text>
+                  <text textAnchor="middle" className="graph-empty-title">{t('暂无主机')}</text>
+                  <text y={26} textAnchor="middle" className="graph-empty-hint">{t('agent 上线后自动出现在拓扑中')}</text>
                   <text y={48} textAnchor="middle" className="graph-empty-hint">也可以用工具栏的「添加设备」先画交换机 / 防火墙这类没有 agent 的设备</text>
                 </g>
               )}
@@ -949,8 +950,8 @@ export function Graph() {
         </div>
 
         <div className="graph-legend">
-          <span><i className="lgd lgd-live" />在线</span>
-          <span><i className="lgd lgd-dead" />离线</span>
+          <span><i className="lgd lgd-live" />{t('在线')}</span>
+          <span><i className="lgd lgd-dead" />{t('离线')}</span>
           {/* 没有 pivot 时不摆这条图例 —— 解释一个不存在的东西只会让人去找它 */}
           {edges.length > 0 && <span><i className="lgd lgd-pivot" />pivot 链路</span>}
           {board.devices.some((d) => d.controlled) && <span><i className="lgd lgd-ctrl" />设备·已控</span>}
@@ -993,10 +994,10 @@ export function Graph() {
                   <span className="dim">{t.sub}</span>
                 </button>
               ))}
-              {allTargets.length <= 1 && <div className="dim" style={{ padding: '6px 8px' }}>图上还没有别的节点</div>}
+              {allTargets.length <= 1 && <div className="dim" style={{ padding: '6px 8px' }}>{t('图上还没有别的节点')}</div>}
             </div>
             <div className="sep" />
-            <button type="button" onClick={() => setLinkFrom(null)}>取消</button>
+            <button type="button" onClick={() => setLinkFrom(null)}>{t('取消')}</button>
           </div>
         )}
 

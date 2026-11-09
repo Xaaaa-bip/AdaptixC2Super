@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { copyText, fmtRelative, isAgentOnline, isLinuxAgent } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
@@ -154,7 +155,7 @@ export function CmdExec({ agentId }: { agentId: string }) {
         <span className="cmd-exec-host-meta mono">{agent?.a_name || 'agent'} · {agent?.a_internal_ip || agent?.a_external_ip || '无地址'}</span>
         <span style={{ flex: 1 }} />
         <button className="ghost" onClick={() => openUiTab('tasks')} title="查看这台主机的任务">任务 {mineTasks.length}</button>
-        <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>复制回显</button>
+        <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>{t('复制回显')}</button>
         <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>清空回显</button>
       </div>
 
@@ -196,9 +197,9 @@ export function CmdExec({ agentId }: { agentId: string }) {
         <aside className="cmd-exec-history">
           <div className="cmd-side-hd">
             <span>最近命令</span>
-            <button className="ghost" disabled={!hist.length} onClick={() => setHist([])}>清除</button>
+            <button className="ghost" disabled={!hist.length} onClick={() => setHist([])}>{t('清除')}</button>
           </div>
-          {hist.length === 0 ? <div className="cmd-side-empty">提交过的命令会出现在这里，可点击重放。</div> : (
+          {hist.length === 0 ? <div className="cmd-side-empty">{t('提交过的命令会出现在这里，可点击重放。')}</div> : (
             <div className="cmd-side-list">
               {[...hist].reverse().slice(0, 12).map((item) => (
                 <button key={item} className="cmd-history-item" disabled={!online} onClick={() => void submitLine(item)} title={`重放 ${item}`}>

@@ -199,7 +199,7 @@ export function CommandPalette({ open, onClose, go }: Props) {
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索页面、主机、操作…"
+            placeholder={t('搜索页面、主机、操作…')}
             onKeyDown={(e) => {
               if (e.key === 'Escape') { e.preventDefault(); onClose() }
               if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((v) => Math.min(v + 1, Math.max(filtered.length - 1, 0))) }
@@ -210,7 +210,7 @@ export function CommandPalette({ open, onClose, go }: Props) {
           <kbd className="kbd">Esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>
-          {filtered.length === 0 && <div className="palette-empty">无匹配项</div>}
+          {filtered.length === 0 && <div className="palette-empty">{t('无匹配项')}</div>}
           {filtered.map((a, i) => {
             const showGroup = a.group !== lastGroup
             lastGroup = a.group
@@ -233,7 +233,7 @@ export function CommandPalette({ open, onClose, go }: Props) {
         </div>
         <div className="palette-foot">
           <span><kbd className="kbd">↑↓</kbd> 选择</span>
-          <span><kbd className="kbd">Enter</kbd> 执行</span>
+          <span><kbd className="kbd">Enter</kbd> {t('执行')}</span>
           <span><kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">K</kbd> 开关</span>
         </div>
       </div>

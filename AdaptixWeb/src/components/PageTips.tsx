@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { t } from '../i18n'
 import type { ReactNode } from 'react'
 
 /**
@@ -37,7 +38,7 @@ export function PageTips({ id, children }: { id: string; children: ReactNode }) 
       <button
         type="button"
         className="ghost ico tips-btn"
-        title="操作提示"
+        title={t('操作提示')}
         onClick={() => setOpen((v) => !v)}
       >
         ?
@@ -45,8 +46,8 @@ export function PageTips({ id, children }: { id: string; children: ReactNode }) 
       {open && (
         <div className="page-tips">
           <div className="page-tips-head">
-            <span>操作提示</span>
-            <button type="button" className="ghost ico" title="关闭" onClick={() => setOpen(false)}>×</button>
+            <span>{t('操作提示')}</span>
+            <button type="button" className="ghost ico" title={t('关闭')} onClick={() => setOpen(false)}>×</button>
           </div>
           <div className="page-tips-body">{children}</div>
         </div>

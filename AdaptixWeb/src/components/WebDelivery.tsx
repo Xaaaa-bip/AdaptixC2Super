@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { AGENT_PROFILES, defaultAgentConfig } from '../api/listeners'
 import { copyText } from '../utils'
 import { PageTips } from './PageTips'
@@ -349,7 +350,7 @@ function CmdBlock({
               {loading ? '混淆中…' : '参数混淆'}
             </button>
           )}
-          <button className="ghost wd-copy" onClick={onCopy}>复制</button>
+          <button className="ghost wd-copy" onClick={onCopy}>{t('复制')}</button>
         </div>
       </div>
       <textarea ref={ref} className="wd-cmd mono" readOnly rows={1} value={value} />
@@ -363,7 +364,7 @@ function CmdBlock({
           {done.err ? (
             <div className="hint warn-hint">{done.err}</div>
           ) : done.variants.length === 0 ? (
-            <div className="hint warn-hint">服务端没有返回任何变体</div>
+            <div className="hint warn-hint">{t('服务端没有返回任何变体')}</div>
           ) : (
             <>
               <div className="wd-axf-hd">
@@ -397,9 +398,9 @@ function CmdBlock({
                   <div className={`axf-item${done.issues[i] ? ' axf-item-bad' : ''}`} key={i}>
                     <div className="axf-item-hd">
                       <span className="axf-n">#{i + 1}</span>
-                      {done.issues[i] && <span className="axf-badge">有风险</span>}
+                      {done.issues[i] && <span className="axf-badge">{t('有风险')}</span>}
                       <span className="spacer" />
-                      <button className="ghost" onClick={() => axf.onCopyVariant(v, i)}>复制</button>
+                      <button className="ghost" onClick={() => axf.onCopyVariant(v, i)}>{t('复制')}</button>
                     </div>
                     {done.issues[i] && <div className="hint warn-hint">{done.issues[i]}</div>}
                     {/* pre-wrap：变体里会出现同形字与 U+2013，折行但不省略 —— 要复制的是完整命令 */}
@@ -862,13 +863,13 @@ export function WebDelivery() {
       <div className="gen-layout">
         <div className="gen-main card">
           <div className="card-hd">
-            <h3>Web 投递 · 一键上线</h3>
+            <h3>{t('Web 投递 · 一键上线')}</h3>
             <span className="spacer" />
-            <span className="dim" style={{ fontSize: 12 }}>多 Agent：Beacon / Gopher / Linux</span>
+            <span className="dim" style={{ fontSize: 12 }}>{t('多 Agent：Beacon / Gopher / Linux')}</span>
             <PageTips id="delivery">
-              <p>一键上线：为每个监听器生成 curl / wget / python3 单行命令，目标机执行即回连。</p>
-              <p>目标机必须能<b>直连</b>此处的 C2 地址（公网地址）。</p>
-              <p>插件未加载时页面会提示；修改配置后需重新生成命令。</p>
+              <p>{t('一键上线：为每个监听器生成 curl / wget / python3 单行命令，目标机执行即回连。')}</p>
+              <p>{t('目标机必须能')}<b>{t('直连')}</b>{t('此处的 C2 地址（公网地址）。')}</p>
+              <p>{t('插件未加载时页面会提示；修改配置后需重新生成命令。')}</p>
             </PageTips>
           </div>
           <div className="card-bd gen-body">
@@ -886,19 +887,19 @@ export function WebDelivery() {
               GopherTCP 同时可配 gopher / Linux Agent / macOS Agent，BeaconWS 可配 beacon / Linux Agent。
             </div>
 
-            <div className="gen-section-title">1. 投递路由</div>
+            <div className="gen-section-title">{t('1. 投递路由')}</div>
             <div className="field-grid-2">
               <div className="field">
                 <label>Script 路由</label>
                 <input value={scriptRoute} onChange={(e) => setScriptRoute(e.target.value)} placeholder="/deliver" />
               </div>
               <div className="field">
-                <label>Payload 路由</label>
+                <label>{t('Payload 路由')}</label>
                 <input value={payloadRoute} onChange={(e) => setPayloadRoute(e.target.value)} placeholder="/deliver/payload" />
               </div>
             </div>
             <div className="field">
-              <label>C2 Host URL（目标机访问的 teamserver，含 /api）</label>
+              <label>{t('C2 Host URL（目标机访问的 teamserver，含 /api）')}</label>
               <input
                 value={c2Host}
                 onChange={(e) => setC2Host(e.target.value)}
@@ -909,7 +910,7 @@ export function WebDelivery() {
               </div>
             </div>
 
-            <div className="gen-section-title">2. Agent / 监听器</div>
+            <div className="gen-section-title">{t('2. Agent / 监听器')}</div>
             <div className="field">
               <label>Agent</label>
               <div className="chip-row">
@@ -960,10 +961,10 @@ export function WebDelivery() {
               </div>
             )}
 
-            <div className="gen-section-title">3. 生成参数</div>
+            <div className="gen-section-title">{t('3. 生成参数')}</div>
             <div className="gen-params">
               <div className="field">
-                <label>格式</label>
+                <label>{t('格式')}</label>
                 <div className="chip-row">
                   {formats.map((f) => (
                     <button key={f} type="button" className={format === f ? 'primary' : ''} onClick={() => setFormat(f)}>
@@ -978,7 +979,7 @@ export function WebDelivery() {
                 )}
               </div>
               <div className="field">
-                <label>架构（空=按 UA 自动）</label>
+                <label>{t('架构（空=按 UA 自动）')}</label>
                 <div className="chip-row">
                   <button type="button" className={!arch ? 'primary' : ''} onClick={() => setArch('')}>自动</button>
                   {arches.map((a) => (
@@ -1053,9 +1054,9 @@ export function WebDelivery() {
           <div className="card-bd" style={{ padding: 14 }}>
             <div className="gen-summary" style={{ marginBottom: 12 }}>
               <div><span className="k">Agent</span><b>{agentName}</b></div>
-              <div><span className="k">格式</span><b>{format}</b></div>
-              <div><span className="k">架构</span><b className="mono">{arch || 'UA 自动'}</b></div>
-              <div><span className="k">监听</span><b className="mono">{listener || '未选'}</b></div>
+              <div><span className="k">{t('格式')}</span><b>{format}</b></div>
+              <div><span className="k">{t('架构')}</span><b className="mono">{arch || 'UA 自动'}</b></div>
+              <div><span className="k">{t('监听')}</span><b className="mono">{listener || '未选'}</b></div>
             </div>
 
             <div className="hint muted-hint" style={{ marginBottom: 10 }}>
@@ -1079,7 +1080,7 @@ export function WebDelivery() {
                 {/* 收益只有这一句是有 A/B 支撑的，就按实测说。PS 那一族本轮两组都没被
                     检测出来，所以明写「未测出」—— 不写成「都能过」，那是外推。 */}
                 <div className="hint muted-hint" style={{ marginTop: 10 }}>
-                  <b>参数混淆</b>把命令的参数写法打乱重排：语义不变、字面不同。
+                  <b>{t('参数混淆')}</b>把命令的参数写法打乱重排：语义不变、字面不同。
                   实测同一 URL 的 <code>certutil -urlcache -split -f …</code>，明文
                   <b> 3/3 </b>被 Defender 按命令行签名拦下（<code>Trojan:Win32/Ceprolad.A</code>，
                   载荷一个字节都没下来），同命令的 5 个混淆变体 <b>5/5</b> 跑起来了；
@@ -1087,7 +1088,7 @@ export function WebDelivery() {
                   混淆区只含下载段，输出路径留在区外 —— 实测 <code>%USERPROFILE%</code> 展开 15/15。
                   落点已从 <code>%TEMP%</code> 改为 <code>%USERPROFILE%</code>：实测
                   <code>%TEMP%</code> × <code>.exe</code> × <code>&amp;&amp; start</code> 是
-                  <b>命令行</b>签名 <code>Trojan:Win32/Commando.A!ml</code> 的触发合取
+                  <b>{t('命令行')}</b>签名 <code>Trojan:Win32/Commando.A!ml</code> 的触发合取
                   （交错 A/B：<code>%TEMP%</code> 拦 4/4、<code>%USERPROFILE%</code> 拦 0/4）。
                   ⚠ 但<b>真实载荷</b>在 <code>%USERPROFILE%</code> 上仍被同一签名记过 3 次，
                   而良性替身复现不出来（约 30 次运行 0 检测）⇒ 换落点<b>必要但不充分</b>，别当成已修完。

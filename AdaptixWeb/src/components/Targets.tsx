@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { EmptyState, PageShell } from './ui'
 import { PageTips } from './PageTips'
 
@@ -40,8 +41,8 @@ export function Targets() {
         toolbar={
           <>
             <button className="primary" onClick={() => setShow(true)}>+ 添加目标</button>
-            <input type="search" placeholder="搜索计算机 / IP / 标签" value={q} onChange={(e) => setQ(e.target.value)} />
-            <button onClick={() => refresh()}>刷新</button>
+            <input type="search" placeholder={t('搜索计算机 / IP / 标签')} value={q} onChange={(e) => setQ(e.target.value)} />
+            <button onClick={() => refresh()}>{t('刷新')}</button>
             <div className="stats"><span>{view.length} 个目标</span></div>
             <PageTips id="targets">
               <p>目标资产登记：计算机名/域/地址/标签/备注。</p>
@@ -51,11 +52,11 @@ export function Targets() {
         }
       >
         {view.length === 0 ? (
-          <EmptyState icon="◎" title="暂无目标" hint="可记录内网资产与备注" />
+          <EmptyState icon="◎" title={t('暂无目标')} hint={t('可记录内网资产与备注')} />
         ) : (
           <table className="tgt-table">
             <thead>
-              <tr><th>计算机</th><th>域</th><th>地址</th><th>系统</th><th>标签</th><th>备注</th><th></th></tr>
+              <tr><th>计算机</th><th>域</th><th>{t('地址')}</th><th>{t('系统')}</th><th>{t('标签')}</th><th>备注</th><th></th></tr>
             </thead>
             <tbody>
               {view.map((t: any, i) => {
@@ -81,7 +82,7 @@ export function Targets() {
                           await api.post('/api/targets/remove', { target_id_array: [id] })
                           await refresh()
                         } catch (e: any) { pushLog('err', e.message || String(e)) }
-                      }}>删除</button>
+                      }}>{t('删除')}</button>
                     </td>
                   </tr>
                 )
@@ -97,11 +98,11 @@ export function Targets() {
             <h2>添加目标</h2>
             <div className="field"><label>计算机</label><input value={computer} onChange={(e) => setComputer(e.target.value)} /></div>
             <div className="field"><label>域</label><input value={domain} onChange={(e) => setDomain(e.target.value)} /></div>
-            <div className="field"><label>地址</label><input value={address} onChange={(e) => setAddress(e.target.value)} /></div>
-            <div className="field"><label>标签</label><input value={tag} onChange={(e) => setTag(e.target.value)} /></div>
+            <div className="field"><label>{t('地址')}</label><input value={address} onChange={(e) => setAddress(e.target.value)} /></div>
+            <div className="field"><label>{t('标签')}</label><input value={tag} onChange={(e) => setTag(e.target.value)} /></div>
             <div className="field"><label>备注</label><input value={info} onChange={(e) => setInfo(e.target.value)} /></div>
             <div className="btns">
-              <button disabled={busy} onClick={() => setShow(false)}>取消</button>
+              <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !computer} onClick={async () => {
                 setBusy(true)
                 try {
@@ -119,7 +120,7 @@ export function Targets() {
                 } catch (e: any) {
                   pushLog('err', e.message || String(e))
                 } finally { setBusy(false) }
-              }}>保存</button>
+              }}>{t('保存')}</button>
             </div>
           </div>
         </div>

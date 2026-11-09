@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { isAgentOnline, isLinuxAgent } from '../utils'
 import { vncViewerUrl } from '../api/channel'
 import { EmptyState } from './ui'
@@ -185,7 +186,7 @@ export function VncPanel({ agentId }: { agentId: string }) {
   if (isLinuxAgent(agent)) {
     return (
       <div className="page">
-        <EmptyState icon="⧉" title="VNC 不支持 Linux 主机" hint="linux_agent 无桌面捕获能力；本面板仅适用于 Windows 主机。" />
+        <EmptyState icon="⧉" title={t('VNC 不支持 Linux 主机')} hint="linux_agent 无桌面捕获能力；本面板仅适用于 Windows 主机。" />
       </div>
     )
   }
@@ -224,15 +225,15 @@ export function VncPanel({ agentId }: { agentId: string }) {
           </button>
         ) : (
           <>
-            <button className="danger" disabled={busy} onClick={stopAll}>停止</button>
+            <button className="danger" disabled={busy} onClick={stopAll}>{t('停止')}</button>
             <button disabled={busy} onClick={reloadViewer}>重连画面</button>
           </>
         )}
-        <button className="ghost" disabled={busy} onClick={listSessions}>刷新</button>
+        <button className="ghost" disabled={busy} onClick={listSessions}>{t('刷新')}</button>
         {viewer && (
           <a className="buttonish" href={viewer} target="_blank" rel="noreferrer">新窗口</a>
         )}
-        <button className="ghost" onClick={() => closeUiTab(`vnc:${agentId}` as any)}>关闭</button>
+        <button className="ghost" onClick={() => closeUiTab(`vnc:${agentId}` as any)}>{t('关闭')}</button>
         <PageTips id="vnc">
           <p>VNC 桌面仅适用于 <b>Windows 主机</b>；Linux 主机显示不支持提示。</p>
           <p>启动后浏览器内嵌查看器访问桌面。</p>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { isLinuxAgent } from '../utils'
 import { PageTips } from './PageTips'
 
@@ -144,12 +145,12 @@ export function Tunnels() {
   return (
     <div className="page">
       <div className="toolbar">
-        <button className="primary" onClick={() => setShow(true)}>+ 新建隧道</button>
-        <button onClick={() => refresh()}>刷新</button>
+        <button className="primary" onClick={() => setShow(true)}>{t('+ 新建隧道')}</button>
+        <button onClick={() => refresh()}>{t('刷新')}</button>
         <div className="stats"><span>{list.length} 条隧道</span></div>
         <PageTips id="tunnels">
-          <p>新建隧道：SOCKS4/SOCKS5 代理、本地/远程端口转发。</p>
-          <p>SOCKS5 支持用户名密码认证。</p>
+          <p>{t('新建隧道：SOCKS4/SOCKS5 代理、本地/远程端口转发。')}</p>
+          <p>{t('SOCKS5 支持用户名密码认证。')}</p>
           <p><b>Linux 主机暂不支持 RPF 反向转发</b>（选项自动禁用）。</p>
         </PageTips>
       </div>
@@ -157,10 +158,10 @@ export function Tunnels() {
         {list.length === 0 ? (
           <div className="empty">
             <div className="big">⇄</div>
-            <div>暂无隧道</div>
-            <div className="dim" style={{ marginTop: 6 }}>SOCKS / 端口转发监听在 Teamserver 侧</div>
+            <div>{t('暂无隧道')}</div>
+            <div className="dim" style={{ marginTop: 6 }}>{t('SOCKS / 端口转发监听在 Teamserver 侧')}</div>
             <div style={{ marginTop: 12 }}>
-              <button className="primary" onClick={() => setShow(true)}>+ 新建隧道</button>
+              <button className="primary" onClick={() => setShow(true)}>{t('+ 新建隧道')}</button>
             </div>
           </div>
         ) : (
@@ -168,19 +169,19 @@ export function Tunnels() {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>状态</th>
-                <th>主机</th>
-                <th>类型</th>
+                <th>{t('状态')}</th>
+                <th>{t('主机')}</th>
+                <th>{t('类型')}</th>
                 <th>信息</th>
-                <th>监听</th>
-                <th>目标</th>
+                <th>{t('监听')}</th>
+                <th>{t('目标')}</th>
                 <th style={{ width: 240 }}></th>
               </tr>
             </thead>
             <tbody>
-              {list.map((t, i) => {
-                const id = tunnelId(t)
-                const active = isActive(t)
+              {list.map((tn, i) => {
+                const id = tunnelId(tn)
+                const active = isActive(tn)
                 return (
                   <tr key={id || i}>
                     <td className="mono">{id || '-'}</td>
@@ -189,22 +190,22 @@ export function Tunnels() {
                         {active ? '运行中' : '已停止'}
                       </span>
                     </td>
-                    <td className="mono">{t.p_agent_id || t.a_id || t.agent_id || '-'}</td>
-                    <td>{t.p_type || t.type || '-'}</td>
-                    <td>{t.p_info || t.desc || t.info || '-'}</td>
-                    <td className="mono">{t.p_interface || t.l_host || '-'}:{t.p_port || t.l_port || '-'}</td>
-                    <td className="mono">{t.p_fhost || t.p_target_host || t.t_host || '-'}:{t.p_fport || t.p_target_port || t.t_port || '-'}</td>
+                    <td className="mono">{tn.p_agent_id || tn.a_id || tn.agent_id || '-'}</td>
+                    <td>{tn.p_type || tn.type || '-'}</td>
+                    <td>{tn.p_info || tn.desc || tn.info || '-'}</td>
+                    <td className="mono">{tn.p_interface || tn.l_host || '-'}:{tn.p_port || tn.l_port || '-'}</td>
+                    <td className="mono">{tn.p_fhost || tn.p_target_host || tn.t_host || '-'}:{tn.p_fport || tn.p_target_port || tn.t_port || '-'}</td>
                     <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {active ? (
-                        <button onClick={() => doStop(id)}>停止</button>
+                        <button onClick={() => doStop(id)}>{t('停止')}</button>
                       ) : (
                         <button className="primary" onClick={() => doEnable(id)}>启用</button>
                       )}
                       <button onClick={() => {
                         setEditId(id)
-                        setEditInfo(String(t.p_info || t.desc || t.info || ''))
-                      }}>编辑</button>
-                      <button className="danger" onClick={() => doDelete(id)}>删除</button>
+                        setEditInfo(String(tn.p_info || tn.desc || tn.info || ''))
+                      }}>{t('编辑')}</button>
+                      <button className="danger" onClick={() => doDelete(id)}>{t('删除')}</button>
                     </td>
                   </tr>
                 )
@@ -225,7 +226,7 @@ export function Tunnels() {
             </div>
             <div className="hint">仅修改描述；端口/类型需删除后重建。</div>
             <div className="btns">
-              <button disabled={busy} onClick={() => setEditId(null)}>取消</button>
+              <button disabled={busy} onClick={() => setEditId(null)}>{t('取消')}</button>
               <button className="primary" disabled={busy} onClick={doSaveInfo}>{busy ? '保存中…' : '保存'}</button>
             </div>
           </div>
@@ -236,7 +237,7 @@ export function Tunnels() {
         <div className="mask" onClick={() => !busy && setShow(false)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()}>
             <h2>新建隧道</h2>
-            <div className="field"><label>主机</label>
+            <div className="field"><label>{t('主机')}</label>
               <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
                 <option value="">选择上线主机</option>
                 {agentOptions.map((a) => (
@@ -244,7 +245,7 @@ export function Tunnels() {
                 ))}
               </select>
             </div>
-            <div className="field"><label>类型</label>
+            <div className="field"><label>{t('类型')}</label>
               <select value={kind} onChange={(e) => setKind(e.target.value as any)}>
                 <option value="socks5">SOCKS5</option>
                 <option value="socks4">SOCKS4</option>
@@ -259,7 +260,7 @@ export function Tunnels() {
             {(kind === 'socks5' || kind === 'socks4' || kind === 'lportfwd') && (
               <>
                 <div className="field"><label>监听地址</label><input value={lhost} onChange={(e) => setLhost(e.target.value)} /></div>
-                <div className="field"><label>监听端口</label><input type="number" value={lport} onChange={(e) => setLport(Number(e.target.value))} /></div>
+                <div className="field"><label>{t('监听端口')}</label><input type="number" value={lport} onChange={(e) => setLport(Number(e.target.value))} /></div>
               </>
             )}
             {kind === 'lportfwd' && (
@@ -284,15 +285,15 @@ export function Tunnels() {
                 </div>
                 {useAuth && (
                   <>
-                    <div className="field"><label>用户名</label><input value={user} onChange={(e) => setUser(e.target.value)} /></div>
-                    <div className="field"><label>密码</label><input value={pass} onChange={(e) => setPass(e.target.value)} /></div>
+                    <div className="field"><label>{t('用户名')}</label><input value={user} onChange={(e) => setUser(e.target.value)} /></div>
+                    <div className="field"><label>{t('密码')}</label><input value={pass} onChange={(e) => setPass(e.target.value)} /></div>
                   </>
                 )}
               </>
             )}
             <div className="hint">隧道监听在 Teamserver 侧（listen=true）。停止后配置保留，可再启用；删除才会移除。</div>
             <div className="btns">
-              <button disabled={busy} onClick={() => setShow(false)}>取消</button>
+              <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !agentId || (linuxSelected && kind === 'rportfwd')} onClick={async () => {
                 setBusy(true)
                 try {

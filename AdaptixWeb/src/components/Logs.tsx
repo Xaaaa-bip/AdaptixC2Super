@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { copyText } from '../utils'
 import { EmptyState } from './ui'
 import { PageTips } from './PageTips'
@@ -23,7 +24,7 @@ export function Logs() {
   return (
     <div className="page">
       <div className="toolbar">
-        <input type="search" placeholder="搜索日志" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input type="search" placeholder={t('搜索日志')} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="chip-row">
           {(['all', 'info', 'ok', 'warn', 'err'] as const).map((lv) => (
             <button key={lv} type="button" className={level === lv ? 'primary' : ''} onClick={() => setLevel(lv)}>
@@ -36,10 +37,10 @@ export function Logs() {
           const text = list.map((l) => `${new Date(l.ts).toISOString()} [${l.level}] ${l.text}`).join('\n')
           const ok = await copyText(text)
           pushToast(ok ? 'ok' : 'err', ok ? '日志已复制' : '复制失败')
-        }}>复制</button>
+        }}>{t('复制')}</button>
         <PageTips id="logs">
-          <p>客户端本地事件日志：级别过滤 + 搜索 + 复制为文本。</p>
-          <p>仅记录本浏览器会话内的事件，非服务器日志。</p>
+          <p>{t('客户端本地事件日志：级别过滤 + 搜索 + 复制为文本。')}</p>
+          <p>{t('仅记录本浏览器会话内的事件，非服务器日志。')}</p>
         </PageTips>
       </div>
       <div className="log-page">

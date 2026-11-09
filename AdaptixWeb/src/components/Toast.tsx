@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 
 export function ToastHost() {
   const toasts = useStore((s) => s.toasts)

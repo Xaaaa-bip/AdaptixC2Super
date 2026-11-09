@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { fmtTime, isAgentOnline } from '../utils'
 
 type Message = { id: string; role: 'assistant' | 'user' | 'error'; text: string; ts: number }
@@ -159,11 +160,11 @@ export function AICollab() {
   return (
     <div className="ai-page ai-battle-page">
       <header className="ai-header">
-        <div className="ai-title-block"><span className="ai-kicker">AI BATTLE ASSISTANT</span><h2>对战助手</h2><p>围绕一个目标主机分析现状、任务和下一步。</p></div>
+        <div className="ai-title-block"><span className="ai-kicker">AI BATTLE ASSISTANT</span><h2>{t('对战助手')}</h2><p>围绕一个目标主机分析现状、任务和下一步。</p></div>
         <div className="ai-header-actions">
           <span className={'ai-mode ' + (hasAI ? 'configured' : '')}><i /> {mode}</span>
-          <button className="ghost" onClick={() => openUiTab('chat')}>团队聊天</button>
-          <button className="ghost" onClick={() => setSettingsOpen(true)}>AI 设置</button>
+          <button className="ghost" onClick={() => openUiTab('chat')}>{t('团队聊天')}</button>
+          <button className="ghost" onClick={() => setSettingsOpen(true)}>{t('AI 设置')}</button>
           <button className="ghost" onClick={() => setMessages([welcome()])}>清空对话</button>
         </div>
       </header>
@@ -171,13 +172,13 @@ export function AICollab() {
         <div className="ai-battle-context">
           <label className="ai-target-select"><span>目标主机</span><select value={targetId} onChange={(event) => chooseTarget(event.target.value)}><option value="">整个工作区</option>{Object.values(agents).map((agent) => <option key={agent.a_id} value={agent.a_id}>{agent.a_computer || agent.a_id}</option>)}</select></label>
           <span className="ai-context-stat"><b>{target ? (isAgentOnline(target) ? '在线' : '离线') : online + '/' + total}</b>{target ? ' · ' + (target.a_name || 'agent') : ' 台在线'}</span>
-          <span className="ai-context-stat"><b>{targetTasks.filter((task) => !task.a_completed).length}</b> 个任务执行中</span>
+          <span className="ai-context-stat"><b>{targetTasks.filter((task) => !task.a_completed).length}</b> {t('个任务执行中')}</span>
           <span className="ai-context-stat"><b>{logs.length}</b> 条事件</span>
-          {target && <button className="ghost ai-target-action" onClick={() => openConsole(target.a_id)}>打开终端 →</button>}
-          <button className="ghost ai-target-action" onClick={() => openUiTab('tasks')}>任务中心 →</button>
+          {target && <button className="ghost ai-target-action" onClick={() => openConsole(target.a_id)}>{t('打开终端 →')}</button>}
+          <button className="ghost ai-target-action" onClick={() => openUiTab('tasks')}>{t('任务中心 →')}</button>
         </div>
         <section className="ai-assistant-card">
-          <div className="ai-assistant-head"><div><b>对战助手</b><span>{hasAI ? '已连接外部模型' : '本地上下文模式'}</span></div>{notice && <span className="ai-notice">{notice}</span>}</div>
+          <div className="ai-assistant-head"><div><b>{t('对战助手')}</b><span>{hasAI ? '已连接外部模型' : '本地上下文模式'}</span></div>{notice && <span className="ai-notice">{notice}</span>}</div>
           <div className="ai-message-list">
             {messages.map((message) => <article key={message.id} className={'ai-message ' + message.role}><div className="ai-message-avatar">{message.role === 'user' ? '你' : message.role === 'error' ? '!' : 'AI'}</div><div className="ai-message-body"><div className="ai-message-meta"><b>{message.role === 'user' ? '你' : message.role === 'error' ? 'AI 请求' : '对战助手'}</b><span>{fmtTime(message.ts)}</span></div><div className="ai-message-text">{message.text}</div></div></article>)}
             {sending && <div className="ai-thinking"><i /> 正在分析当前上下文…</div>}
@@ -189,7 +190,7 @@ export function AICollab() {
         <p className="ai-safety-note">助手只提供分析和建议，命令执行仍需你在终端或任务中心确认。</p>
       </main>
       {settingsOpen && <div className="ai-settings-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><section className="ai-settings" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
-        <div className="ai-settings-head"><div><span className="ai-kicker">MODEL CONNECTION</span><h3 id="ai-settings-title">AI 设置</h3></div><button className="ghost" onClick={() => setSettingsOpen(false)}>关闭</button></div>
+        <div className="ai-settings-head"><div><span className="ai-kicker">MODEL CONNECTION</span><h3 id="ai-settings-title">{t('AI 设置')}</h3></div><button className="ghost" onClick={() => setSettingsOpen(false)}>{t('关闭')}</button></div>
         <p className="ai-settings-intro">填写后，点击发送才会把当前对话和工作区上下文发给该接口。配置只保存在当前浏览器。</p>
         <label>服务类型<select value={config.provider} onChange={(event) => { const provider = PROVIDERS.find((item) => item.id === event.target.value); setConfig((current) => ({ ...current, provider: event.target.value, baseUrl: provider?.baseUrl || '', model: provider?.model || '' })) }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
         <label>API Base URL<input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.openai.com/v1" /></label>

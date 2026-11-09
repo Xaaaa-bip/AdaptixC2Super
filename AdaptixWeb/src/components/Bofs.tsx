@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { bytesToB64, copyText, fileToB64, isAgentOnline, isLinuxAgent } from '../utils'
 import { clearCompletionCache } from '../lib/completions'
 import { EmptyState } from './ui'
@@ -714,7 +715,7 @@ export function Bofs() {
   return (
     <div className="page">
       <div className="toolbar">
-        <h2>BOF 模块</h2>
+        <h2>{t('BOF 模块')}</h2>
         <span className="dim" style={{ fontSize: 12 }}>
           {offline
             ? `离线兜底：${rows.length} 个（未与服务端核对）`
@@ -726,7 +727,7 @@ export function Bofs() {
           onChange={(e) => setAgentId(e.target.value)}
           title="目标主机（仅在线）"
         >
-          {onlineAgents.length === 0 && <option value="">无在线主机</option>}
+          {onlineAgents.length === 0 && <option value="">{t('无在线主机')}</option>}
           {onlineAgents.map((a: any) => (
             <option key={a.a_id} value={a.a_id}>
               {a.a_computer || a.a_id} ({a.a_username || '-'})
@@ -763,7 +764,7 @@ export function Bofs() {
           style={{ display: 'none' }}
           onChange={(e) => void onPickFile(e)}
         />
-        <button type="button" className="ghost" disabled={uploading || !api} onClick={() => fileRef.current?.click()} title="上传 .c（自动编译）或 .o（直接投递）">
+        <button type="button" className="ghost" disabled={uploading || !api} onClick={() => fileRef.current?.click()} title={t('上传 .c（自动编译）或 .o（直接投递）')}>
           {uploading ? '上传中…' : '上传 BOF'}
         </button>
         <button type="button" className="ghost" disabled={compileAll || !api} onClick={() => void compileEvery()} title="把服务端 src_agent/bofs/*.c 全部重编一遍">
@@ -773,8 +774,8 @@ export function Bofs() {
           <p>BOF 在 <b>agent 进程内</b>执行（内存加载 .o，无 execve 痕迹）。</p>
           <p>列表<b>由服务端 <code>/api/bofs/list</code> 动态给出</b>——服务端有几个就显示几个，新增或上传的会自动出现。</p>
           <p><code>基路径</code>默认跟随服务端；<code>memfd_exec / ld_preload_install / ko_load / ebpf_load</code> 的路径参数则是<b>目标机</b>上的路径。</p>
-          <p>上传 <code>.c</code> 会<b>自动编译</b>：配方与 <code>tools/deploy.sh</code> 的 gcc 命令行逐字同源，所以重编未改动的源码产物字节不变。</p>
-          <p><b>执行</b>后自动打开该主机的控制台查看输出；勾选<b>异步</b>适合长任务（ebpf_load / suid_scan 建议异步）。</p>
+          <p>{t('上传')} <code>.c</code> 会<b>自动编译</b>：配方与 <code>tools/deploy.sh</code> 的 gcc 命令行逐字同源，所以重编未改动的源码产物字节不变。</p>
+          <p><b>{t('执行')}</b>后自动打开该主机的控制台查看输出；勾选<b>{t('异步')}</b>适合长任务（ebpf_load / suid_scan 建议异步）。</p>
           <p>卡上的 <b>▸ 用法</b>是各模块 <code>.c</code> 头注释里的实战约束；带 <span className="bof-hot-mark">★</span> 的那条忽略了会静默出错或不可逆。</p>
           <p>控制台等价命令：<code>execute bof &lt;服务器路径&gt; [参数...] [async]</code>。开关标记名随 agent 变（linux 是 <code>async</code>，beacon 是 <code>-a</code>）；写错不会报错，而会被并进前一个参数里。</p>
         </PageTips>
@@ -793,8 +794,8 @@ export function Bofs() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <b>{out.title}</b>
             <span style={{ flex: 1 }} />
-            <button type="button" className="ghost" onClick={() => void copyText(out.text).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '已复制' : '复制失败'))}>复制</button>
-            <button type="button" className="ghost" onClick={() => setOut(null)}>关闭</button>
+            <button type="button" className="ghost" onClick={() => void copyText(out.text).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '已复制' : '复制失败'))}>{t('复制')}</button>
+            <button type="button" className="ghost" onClick={() => setOut(null)}>{t('关闭')}</button>
           </div>
           <pre className="mono" style={{ margin: '6px 0 0', maxHeight: 220, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>{out.text || '(空)'}</pre>
         </div>

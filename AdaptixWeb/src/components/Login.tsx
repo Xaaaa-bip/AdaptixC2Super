@@ -74,7 +74,7 @@ export function Login() {
         </div>
 
         <form className="lx-form" onSubmit={onSubmit}>
-          <label className="lx-label">用户名</label>
+          <label className="lx-label">{t('用户名')}</label>
           <input
             className="lx-input"
             value={username}
@@ -84,7 +84,7 @@ export function Login() {
             spellCheck={false}
           />
 
-          <label className="lx-label">密码</label>
+          <label className="lx-label">{t('密码')}</label>
           <div className="lx-pass">
             <input
               className="lx-input"
@@ -108,7 +108,7 @@ export function Login() {
                 className="lx-input"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="留空则使用当前站点 /api"
+                placeholder={t('留空则使用当前站点 /api')}
                 autoComplete="url"
                 spellCheck={false}
               />
@@ -124,7 +124,7 @@ export function Login() {
 
         <div className="lx-foot">
           <kbd>⌘</kbd><kbd>K</kbd>
-          <span>登录后可快速跳转</span>
+          <span>{t('登录后可快速跳转')}</span>
         </div>
       </div>
     </div>
