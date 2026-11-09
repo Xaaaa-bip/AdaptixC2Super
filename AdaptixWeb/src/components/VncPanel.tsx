@@ -33,7 +33,7 @@ export function VncPanel({ agentId }: { agentId: string }) {
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState('')
   const [err, setErr] = useState('')
-  const [hint, setHint] = useState('一键启动：上传 vnc_stream → 建立隧道 → 打开画面。需主机在线。')
+  const [hint, setHint] = useState(t('一键启动：上传 vnc_stream → 建立隧道 → 打开画面。需主机在线。'))
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const seq = useRef(0)
 
@@ -78,7 +78,7 @@ export function VncPanel({ agentId }: { agentId: string }) {
   /** Full start: deploy agent stream + tunnel via beacon, then open viewer by local port. */
   async function startAll() {
     if (!live) {
-      pushToast('warn', '主机离线，无法启动 VNC')
+      pushToast('warn', t('主机离线，无法启动 VNC'))
       return
     }
     if (!api) {
@@ -136,7 +136,7 @@ export function VncPanel({ agentId }: { agentId: string }) {
       setSession(sess)
       setHint('画面应自动连接。若仍黑屏，再等几秒后点「重连画面」。')
       setPhase('')
-      pushToast('ok', 'VNC 已启动')
+      pushToast('ok', t('VNC 已启动'))
       pushLog('ok', `VNC start agent=${agentId} local=${localPort}->${targetPort}`, false)
       await listSessions()
     } catch (e: any) {
@@ -196,7 +196,7 @@ export function VncPanel({ agentId }: { agentId: string }) {
       <div className="toolbar">
         <strong>VNC</strong>
         <span className="mono dim">{agent?.a_computer || agentId}</span>
-        <span className={`tag ${live ? 'online' : 'offline'}`}>{live ? '在线' : '离线'}</span>
+        <span className={`tag ${live ? 'online' : 'offline'}`}>{live ? t('在线') : t('离线')}</span>
         {session && <span className="tag listen">{session.status || 'active'}</span>}
         <div className="sep" />
         <label className="muted">Agent 端口</label>
@@ -211,7 +211,7 @@ export function VncPanel({ agentId }: { agentId: string }) {
             setLocalPort(n + 1000)
           }}
         />
-        <label className="muted">C2 本地</label>
+        <label className="muted">{t('C2 本地')}</label>
         <input
           type="number"
           style={{ width: 90 }}
@@ -221,22 +221,22 @@ export function VncPanel({ agentId }: { agentId: string }) {
         />
         {!session ? (
           <button className="primary" disabled={!live || busy} onClick={startAll}>
-            {busy ? (phase || '启动中…') : '一键启动'}
+            {busy ? (phase || '启动中…') : t('一键启动')}
           </button>
         ) : (
           <>
             <button className="danger" disabled={busy} onClick={stopAll}>{t('停止')}</button>
-            <button disabled={busy} onClick={reloadViewer}>重连画面</button>
+            <button disabled={busy} onClick={reloadViewer}>{t('重连画面')}</button>
           </>
         )}
         <button className="ghost" disabled={busy} onClick={listSessions}>{t('刷新')}</button>
         {viewer && (
-          <a className="buttonish" href={viewer} target="_blank" rel="noreferrer">新窗口</a>
+          <a className="buttonish" href={viewer} target="_blank" rel="noreferrer">{t('新窗口')}</a>
         )}
         <button className="ghost" onClick={() => closeUiTab(`vnc:${agentId}` as any)}>{t('关闭')}</button>
         <PageTips id="vnc">
-          <p>VNC 桌面仅适用于 <b>Windows 主机</b>；Linux 主机显示不支持提示。</p>
-          <p>启动后浏览器内嵌查看器访问桌面。</p>
+          <p>{t('VNC 桌面仅适用于')} <b>{t('Windows 主机')}</b>；Linux 主机显示不支持提示。</p>
+          <p>{t('启动后浏览器内嵌查看器访问桌面。')}</p>
         </PageTips>
       </div>
       {err && <div className="banner warn">{err}</div>}
@@ -244,25 +244,25 @@ export function VncPanel({ agentId }: { agentId: string }) {
       {!session ? (
         <div className="vnc-empty">
           <div className="big">⧉</div>
-          <div>尚未启动 VNC</div>
+          <div>{t('尚未启动 VNC')}</div>
           <div className="dim" style={{ marginTop: 8, maxWidth: 560, textAlign: 'center', lineHeight: 1.5 }}>{hint}</div>
           <div className="dim" style={{ marginTop: 10, maxWidth: 560, textAlign: 'center', lineHeight: 1.5 }}>
             正确顺序：先在 agent 启动 vnc_stream，再拉流。点「一键启动」会自动完成部署与打开。
           </div>
           {sessions.length > 0 && (
             <div style={{ marginTop: 16, width: 'min(520px, 90%)' }}>
-              <div className="dim" style={{ marginBottom: 6 }}>插件侧会话</div>
+              <div className="dim" style={{ marginBottom: 6 }}>{t('插件侧会话')}</div>
               {sessions.map((s) => (
                 <div key={s.id} className="panel-row" style={{ justifyContent: 'space-between', display: 'flex', gap: 8, padding: '8px 0' }}>
                   <span className="mono">{s.id}</span>
                   <span className="dim">{s.status} · {s.local_port}→{s.target_port}</span>
                   <span style={{ display: 'flex', gap: 6 }}>
-                    <button className="ghost" onClick={() => setSession(s)}>打开</button>
+                    <button className="ghost" onClick={() => setSession(s)}>{t('打开')}</button>
                     <button className="danger" onClick={async () => {
                       try { await api.post('/api/vnc/api/session/stop', { session_id: s.id }) } catch { /* */ }
                       if (session?.id === s.id) setSession(null)
                       listSessions()
-                    }}>停</button>
+                    }}>{t('停')}</button>
                   </span>
                 </div>
               ))}

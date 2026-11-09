@@ -28,7 +28,7 @@ export function Logs() {
         <div className="chip-row">
           {(['all', 'info', 'ok', 'warn', 'err'] as const).map((lv) => (
             <button key={lv} type="button" className={level === lv ? 'primary' : ''} onClick={() => setLevel(lv)}>
-              {lv === 'all' ? '全部' : lv}
+              {lv === 'all' ? t('全部') : lv}
             </button>
           ))}
         </div>
@@ -36,7 +36,7 @@ export function Logs() {
         <button onClick={async () => {
           const text = list.map((l) => `${new Date(l.ts).toISOString()} [${l.level}] ${l.text}`).join('\n')
           const ok = await copyText(text)
-          pushToast(ok ? 'ok' : 'err', ok ? '日志已复制' : '复制失败')
+          pushToast(ok ? 'ok' : 'err', ok ? '日志已复制' : t('复制失败'))
         }}>{t('复制')}</button>
         <PageTips id="logs">
           <p>{t('客户端本地事件日志：级别过滤 + 搜索 + 复制为文本。')}</p>
@@ -44,7 +44,7 @@ export function Logs() {
         </PageTips>
       </div>
       <div className="log-page">
-        {list.length === 0 && <EmptyState icon="≡" title="暂无系统日志" hint="操作与同步事件会出现在这里" />}
+        {list.length === 0 && <EmptyState icon="≡" title={t('暂无系统日志')} hint="操作与同步事件会出现在这里" />}
         {list.map((l) => (
           <div key={l.id} className={`it ${l.level}`}>
             <span className="dim">{new Date(l.ts).toLocaleTimeString()} </span>

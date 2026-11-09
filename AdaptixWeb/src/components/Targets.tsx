@@ -40,13 +40,13 @@ export function Targets() {
       <PageShell
         toolbar={
           <>
-            <button className="primary" onClick={() => setShow(true)}>+ 添加目标</button>
+            <button className="primary" onClick={() => setShow(true)}>{t('+ 添加目标')}</button>
             <input type="search" placeholder={t('搜索计算机 / IP / 标签')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button onClick={() => refresh()}>{t('刷新')}</button>
-            <div className="stats"><span>{view.length} 个目标</span></div>
+            <div className="stats"><span>{view.length} {t('个目标')}</span></div>
             <PageTips id="targets">
-              <p>目标资产登记：计算机名/域/地址/标签/备注。</p>
-              <p>仅团队服务器侧记录，与 agent 无关。</p>
+              <p>{t('目标资产登记：计算机名/域/地址/标签/备注。')}</p>
+              <p>{t('仅团队服务器侧记录，与 agent 无关。')}</p>
             </PageTips>
           </>
         }
@@ -56,7 +56,7 @@ export function Targets() {
         ) : (
           <table className="tgt-table">
             <thead>
-              <tr><th>计算机</th><th>域</th><th>{t('地址')}</th><th>{t('系统')}</th><th>{t('标签')}</th><th>备注</th><th></th></tr>
+              <tr><th>{t('计算机')}</th><th>{t('域')}</th><th>{t('地址')}</th><th>{t('系统')}</th><th>{t('标签')}</th><th>{t('备注')}</th><th></th></tr>
             </thead>
             <tbody>
               {view.map((tg: any, i) => {
@@ -77,7 +77,7 @@ export function Targets() {
                         className="danger"
                         title="从目标列表移除（只删团队服务器侧的登记，不影响主机）"
                         onClick={async () => {
-                        if (!id || !confirm('删除目标？')) return
+                        if (!id || !confirm(t('删除目标？'))) return
                         try {
                           await api.post('/api/targets/remove', { target_id_array: [id] })
                           await refresh()
@@ -95,12 +95,12 @@ export function Targets() {
       {show && (
         <div className="mask" onClick={() => !busy && setShow(false)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()}>
-            <h2>添加目标</h2>
-            <div className="field"><label>计算机</label><input value={computer} onChange={(e) => setComputer(e.target.value)} /></div>
-            <div className="field"><label>域</label><input value={domain} onChange={(e) => setDomain(e.target.value)} /></div>
+            <h2>{t('添加目标')}</h2>
+            <div className="field"><label>{t('计算机')}</label><input value={computer} onChange={(e) => setComputer(e.target.value)} /></div>
+            <div className="field"><label>{t('域')}</label><input value={domain} onChange={(e) => setDomain(e.target.value)} /></div>
             <div className="field"><label>{t('地址')}</label><input value={address} onChange={(e) => setAddress(e.target.value)} /></div>
             <div className="field"><label>{t('标签')}</label><input value={tag} onChange={(e) => setTag(e.target.value)} /></div>
-            <div className="field"><label>备注</label><input value={info} onChange={(e) => setInfo(e.target.value)} /></div>
+            <div className="field"><label>{t('备注')}</label><input value={info} onChange={(e) => setInfo(e.target.value)} /></div>
             <div className="btns">
               <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !computer} onClick={async () => {

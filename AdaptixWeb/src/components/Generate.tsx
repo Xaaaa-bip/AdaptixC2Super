@@ -32,7 +32,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [
     id: 'windows',
     title: 'Windows',
     desc: 'Beacon / Kharon · Stager、EXE',
-    badge: '推荐',
+    badge: t('推荐'),
     agents: ['beacon', 'kharon'],
     defaultAgent: 'beacon',
   },
@@ -53,7 +53,7 @@ const PLATFORM_PRESETS: PlatformPreset[] = [
   {
     id: 'gopher',
     title: 'Gopher',
-    desc: '跨平台 Go Agent · Win / Linux / macOS',
+    desc: t('跨平台 Go Agent · Win / Linux / macOS'),
     agents: ['gopher'],
     defaultAgent: 'gopher',
   },
@@ -410,7 +410,7 @@ export function Generate() {
           <div className="card-hd">
             <h3>t('配置参数')</h3>
             <span className="spacer" />
-            <span className="gen-hint">必填项按当前 Agent 自动筛选</span>
+            <span className="gen-hint">{t('必填项按当前 Agent 自动筛选')}</span>
           </div>
           <div className="card-bd gen-body">
             <div className="gen-section-title">{t('1. 目标平台')}</div>
@@ -510,7 +510,7 @@ export function Generate() {
               </div>
             )}
 
-            <div className="gen-section-title">3. 输出格式与参数</div>
+            <div className="gen-section-title">{t('3. 输出格式与参数')}</div>
             <div className="gen-params">
               {/* 有表 ⇒ 按插件声明的字段表渲染；没有 ⇒ 下面那段内置 JSX **一字不动**。
                   未迁移的 agent（kharon / gopher / macos / linux）走的还是老路，
@@ -585,13 +585,13 @@ export function Generate() {
                 <>
                   <div className="gen-section-title">{t('Stager 下载端点')}</div>
                   <div className="hint muted-hint" style={{ marginBottom: 4 }}>
-                    内层载荷由 <b>teamserver 自己</b>托管（<code>/api/s/&lt;token&gt;</code>），
+                    内层载荷由 <b>{t('teamserver 自己')}</b>{t('托管（')}<code>/api/s/&lt;token&gt;</code>），
                     不是监听器端口。默认已填当前控制台地址；目标机若从别的出口访问，
                     改成它够得着的对外地址。
                   </div>
                   <div className="field-grid-2">
                     <div className="field">
-                      <label>Teamserver 地址</label>
+                      <label>{t('Teamserver 地址')}</label>
                       <input
                         value={stagerEp.host}
                         onChange={(e) => setStagerEp((s) => ({ ...s, host: e.target.value }))}
@@ -685,8 +685,8 @@ export function Generate() {
                       style={{ width: 90 }}
                       value={jitter}
                       onChange={(e) => setJitter(Number(e.target.value))}
-                      title="抖动%"
-                      placeholder="抖动%"
+                      title={t('抖动%')}
+                      placeholder={t('抖动%')}
                     />
                   </div>
                 </div>
@@ -704,7 +704,7 @@ export function Generate() {
             )}
             {agent === 'beacon' && format !== 'Stager' && (
               <div className="hint muted-hint">
-                生产建议：gcc + 关闭 iat_hiding。反复扫描同模式会触发云学习；单次投递优先 <b>Stager</b>。
+                {t('Production tip: gcc + iat_hiding off. Repeated scans of the same pattern feed cloud learning; prefer')} <b>Stager</b> {t('for single deliveries')}.
               </div>
             )}
             {agent === 'kharon' && (
@@ -725,7 +725,7 @@ export function Generate() {
                 disabled={busy || !listener}
                 onClick={onGenerate}
               >
-                {busy ? '生成中…' : '生成并下载'}
+                {busy ? t('生成中…') : t('生成并下载')}
               </button>
               {!listener && (
                 <span className="dim" style={{ alignSelf: 'center' }}>
@@ -781,7 +781,7 @@ export function Generate() {
               )}
               <div>
                 <span className="k">{t('监听')}</span>
-                <b className="mono">{listener || '未选'}</b>
+                <b className="mono">{listener || t('未选')}</b>
               </div>
               {selectedListener && (
                 <div>

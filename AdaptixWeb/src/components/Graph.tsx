@@ -366,7 +366,7 @@ export function Graph() {
 
   /** 图上全部的节点（agent + 手工设备）—— "连线到…"的候选表。 */
   const allTargets = useMemo(() => [
-    ...nodes.map((n) => ({ id: n.id, label: n.label, sub: '主机', kind: roleToKind(n.tags) })),
+    ...nodes.map((n) => ({ id: n.id, label: n.label, sub: t('主机'), kind: roleToKind(n.tags) })),
     // 设备有地址就优先显示地址：类型已经由图标表达了，而"选哪一台"要靠地址。
     ...devices.map((d) => ({ id: d.id, label: d.name || deviceMeta(d.kind).label, sub: d.addr || deviceMeta(d.kind).label, kind: d.kind as DeviceKind })),
   ], [nodes, devices])
@@ -657,7 +657,7 @@ export function Graph() {
       items: [
         ...ROLE_CHOICES.map((r) => ({ label: r.word, run: () => { setMenu(null); void setRole(id, r.word) } })),
         { sep: true },
-        { label: '清除角色', run: () => { setMenu(null); void setRole(id, '') } },
+        { label: t('清除角色'), run: () => { setMenu(null); void setRole(id, '') } },
       ],
     }
   }
@@ -684,7 +684,7 @@ export function Graph() {
     <div className="page graph-page">
       <div className="toolbar">
         <strong>{t('拓扑图')}</strong>
-        <input type="search" placeholder="过滤主机" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 180 }} />
+        <input type="search" placeholder={t('过滤主机')} value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 180 }} />
         {/* ★ 这个 stopPropagation 不是可选的。上面那个 window 级 click 监听会把
             addOpen 设回 false；本按钮用的是普通 onClick（右键菜单们由 onContextMenu
             打开、不产生 click 事件，所以它们躲过了这一劫）。少了它，同一次点击先
@@ -698,23 +698,23 @@ export function Graph() {
         >
           添加设备 ▾
         </button>
-        <button type="button" className="ghost" onClick={fitToView} title="缩放到刚好装下整张图">适配</button>
-        <span className="dim mono" title="滚轮缩放，拖动空白处平移">{Math.round(k * 100)}%</span>
+        <button type="button" className="ghost" onClick={fitToView} title={t('缩放到刚好装下整张图')}>适配</button>
+        <span className="dim mono" title={t('滚轮缩放，拖动空白处平移')}>{Math.round(k * 100)}%</span>
         <div className="stats">
-          <span className="signal">{liveCount} 在线</span>
-          <span className="dim">/ {agentList.length} 主机</span>
+          <span className="signal">{liveCount} {t('在线')}</span>
+          <span className="dim">/ {agentList.length} {t('主机')}</span>
           <span className="dim">· {pivotList.length} pivot</span>
-          {board.devices.length > 0 && <span className="dim">· {board.devices.length} 设备</span>}
+          {board.devices.length > 0 && <span className="dim">· {board.devices.length}</span>}
         </div>
         <PageTips id="graph">
           <p>{t('拓扑图展示主机与 pivot 链路；点击节点打开对应主机控制台。')}</p>
-          <p>pivot 由控制台 <code>link</code> / <code>unlink</code> 命令建立与拆除。</p>
-          <p><b>滚轮</b>缩放（以鼠标位置为中心），<b>拖动空白处</b>平移，<b>{t('双击空白处')}</b>回到 100%。</p>
-          <p><b>拖动节点</b>可手工摆放；位置、手工设备与连线都存在<b>服务端</b>，所有操作员共享。</p>
-          <p><b>右键节点</b>：连线、标记已控/未控、改名、改类型、删除、设为角色。</p>
-          <p>交换机 / 防火墙 / 数据库这类<b>没有 agent 的设备</b>用「添加设备」画；已控=青、未控=灰。</p>
-          <p>手工设备可以右键「<b>设置地址</b>」填 <code>IP:PORT</code>（<b>非必须</b>，留空即不显示）。</p>
-          <p>给已有 beacon 的主机打「数据库 / 堡垒机…」<b>{t('标签')}</b>，卡片上会自动出现对应图标。</p>
+          <p>{t('pivot 由控制台')} <code>link</code> / <code>unlink</code> {t('命令建立与拆除。')}</p>
+          <p><b>{t('滚轮')}</b>{t('缩放（以鼠标位置为中心），')}<b>{t('拖动空白处')}</b>{t('平移，')}<b>{t('双击空白处')}</b>{t('回到 100%。')}</p>
+          <p><b>{t('拖动节点')}</b>{t('可手工摆放；位置、手工设备与连线都存在')}<b>{t('服务端')}</b>{t('，所有操作员共享。')}</p>
+          <p><b>{t('右键节点')}</b>{t('：连线、标记已控/未控、改名、改类型、删除、设为角色。')}</p>
+          <p>交换机 / 防火墙 / 数据库这类<b>{t('没有 agent 的设备')}</b>{t('用「添加设备」画；已控=青、未控=灰。')}</p>
+          <p>{t('手工设备可以右键「')}<b>{t('设置地址')}</b>{t('」填')} <code>IP:PORT</code>（<b>{t('非必须')}</b>{t('，留空即不显示）。')}</p>
+          <p>{t('给已有 beacon 的主机打「数据库 / 堡垒机…」')}<b>{t('标签')}</b>{t('，卡片上会自动出现对应图标。')}</p>
         </PageTips>
       </div>
 
@@ -845,7 +845,7 @@ export function Graph() {
                           { sep: true },
                           { label: '连线到…', run: () => { setMenu(null); setLinkFrom(n.id) } },
                           { label: '设为角色…', run: () => setMenu(roleMenu(mx, my, n.id)) },
-                          { label: '清除角色', run: () => { setMenu(null); void setRole(n.id, '') } },
+                          { label: t('清除角色'), run: () => { setMenu(null); void setRole(n.id, '') } },
                         ],
                       })
                     }}
@@ -912,7 +912,7 @@ export function Graph() {
                           { sep: true },
                           { label: '连线到…', run: () => { setMenu(null); setLinkFrom(d.id) } },
                           { sep: true },
-                          { label: '删除设备', danger: true, run: () => removeDevice(d.id) },
+                          { label: t('删除设备'), danger: true, run: () => removeDevice(d.id) },
                         ],
                       })
                     }}
@@ -942,7 +942,7 @@ export function Graph() {
                 <g transform={`translate(${W / 2},${H / 2})`}>
                   <text textAnchor="middle" className="graph-empty-title">{t('暂无主机')}</text>
                   <text y={26} textAnchor="middle" className="graph-empty-hint">{t('agent 上线后自动出现在拓扑中')}</text>
-                  <text y={48} textAnchor="middle" className="graph-empty-hint">也可以用工具栏的「添加设备」先画交换机 / 防火墙这类没有 agent 的设备</text>
+                  <text y={48} textAnchor="middle" className="graph-empty-hint">{t('也可以用工具栏的「添加设备」先画交换机 / 防火墙这类没有 agent 的设备')}</text>
                 </g>
               )}
             </svg>
@@ -953,17 +953,17 @@ export function Graph() {
           <span><i className="lgd lgd-live" />{t('在线')}</span>
           <span><i className="lgd lgd-dead" />{t('离线')}</span>
           {/* 没有 pivot 时不摆这条图例 —— 解释一个不存在的东西只会让人去找它 */}
-          {edges.length > 0 && <span><i className="lgd lgd-pivot" />pivot 链路</span>}
-          {board.devices.some((d) => d.controlled) && <span><i className="lgd lgd-ctrl" />设备·已控</span>}
-          {board.devices.some((d) => !d.controlled) && <span><i className="lgd lgd-unctrl" />设备·未控</span>}
-          {manualEdges.length > 0 && <span><i className="lgd lgd-manual" />手工连线</span>}
+          {edges.length > 0 && <span><i className="lgd lgd-pivot" />{t('pivot 链路')}</span>}
+          {board.devices.some((d) => d.controlled) && <span><i className="lgd lgd-ctrl" />{t('设备·已控')}</span>}
+          {board.devices.some((d) => !d.controlled) && <span><i className="lgd lgd-unctrl" />{t('设备·未控')}</span>}
+          {manualEdges.length > 0 && <span><i className="lgd lgd-manual" />{t('手工连线')}</span>}
         </div>
 
         {/* ── 添加设备（14 种类型）。做成固定面板而不是下拉：14 项的下拉太长，
             而且这个面板要能一边看图一边挑。 ── */}
         {addOpen && (
           <div className="graph-pop graph-pop-add" onClick={(e) => e.stopPropagation()}>
-            <div className="ctx-hd mono">添加设备</div>
+            <div className="ctx-hd mono">{t('添加设备')}</div>
             <div className="graph-kind-grid">
               {DEVICE_KINDS.map((dk) => (
                 <button key={dk.key} type="button" className="graph-kind" onClick={() => addDevice(dk.key)} title={dk.label}>
@@ -973,7 +973,7 @@ export function Graph() {
               ))}
             </div>
             <div className="sep" />
-            <button type="button" className="danger" onClick={clearManual}>清空手工图</button>
+            <button type="button" className="danger" onClick={clearManual}>{t('清空手工图')}</button>
             {pinnedCount > 0 && <button type="button" onClick={resetPositions}>恢复自动排列（{pinnedCount} 台）</button>}
           </div>
         )}

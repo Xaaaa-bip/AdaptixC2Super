@@ -59,8 +59,8 @@ export function Chat() {
         {sorted.length === 0 ? (
           <div className="empty">
             <div className="big">💬</div>
-            <div>暂无消息</div>
-            <div className="dim" style={{ marginTop: 6 }}>消息经 teamserver 广播给所有在线操作员</div>
+            <div>{t('暂无消息')}</div>
+            <div className="dim" style={{ marginTop: 6 }}>{t('消息经 teamserver 广播给所有在线操作员')}</div>
           </div>
         ) : (
           <div className="chat-list">
@@ -83,7 +83,7 @@ export function Chat() {
       <div className="chat-compose">
         <input
           value={text}
-          placeholder="输入消息，Enter 发送"
+          placeholder={t('输入消息，Enter 发送')}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -93,7 +93,7 @@ export function Chat() {
           }}
         />
         <button className="primary" disabled={busy || !text.trim()} onClick={() => void send()}>
-          {busy ? '…' : '发送'}
+          {busy ? '…' : t('发送')}
         </button>
       </div>
     </div>

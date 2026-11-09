@@ -37,7 +37,7 @@ const QUICK_WIN = [
   { label: 'whoami', cmd: 'whoami' },
   { label: 'pwd', cmd: 'pwd' },
   { label: 'ip配置', cmd: 'ipconfig' },
-  { label: '截图', cmd: 'screenshot_bof' },
+  { label: t('截图'), cmd: 'screenshot_bof' },
 ]
 
 const QUICK_LINUX = [
@@ -222,7 +222,7 @@ export function Term() {
   async function copyAll() {
     const text = view.map((l) => l.text).join('\n')
     const ok = await copyText(text)
-    pushToast(ok ? 'ok' : 'err', ok ? '终端输出已复制' : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? '终端输出已复制' : t('复制失败'))
   }
 
   function onCloseTab(id: string) {
@@ -274,9 +274,9 @@ export function Term() {
           </div>
         )}
         <button className="ghost ico" style={{ color: '#94a3b8', border: 'none' }} disabled={!agentId || !view.length}
-          title="复制输出" onClick={copyAll}>⧉</button>
+          title={t('复制输出')} onClick={copyAll}>⧉</button>
         <button className="ghost ico" style={{ color: '#94a3b8', border: 'none' }} disabled={!agentId}
-          title="清空 (Ctrl+L)" onClick={() => agentId && clearConsole(agentId)}>⌫</button>
+          title={t('清空 (Ctrl+L)')} onClick={() => agentId && clearConsole(agentId)}>⌫</button>
       </div>
       <div className="term-context">
         {agentId ? (
@@ -287,14 +287,14 @@ export function Term() {
               <span className="term-context-meta">{agent?.a_username || '未知用户'} · {agent?.a_name || 'agent'} · {agent?.a_internal_ip || agent?.a_external_ip || '无地址'}</span>
             </div>
             <div className="term-context-stats">
-              <span className={runningTasks ? 'is-running' : ''}>{runningTasks ? `${runningTasks} 个任务执行中` : '无执行中任务'}</span>
-              <span>{agentTasks.length} 条最近任务</span>
+              <span className={runningTasks ? 'is-running' : ''}>{runningTasks ? `${runningTasks} ${t('个任务执行中')}` : t('无执行中任务')}</span>
+              <span>{agentTasks.length} {t('条最近任务')}</span>
               {latestTask?.a_cmdline ? <span className="mono" title={latestTask.a_cmdline}>最近：{latestTask.a_cmdline}</span> : null}
             </div>
-            <button className="ghost term-task-link" onClick={() => openUiTab('tasks')} title="查看任务中心">{t('任务中心')}</button>
+            <button className="ghost term-task-link" onClick={() => openUiTab('tasks')} title={t('查看任务中心')}>{t('任务中心')}</button>
           </>
         ) : (
-          <span className="term-context-empty">从主机列表选择一个目标，终端会保留每台主机自己的页签与历史。</span>
+          <span className="term-context-empty">{t('从主机列表选择一个目标，终端会保留每台主机自己的页签与历史。')}</span>
         )}
       </div>
       <div
@@ -323,10 +323,10 @@ export function Term() {
           <div
             key={l.id}
             className={`ln ${l.kind}`}
-            title="双击复制此行"
+            title={t('双击复制此行')}
             onDoubleClick={async () => {
               const ok = await copyText(l.text)
-              pushToast(ok ? 'ok' : 'err', ok ? '已复制该行' : '复制失败')
+              pushToast(ok ? 'ok' : 'err', ok ? '已复制该行' : t('复制失败'))
             }}
           >
             <span className="ln-time">{fmtClock((l as any).ts)}</span>
@@ -361,7 +361,7 @@ export function Term() {
           placeholder={agentId
             ? (live
               ? (linux ? '命令，如 getuid / ls / / netstat / ps / help' : '命令，如 whoami / ls C:\\ / screenshot_bof / ps list')
-              : '主机离线，命令将排队')
+              : t('主机离线，命令将排队'))
             : '未选择主机'}
           onChange={(e) => setCmd(e.target.value)}
           onKeyDown={(e) => {
@@ -388,7 +388,7 @@ export function Term() {
           }}
         />
         <button className="primary" disabled={!agentId || busy || !cmd.trim()} onClick={() => run(cmd)}>
-          {busy ? '…' : '执行'}
+          {busy ? '…' : t('执行')}
         </button>
       </div>
     </div>

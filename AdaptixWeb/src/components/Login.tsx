@@ -100,7 +100,7 @@ export function Login() {
           </div>
 
           <button type="button" className="lx-textbtn lx-adv" onClick={() => setAdvanced((v) => !v)}>
-            {advanced ? '收起服务器设置' : t('服务器设置')}
+            {advanced ? t('收起服务器设置') : t('服务器设置')}
           </button>
           {advanced && (
             <div className="lx-advbox">

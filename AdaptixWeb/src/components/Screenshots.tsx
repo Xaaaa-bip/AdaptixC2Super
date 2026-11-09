@@ -103,20 +103,20 @@ export function Screenshots() {
       <div className="toolbar">
         <input type="search" placeholder={t('搜索截图 / 主机 / 用户')} value={q} onChange={(e) => setQ(e.target.value)} />
         <button onClick={() => refresh()}>{t('刷新')}</button>
-        <div className="stats"><span>{view.length} 张截图</span></div>
+        <div className="stats"><span>{view.length} {t('张截图')}</span></div>
         <PageTips id="screens">
           <p>{t('截图来源：Windows 主机在终端/右键执行')} <code>screenshot_bof</code>。</p>
-          <p><b>Linux 主机无截图能力</b>，此页不会出现 Linux 截图。</p>
+          <p><b>{t('Linux 主机无截图能力')}</b>{t('，此页不会出现 Linux 截图。')}</p>
         </PageTips>
       </div>
       <div className="screen-layout" style={{ display: 'grid', gridTemplateColumns: preview ? '1fr 1fr' : '1fr', minHeight: 0, flex: 1, gap: 0 }}>
         <div className="table-wrap" style={{ borderRadius: preview ? '0 0 0 10px' : undefined }}>
           {view.length === 0 ? (
-            <EmptyState icon="⧉" title="暂无截图" hint="截图来自 Windows 主机（终端/右键 screenshot_bof）；Linux 主机无截图能力。" />
+            <EmptyState icon="⧉" title={t('暂无截图')} hint="截图来自 Windows 主机（终端/右键 screenshot_bof）；Linux 主机无截图能力。" />
           ) : (
             <table>
               <thead>
-                <tr><th>ID</th><th>{t('用户')}</th><th>{t('主机')}</th><th>备注</th><th>{t('时间')}</th><th style={{ width: 120 }}></th></tr>
+                <tr><th>ID</th><th>{t('用户')}</th><th>{t('主机')}</th><th>{t('备注')}</th><th>{t('时间')}</th><th style={{ width: 120 }}></th></tr>
               </thead>
               <tbody>
                 {view.map((s: any, i) => {
@@ -132,14 +132,14 @@ export function Screenshots() {
                         <button onClick={(e) => { e.stopPropagation(); openPreview(id) }}>{t('预览')}</button>
                         <button className="danger" onClick={async (e) => {
                           e.stopPropagation()
-                          if (!id || !confirm('删除截图？')) return
+                          if (!id || !confirm(t('删除截图？'))) return
                           try {
                             await api.post('/api/screen/remove', { screen_id_array: [id] })
                             pushToast('warn', '截图已删除')
                             await refresh()
                             if (previewId === id) { setPreview(null); setPreviewId(null) }
                           } catch (err: any) { pushLog('err', err.message || String(err)) }
-                        }}>删</button>
+                        }}>{t('删')}</button>
                       </td>
                     </tr>
                   )
@@ -152,7 +152,7 @@ export function Screenshots() {
           <div className="screen-preview">
             <div className="screen-preview-hd">
               <span className="mono dim">{previewId || ''}</span>
-              <button className="ghost" onClick={() => { setPreview(null); setPreviewId(null); setPreviewErr('') }}>关闭预览</button>
+              <button className="ghost" onClick={() => { setPreview(null); setPreviewId(null); setPreviewErr('') }}>{t('关闭预览')}</button>
             </div>
             <div className="screen-preview-bd">
               {previewErr ? <div className="err" style={{ padding: 16 }}>{previewErr}</div> : null}

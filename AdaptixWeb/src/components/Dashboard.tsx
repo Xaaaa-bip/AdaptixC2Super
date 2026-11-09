@@ -28,7 +28,7 @@ export function Dashboard({ online, total, listeners }: { online: number; total:
 
       <div className="overview-state" aria-label="控制台状态">
         <ConnStatus connected={true} wsConnected={wsConnected} syncing={false} />
-        <span><b>{online}</b> / {total} 在线</span>
+        <span><b>{online}</b> / {total} {t('在线')}</span>
         <span>{listeners} 监听</span>
         <span>{tasks.length} 任务</span>
       </div>

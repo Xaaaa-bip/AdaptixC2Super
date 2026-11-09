@@ -53,20 +53,20 @@ export function Tasks() {
             )}
             <div className="stats">
               <span>{list.length}</span>
-              <span className="warn">执行中 {running}</span>
+              <span className="warn">{t('执行中')} {running}</span>
             </div>
             <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>{t('刷新')}</button>
             <PageTips id="tasks">
               <p><b>{t('双击')}</b>{t('任务跳转到对应主机控制台；单击查看详情与输出。')}</p>
               <p>筛选：t('仅当前主机') / t('仅执行中')。</p>
-              <p>BOF / 下载 / run 等长任务以 <code>job</code> 形式显示（控制台 <code>job list</code> 可查）。</p>
+              <p>{t('BOF / 下载 / run 等长任务以')} <code>job</code> {t('形式显示（控制台')} <code>job list</code> {t('可查）。')}</p>
             </PageTips>
           </>
         }
       >
         {list.length === 0 ? (
-          <EmptyState icon="☰" title="t('暂无任务')" hint="在主机终端执行命令后会出现在这里" action={
-            <button onClick={() => { setTab('sessions'); openUiTab('sessions') }}>去主机列表</button>
+          <EmptyState icon="☰" title={t('暂无任务')} hint={t('在主机终端执行命令后会出现在这里')} action={
+            <button onClick={() => { setTab('sessions'); openUiTab('sessions') }}>{t('去主机列表')}</button>
           } />
         ) : (
           <table>
@@ -131,7 +131,7 @@ export function Tasks() {
             <div className="kv">
               <div><span className="k">{t('主机')}</span><span className="mono">{detail.a_id || '-'}</span></div>
               <div><span className="k">{t('操作员')}</span><span>{detail.a_client || '-'}</span></div>
-              <div><span className="k">{t('状态')}</span><span>{detail.a_completed ? '完成' : '执行中'}</span></div>
+              <div><span className="k">{t('状态')}</span><span>{detail.a_completed ? t('完成') : t('执行中')}</span></div>
               <div><span className="k">{t('开始')}</span><span>{fmtTime(detail.a_start_time)}</span></div>
               <div><span className="k">{t('结束')}</span><span>{fmtTime(detail.a_finish_time)}</span></div>
               <div className="full"><span className="k">{t('命令')}</span><span className="mono">{detail.a_cmdline || '-'}</span></div>
@@ -142,7 +142,7 @@ export function Tasks() {
                 <button className="ghost" onClick={async () => {
                   const text = [detail.a_message, detail.a_text].filter(Boolean).join('\n')
                   const ok = await copyText(text)
-                  pushToast(ok ? 'ok' : 'err', ok ? '已复制输出' : '复制失败')
+                  pushToast(ok ? 'ok' : 'err', ok ? t('已复制输出') : t('复制失败'))
                 }}>{t('复制')}</button>
               </div>
               <pre>{[detail.a_message, detail.a_text].filter(Boolean).join('\n') || '(无输出)'}</pre>

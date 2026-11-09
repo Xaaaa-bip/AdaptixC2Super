@@ -232,9 +232,9 @@ export function CommandPalette({ open, onClose, go }: Props) {
           })}
         </div>
         <div className="palette-foot">
-          <span><kbd className="kbd">↑↓</kbd> 选择</span>
+          <span><kbd className="kbd">↑↓</kbd> {t('选择')}</span>
           <span><kbd className="kbd">Enter</kbd> {t('执行')}</span>
-          <span><kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">K</kbd> 开关</span>
+          <span><kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">K</kbd> {t('开关')}</span>
         </div>
       </div>
     </div>

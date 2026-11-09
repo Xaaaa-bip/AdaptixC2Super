@@ -356,12 +356,12 @@ export function Hosts() {
             <div className="sess-bulk">
               <span className="sb-n">{t('已选')} <b>{checkedIds.size}</b> {t('台')}</span>
               {hiddenChecked > 0 && (
-                <span className="sb-note" title="勾选不会被搜索收窄悄悄丢掉">
+                <span className="sb-note" title={t('勾选不会被搜索收窄悄悄丢掉')}>
                   （{hiddenChecked} 台不在当前筛选里）
                 </span>
               )}
               <button className="ghost" onClick={() => setChecked(tableIds, !allChecked)}>
-                {allChecked ? '取消全选' : t('全选当前结果')}
+                {allChecked ? t('取消全选') : t('全选当前结果')}
               </button>
               <button className="ghost" onClick={clearChecked}>{t('清除')}</button>
               <button className="danger" onClick={() => setBulkDlg(true)}>
@@ -436,7 +436,7 @@ export function Hosts() {
                   <th>{t('进程')}</th>
                   <th>{t('系统')}</th>
                   <th>{t('监听器')}</th>
-                  <th title="距上次回连 / 配置 sleep（动态刷新）">{t('心跳')}</th>
+                  <th title={t('距上次回连 / 配置 sleep（动态刷新）')}>{t('心跳')}</th>
                   <th>{t('标签')}</th>
                 </tr>
               </thead>
@@ -463,7 +463,7 @@ export function Hosts() {
                         {/* ★ stopPropagation 是本功能最大的回归风险：这一行上有
                             onClick={() => pick(a)}（选中 + 开控制台）和 onContextMenu。
                             不拦传播的话，每点一次复选框就多开一个控制台页签。
-                            用 <label> 包住 <input> 可同时保住「点哪儿都能切换」和拦截。 */}
+                            用 <label> {t('包住')} <input> 可同时保住「点哪儿都能切换」和拦截。 */}
                         <label className="sess-check" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
@@ -485,7 +485,7 @@ export function Hosts() {
                       </td>
                       <td className="mono">{a.a_internal_ip || '-'}</td>
                       <td className="mono" title={ext || ''}>{ext || '-'}</td>
-                      <td className="dim" title={geo || (ext ? '解析中/未知' : '')}>{geo || (ext ? '…' : '-')}</td>
+                      <td className="dim" title={geo || (ext ? t('解析中/未知') : '')}>{geo || (ext ? '…' : '-')}</td>
                       <td>
                         <div>{a.a_process || '-'}</div>
                         <div className="cell-sub mono">{a.a_pid || ''}</div>
@@ -618,7 +618,7 @@ export function Hosts() {
       {bulkDlg && (
         <div className="mask" onClick={() => setBulkDlg(false)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()}>
-            <h2>删除 {checkedIds.size} 台主机</h2>
+            <h2>{t('删除')} {checkedIds.size} {t('台主机')}</h2>
             <div className="dim mono" style={{ marginBottom: 8 }}>
               <span className="signal">{bulkOnline} 台在线</span>
               {' · '}{bulkAgents.length - bulkOnline} 台离线
@@ -627,7 +627,7 @@ export function Hosts() {
               {bulkAgents.slice(0, 5).map((a) => (
                 <div key={a.a_id}>{a.a_computer || a.a_id}</div>
               ))}
-              {bulkAgents.length > 5 && <div className="dim">…等 {bulkAgents.length} 台</div>}
+              {bulkAgents.length > 5 && <div className="dim">… {t('等')} {bulkAgents.length}</div>}
             </div>
             <p className="hint muted-hint">
               这些主机的控制台记录、文件/进程页签与本地缓存会一并清除。
@@ -638,7 +638,7 @@ export function Hosts() {
               <button className="danger" onClick={() => {
                 setBulkDlg(false)
                 removeChecked().catch((e) => pushLog('err', String(e)))
-              }}>删除 {checkedIds.size} 台</button>
+              }}>{t('删除')} {checkedIds.size}</button>
             </div>
           </div>
         </div>
@@ -651,7 +651,7 @@ export function Hosts() {
             <div className="dim mono" style={{ marginBottom: 8 }}>{dataDlg.id}</div>
             {/* Linux 主机 sleep 为编译期固定：不下发 sleep 命令，隐藏输入 */}
             {isLinuxAgent(agents[dataDlg.id]) ? (
-              <span className="hint muted-hint">Linux 主机 sleep 为编译期固定，不可修改</span>
+              <span className="hint muted-hint">{t('Linux 主机 sleep 为编译期固定，不可修改')}</span>
             ) : (
               <>
                 <div className="field-grid-2">
@@ -662,7 +662,7 @@ export function Hosts() {
                     <input value={dataDlg.jitter} onChange={(e) => setDataDlg({ ...dataDlg, jitter: e.target.value })} />
                   </div>
                 </div>
-                <div className="hint muted-hint">Sleep/Jitter 通过 <code>sleep</code> 命令下发；下方字段写入服务端展示数据。</div>
+                <div className="hint muted-hint">{t('Sleep/Jitter 通过')} <code>sleep</code> {t('命令下发；下方字段写入服务端展示数据。')}</div>
               </>
             )}
             <div className="field-grid-2">

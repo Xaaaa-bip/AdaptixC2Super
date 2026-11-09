@@ -603,7 +603,7 @@ export function FileManager({ agentId }: { agentId: string }) {
       ? (mode === 'disks' ? '' : path)
       : itemPath(it)
     const ok = await copyText(p || '')
-    pushToast(ok ? 'ok' : 'err', ok ? `已复制路径` : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? `已复制路径` : t('复制失败'))
   }
 
   /** Linux 上一级：/a/b → /a、/a → /（parentPath 对单段 Unix 路径会返回自身） */
@@ -694,7 +694,7 @@ export function FileManager({ agentId }: { agentId: string }) {
             <span className="fm-boost" title={t('Linux beacon：编译期固定节拍，无 sleep 0 交互加速')}>Linux</span>
           ) : (
             <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`} title="打开本页会自动 sleep 0；关闭页签后恢复">
-              {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
+              {boosted || agent?.a_sleep === 0 ? t('交互加速 · sleep 0') : `Sleep ${agent?.a_sleep ?? '-'}s`}
             </span>
           )}
           <input
@@ -710,15 +710,15 @@ export function FileManager({ agentId }: { agentId: string }) {
             title={mode === 'disks' ? '请先进入目录' : '上传到当前目录'}
             onClick={() => fileInputRef.current?.click()}
           >
-            {uploading ? '上传中…' : '上传'}
+            {uploading ? '上传中…' : t('上传')}
           </button>
           <button className="ghost" disabled={busy || uploading} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))}>
-            {busy ? '刷新中…' : '刷新'}
+            {busy ? '刷新中…' : t('刷新')}
           </button>
           <button className="ghost" onClick={() => closeUiTab(`files:${agentId}` as any)}>{t('关闭')}</button>
           <PageTips id="files">
             <p>双击目录进入；面包屑/上级按钮导航；右键下载/删除/复制路径。</p>
-            <p><b>Linux 主机显示挂载点</b>（无盘符）；预览自动识别编码（UTF-8 优先）。</p>
+            <p><b>{t('Linux 主机显示挂载点')}</b>{t('（无盘符）；预览自动识别编码（UTF-8 优先）。')}</p>
             <p>{t('多选支持 Ctrl/Shift，可批量下载/删除；「上传」投递本地文件到当前目录。')}</p>
           </PageTips>
         </div>
@@ -726,9 +726,9 @@ export function FileManager({ agentId }: { agentId: string }) {
 
       {/* Nav toolbar */}
       <div className="fm-nav">
-        <button className="ico" disabled={histIdx <= 0 || busy} onClick={goBack} title="后退">←</button>
-        <button className="ico" disabled={histIdx >= history.length - 1 || busy} onClick={goForward} title="前进">→</button>
-        <button className="ico" disabled={!canUp || busy} onClick={() => load(parentOf(path || '.'))} title="上级">↑</button>
+        <button className="ico" disabled={histIdx <= 0 || busy} onClick={goBack} title={t('后退')}>←</button>
+        <button className="ico" disabled={histIdx >= history.length - 1 || busy} onClick={goForward} title={t('前进')}>→</button>
+        <button className="ico" disabled={!canUp || busy} onClick={() => load(parentOf(path || '.'))} title={t('上级')}>↑</button>
         <button className="ico" disabled={busy} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))} title={t('刷新')}>↻</button>
         <div className="sep" />
         <button disabled={busy} onClick={() => loadDisks()}>{isLinux ? '挂载点' : '此电脑'}</button>
@@ -768,17 +768,17 @@ export function FileManager({ agentId }: { agentId: string }) {
               else load(v)
             }
           }}
-          placeholder="输入路径后回车"
+          placeholder={t('输入路径后回车')}
         />
         <button className="primary" disabled={busy} onClick={() => {
           const v = pathInput.trim()
           if (!v) loadDisks()
           else load(v)
-        }}>转到</button>
+        }}>{t('转到')}</button>
         <input
           className="fm-search"
           type="search"
-          placeholder="过滤当前列表"
+          placeholder={t('过滤当前列表')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -799,22 +799,22 @@ export function FileManager({ agentId }: { agentId: string }) {
             {busy && (
               <div className="fm-loading">
                 <div className="fm-spinner" />
-                <div>正在读取主机文件…</div>
+                <div>{t('正在读取主机文件…')}</div>
                 <div className="dim">{progress || '下发命令并轮询任务结果'}</div>
-                <div className="dim">超时约 20s；若 sleep 较长请稍等或把 sleep 调小</div>
+                <div className="dim">{t('超时约 20s；若 sleep 较长请稍等或把 sleep 调小')}</div>
               </div>
             )}
             {!busy && err && (
               <div className="fm-empty">
                 <div className="big">!</div>
                 <div className="err">{err}</div>
-                <button className="primary" onClick={() => (mode === 'disks' ? loadDisks() : load(path || '.'))}>重试</button>
+                <button className="primary" onClick={() => (mode === 'disks' ? loadDisks() : load(path || '.'))}>{t('重试')}</button>
               </div>
             )}
             {!busy && !err && view.length === 0 && (
               <div className="fm-empty">
                 <div className="big">📁</div>
-                <div>空目录</div>
+                <div>{t('空目录')}</div>
                 <div className="dim">{mode === 'disks' ? (isLinux ? '未发现挂载点' : '未发现磁盘') : (path || '.')}</div>
               </div>
             )}
@@ -830,7 +830,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                           if (e.target.checked) setSelectedSet(new Set(view.map((x) => x.name)))
                           else setSelectedSet(new Set())
                         }}
-                        title="全选当前列表"
+                        title={t('全选当前列表')}
                       />
                     </th>
                     <th style={{ width: 44 }}></th>
@@ -887,7 +887,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                         </td>
                         <td className="mono dim">{displaySize(it)}</td>
                         <td className="mono dim">{it.dateText || '—'}</td>
-                        <td className="dim">{disk ? diskLabel : it.isDir ? '文件夹' : (extOf(it.name).toUpperCase() || '文件')}</td>
+                        <td className="dim">{disk ? diskLabel : it.isDir ? '文件夹' : (extOf(it.name).toUpperCase() || t('文件'))}</td>
                       </tr>
                     )
                   })}
@@ -908,36 +908,36 @@ export function FileManager({ agentId }: { agentId: string }) {
             {selectedSet.size > 1 && mode !== 'disks' && (
               <span className="fm-multi-actions">
                 <button className="ghost" disabled={busy || uploading} onClick={() => doDownloadMulti(multiItems)}>{t('批量下载')}</button>
-                <button className="danger" disabled={busy || uploading} onClick={() => doRmMulti(multiItems)}>批量删除</button>
+                <button className="danger" disabled={busy || uploading} onClick={() => doRmMulti(multiItems)}>{t('批量删除')}</button>
               </span>
             )}
           </div>
         </section>
 
         <aside className="fm-detail">
-          <div className="fm-detail-hd">详细信息</div>
+          <div className="fm-detail-hd">{t('详细信息')}</div>
           {!selectedItem ? (
-            <div className="fm-detail-empty dim">选择文件或文件夹查看详情</div>
+            <div className="fm-detail-empty dim">{t('选择文件或文件夹查看详情')}</div>
           ) : (
             <div className="fm-detail-bd">
               <div className="fm-detail-ico">{fileIcon(selectedItem, mode === 'disks', isLinux)}</div>
               <div className="fm-detail-name" title={selectedItem.name}>{selectedItem.name}</div>
               <div className="fm-kv">
-                <div><span>{t('类型')}</span><b>{mode === 'disks' ? diskLabel : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || '文件')}</b></div>
-                <div><span>大小</span><b>{displaySize(selectedItem)}</b></div>
+                <div><span>{t('类型')}</span><b>{mode === 'disks' ? diskLabel : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || t('文件'))}</b></div>
+                <div><span>{t('大小')}</span><b>{displaySize(selectedItem)}</b></div>
                 <div><span>{t('修改')}</span><b>{selectedItem.dateText || '—'}</b></div>
-                <div><span>路径</span><b className="mono">{itemPath(selectedItem)}</b></div>
+                <div><span>{t('路径')}</span><b className="mono">{itemPath(selectedItem)}</b></div>
               </div>
               <div className="fm-detail-actions">
                 {(selectedItem.isDir || mode === 'disks') ? (
-                  <button className="primary" disabled={busy} onClick={() => openItem(selectedItem)}>打开</button>
+                  <button className="primary" disabled={busy} onClick={() => openItem(selectedItem)}>{t('打开')}</button>
                 ) : (
                   <>
                     <button className="primary" disabled={busy} onClick={() => doDownload(selectedItem)}>{t('下载')}</button>
-                    <button disabled={busy} onClick={() => doCat(selectedItem)}>查看</button>
+                    <button disabled={busy} onClick={() => doCat(selectedItem)}>{t('查看')}</button>
                   </>
                 )}
-                <button disabled={busy} onClick={() => copyPath(selectedItem)}>复制路径</button>
+                <button disabled={busy} onClick={() => copyPath(selectedItem)}>{t('复制路径')}</button>
                 {mode !== 'disks' && (
                   <button className="danger" disabled={busy} onClick={() => doRm(selectedItem)}>{t('删除')}</button>
                 )}
@@ -957,7 +957,7 @@ export function FileManager({ agentId }: { agentId: string }) {
               </div>
               <div className="fm-preview-tools">
                 <label className="fm-enc-label">
-                  <span>编码</span>
+                  <span>{t('编码')}</span>
                   <select
                     className="fm-enc-select"
                     disabled={!!preview.busy}
@@ -993,7 +993,7 @@ export function FileManager({ agentId }: { agentId: string }) {
                     ? full.slice(preview.message.length).replace(/^\n+/, '')
                     : full
                   const ok = await copyText(body)
-                  pushToast(ok ? 'ok' : 'err', ok ? '已复制内容' : '复制失败')
+                  pushToast(ok ? 'ok' : 'err', ok ? '已复制内容' : t('复制失败'))
                 }}
               >
                 复制内容
@@ -1014,30 +1014,30 @@ export function FileManager({ agentId }: { agentId: string }) {
               <div className="dim" style={{ padding: '4px 10px', fontSize: 11 }}>已选 {selectedSet.size} 项</div>
               <button onClick={() => { doDownloadMulti(multiItems); setCtx(null) }}>{t('批量下载文件')}</button>
               {mode !== 'disks' && (
-                <button className="danger" onClick={() => { doRmMulti(multiItems); setCtx(null) }}>批量删除</button>
+                <button className="danger" onClick={() => { doRmMulti(multiItems); setCtx(null) }}>{t('批量删除')}</button>
               )}
             </>
           ) : (
             <>
               {(ctx.item.isDir || mode === 'disks') && (
-                <button onClick={() => { openItem(ctx.item); setCtx(null) }}>打开</button>
+                <button onClick={() => { openItem(ctx.item); setCtx(null) }}>{t('打开')}</button>
               )}
               {!ctx.item.isDir && mode !== 'disks' && (
                 <>
                   <button onClick={() => { doDownload(ctx.item); setCtx(null) }}>{t('下载')}</button>
-                  <button onClick={() => { doCat(ctx.item); setCtx(null) }}>查看内容</button>
+                  <button onClick={() => { doCat(ctx.item); setCtx(null) }}>{t('查看内容')}</button>
                 </>
               )}
-              <button onClick={() => { copyPath(ctx.item); setCtx(null) }}>复制路径</button>
+              <button onClick={() => { copyPath(ctx.item); setCtx(null) }}>{t('复制路径')}</button>
               <button onClick={async () => {
                 const ok = await copyText(ctx.item.name)
-                pushToast(ok ? 'ok' : 'err', ok ? '已复制名称' : '复制失败')
+                pushToast(ok ? 'ok' : 'err', ok ? '已复制名称' : t('复制失败'))
                 setCtx(null)
-              }}>复制名称</button>
+              }}>{t('复制名称')}</button>
               {mode !== 'disks' && (
                 <>
                   <div className="sep" />
-                  <button disabled={uploading} onClick={() => { fileInputRef.current?.click(); setCtx(null) }}>上传到此目录</button>
+                  <button disabled={uploading} onClick={() => { fileInputRef.current?.click(); setCtx(null) }}>{t('上传到此目录')}</button>
                   <button className="danger" onClick={() => { doRm(ctx.item); setCtx(null) }}>{t('删除')}</button>
                 </>
               )}

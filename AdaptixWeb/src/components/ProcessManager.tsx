@@ -105,7 +105,7 @@ export function ProcessManager({ agentId }: { agentId: string }) {
 
   async function copyPid(pid: number) {
     const ok = await copyText(String(pid))
-    pushToast(ok ? 'ok' : 'err', ok ? `已复制 PID ${pid}` : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? `已复制 PID ${pid}` : t('复制失败'))
   }
 
   return (
@@ -118,22 +118,22 @@ export function ProcessManager({ agentId }: { agentId: string }) {
             <span className="fm-boost">Linux 进程</span>
           ) : (
             <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`}>
-              {boosted || agent?.a_sleep === 0 ? '交互加速 · sleep 0' : `Sleep ${agent?.a_sleep ?? '-'}s`}
+              {boosted || agent?.a_sleep === 0 ? t('交互加速 · sleep 0') : `Sleep ${agent?.a_sleep ?? '-'}s`}
             </span>
           )}
         </div>
         <div className="sep" />
         <button disabled={busy || killing != null} onClick={refresh}>
-          {busy ? '加载中…' : '刷新'}
+          {busy ? t('加载中…') : t('刷新')}
         </button>
         <input
           type="search"
           className="pm-search"
-          placeholder="过滤 PID / 名称 / 用户"
+          placeholder={t('过滤 PID / 名称 / 用户')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <button onClick={() => openConsole(agentId)}>终端</button>
+        <button onClick={() => openConsole(agentId)}>{t('终端')}</button>
         <button
           className="danger"
           disabled={!selectedProc || busy || killing != null}
@@ -148,14 +148,14 @@ export function ProcessManager({ agentId }: { agentId: string }) {
         </div>
         <button className="ghost" onClick={() => closeUiTab(`procs:${agentId}` as any)}>{t('关闭')}</button>
         <PageTips id="procs">
-          <p>进程列表 + 搜索过滤；选中行后「结束进程」。</p>
-          <p>Linux 主机的结束操作经由 <code>kill &lt;pid&gt;</code> {t('命令完成（列表随后自动刷新）。')}</p>
+          <p>{t('进程列表 + 搜索过滤；选中行后「结束进程」。')}</p>
+          <p>{t('Linux 主机的结束操作经由')} <code>kill &lt;pid&gt;</code> {t('命令完成（列表随后自动刷新）。')}</p>
         </PageTips>
       </div>
 
       <div className="table-wrap pm-table-wrap">
         {busy && !items.length ? (
-          <EmptyState title="正在拉取进程列表…" hint={message || '等待主机回显'} />
+          <EmptyState title={t('正在拉取进程列表…')} hint={message || '等待主机回显'} />
         ) : view.length === 0 ? (
           <EmptyState title={err || '无进程数据'} hint={err ? '可刷新重试' : '调整过滤条件'} />
         ) : (
@@ -167,7 +167,7 @@ export function ProcessManager({ agentId }: { agentId: string }) {
                 <th>{t('进程')}</th>
                 <th style={{ minWidth: 140 }}>{t('用户')}</th>
                 <th style={{ width: 72 }}>{t('架构')}</th>
-                <th style={{ width: 72 }}>会话</th>
+                <th style={{ width: 72 }}>{t('会话')}</th>
                 <th style={{ width: 88 }}></th>
               </tr>
             </thead>
@@ -207,7 +207,7 @@ export function ProcessManager({ agentId }: { agentId: string }) {
                         kill(p.pid, p.name)
                       }}
                     >
-                      {killing === p.pid ? '…' : '结束'}
+                      {killing === p.pid ? '…' : t('结束')}
                     </button>
                   </td>
                 </tr>
@@ -225,8 +225,8 @@ export function ProcessManager({ agentId }: { agentId: string }) {
           onMouseLeave={() => setCtx(null)}
         >
           <div className="ctx-hd mono">{ctx.name} · {ctx.pid}</div>
-          <button type="button" onClick={() => { void copyPid(ctx.pid); setCtx(null) }}>复制 PID</button>
-          <button type="button" className="danger" onClick={() => { void kill(ctx.pid, ctx.name); setCtx(null) }}>结束进程</button>
+          <button type="button" onClick={() => { void copyPid(ctx.pid); setCtx(null) }}>{t('复制 PID')}</button>
+          <button type="button" className="danger" onClick={() => { void kill(ctx.pid, ctx.name); setCtx(null) }}>{t('结束进程')}</button>
         </div>
       )}
     </div>

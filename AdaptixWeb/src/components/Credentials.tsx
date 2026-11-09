@@ -44,7 +44,7 @@ export function Credentials() {
             <button className="primary" onClick={() => setShow(true)}>{t('+ 添加凭据')}</button>
             <input type="search" placeholder={t('搜索用户 / 主机 / 标签')} value={q} onChange={(e) => setQ(e.target.value)} />
             <button onClick={() => refresh()}>{t('刷新')}</button>
-            <div className="stats"><span>{view.length} 条</span></div>
+            <div className="stats"><span>{view.length} {t('条')}</span></div>
             <PageTips id="creds">
               <p>{t('团队凭据仓库：手动录入 username/password/realm/host/tag。')}</p>
               <p>与 agent 端的 <code>creds</code> 收割命令（控制台输出）相互独立，需手动同步。</p>
@@ -57,7 +57,7 @@ export function Credentials() {
         ) : (
           <table>
             <thead>
-              <tr><th>{t('用户')}</th><th>{t('密码')}</th><th>域</th><th>{t('主机')}</th><th>{t('类型')}</th><th>{t('标签')}</th><th style={{ width: 120 }}></th></tr>
+              <tr><th>{t('用户')}</th><th>{t('密码')}</th><th>{t('域')}</th><th>{t('主机')}</th><th>{t('类型')}</th><th>{t('标签')}</th><th style={{ width: 120 }}></th></tr>
             </thead>
             <tbody>
               {view.map((c: any, i) => {
@@ -75,7 +75,7 @@ export function Credentials() {
                     <td style={{ display: 'flex', gap: 6 }}>
                       <button className="ghost" onClick={async () => {
                         const ok = await copyText(`${user}:${pass}`)
-                        pushToast(ok ? 'ok' : 'err', ok ? '已复制 user:pass' : '复制失败')
+                        pushToast(ok ? 'ok' : 'err', ok ? t('已复制 user:pass') : t('复制失败'))
                       }}>{t('复制')}</button>
                       <button className="danger" onClick={async () => {
                         if (!id || !confirm('删除凭据？')) return
@@ -83,7 +83,7 @@ export function Credentials() {
                           await api.post('/api/creds/remove', { cred_id_array: [id] })
                           await refresh()
                         } catch (e: any) { pushLog('err', e.message || String(e)) }
-                      }}>删</button>
+                      }}>{t('删')}</button>
                     </td>
                   </tr>
                 )
@@ -99,7 +99,7 @@ export function Credentials() {
             <h2>添加凭据</h2>
             <div className="field"><label>{t('用户名')}</label><input value={username} onChange={(e) => setUsername(e.target.value)} /></div>
             <div className="field"><label>{t('密码')}</label><input value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-            <div className="field"><label>域</label><input value={realm} onChange={(e) => setRealm(e.target.value)} /></div>
+            <div className="field"><label>{t('域')}</label><input value={realm} onChange={(e) => setRealm(e.target.value)} /></div>
             <div className="field"><label>{t('主机')}</label><input value={host} onChange={(e) => setHost(e.target.value)} /></div>
             <div className="field"><label>{t('标签')}</label><input value={tag} onChange={(e) => setTag(e.target.value)} /></div>
             <div className="btns">
@@ -110,7 +110,7 @@ export function Credentials() {
                   await api.post('/api/creds/add', {
                     username, password, realm, host, tag, type: 'password',
                   })
-                  pushToast('ok', '凭据已添加')
+                  pushToast('ok', t('凭据已添加'))
                   setShow(false)
                   setUsername(''); setPassword(''); setRealm(''); setHost(''); setTag('')
                   await refresh()

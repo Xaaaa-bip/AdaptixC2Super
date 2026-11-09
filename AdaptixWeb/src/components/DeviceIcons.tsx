@@ -14,6 +14,7 @@
  *   在 .graph-dev-* 规则里定，不在这个文件里写死。
  */
 import React from 'react'
+import { t } from '../i18n'
 import type { DeviceKind } from '../graphBoard'
 import { DEVICE_KIND_KEYS } from '../graphBoard'
 
@@ -166,7 +167,7 @@ const KIND_META: Record<DeviceKind, { label: string; short: string }> = {
   bastion: { label: '堡垒机', short: '堡垒机' },
   web: { label: 'Web 服务器', short: 'Web' },
   dc: { label: '域控', short: '域控' },
-  file: { label: '文件服务器', short: '文件' },
+  file: { label: '文件服务器', short: t('文件') },
   attacker: { label: '攻击机', short: '攻击机' },
   vpn: { label: 'VPN 入口', short: 'VPN' },
   cloud: { label: '云主机', short: '云' },
@@ -210,7 +211,7 @@ const ROLE_WORDS: Array<[string, DeviceKind]> = [
   ['堡垒机', 'bastion'], ['跳板机', 'bastion'], ['跳板', 'bastion'],
   ['web', 'web'], ['web服务器', 'web'], ['网站', 'web'], ['web服务', 'web'],
   ['域控', 'dc'], ['域控制器', 'dc'], ['dc', 'dc'], ['ad', 'dc'],
-  ['文件服务器', 'file'], ['文件', 'file'], ['共享', 'file'], ['nas', 'file'],
+  ['文件服务器', 'file'], [t('文件'), 'file'], ['共享', 'file'], ['nas', 'file'],
   ['攻击机', 'attacker'], ['攻击', 'attacker'], ['kali', 'attacker'], ['c2', 'attacker'],
   ['vpn', 'vpn'], ['vpn入口', 'vpn'], ['入口', 'vpn'],
   ['云主机', 'cloud'], ['云', 'cloud'], ['ecs', 'cloud'], ['aws', 'cloud'],

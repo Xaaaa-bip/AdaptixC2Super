@@ -47,11 +47,11 @@ export function EventsDock() {
   return (
     <>
       <div className="ev-bar">
-        <input type="search" placeholder="过滤事件…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input type="search" placeholder={t('过滤事件…')} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="chip-row">
           {(['all', 'info', 'ok', 'warn', 'err'] as const).map((lv) => (
             <button key={lv} type="button" className={level === lv ? 'primary' : ''} onClick={() => setLevel(lv)}>
-              {lv === 'all' ? '全部' : lv}
+              {lv === 'all' ? t('全部') : lv}
             </button>
           ))}
         </div>
@@ -62,7 +62,7 @@ export function EventsDock() {
             if (el) el.scrollTop = el.scrollHeight
             stickRef.current = true
             setAtBottom(true)
-          }}>↓ 最新</button>
+          }}>{t('↓ 最新')}</button>
         )}
       </div>
       <div className="ev-list" ref={listRef} onScroll={onScroll}>

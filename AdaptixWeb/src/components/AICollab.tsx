@@ -14,7 +14,7 @@ const PROVIDERS = [
   { id: 'ollama', label: 'Ollama（本地）', baseUrl: 'http://127.0.0.1:11434/v1', model: 'llama3.1' },
   { id: 'compatible', label: 'OpenAI 兼容接口', baseUrl: '', model: '' },
 ]
-const SUGGESTIONS = ['总结当前战情', '分析目标主机的下一步', '整理最近任务中的异常', '检查 Linux Agent 上线问题']
+const SUGGESTIONS = [t('总结当前战情'), '分析目标主机的下一步', t('整理最近任务中的异常'), '检查 Linux Agent 上线问题']
 
 function id(prefix: string) { return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) }
 function welcome(): Message {
@@ -51,17 +51,17 @@ function endpoint(baseUrl: string) {
   return base.endsWith('/chat/completions') ? base : base + '/chat/completions'
 }
 function contextOf(target: any, targetTasks: any[], online: number, total: number, logs: any[]) {
-  const targetName = target?.a_computer || '整个工作区'
+  const targetName = target?.a_computer || t('整个工作区')
   const targetState = target
-    ? (isAgentOnline(target) ? '在线' : '离线') + ' · ' + (target.a_name || '未知 agent') + ' · ' + (target.a_internal_ip || target.a_external_ip || '无地址')
+    ? (isAgentOnline(target) ? t('在线') : t('离线')) + ' · ' + (target.a_name || '未知 agent') + ' · ' + (target.a_internal_ip || target.a_external_ip || '无地址')
     : '工作区级分析'
-  const taskText = targetTasks.slice(0, 6).map((task) => '- ' + (task.a_cmdline || '未命名任务') + '：' + (task.a_completed ? '已完成' : '执行中') + '，' + (task.a_message || task.a_text || '暂无回显')).join('\n')
+  const taskText = targetTasks.slice(0, 6).map((task) => '- ' + (task.a_cmdline || '未命名任务') + '：' + (task.a_completed ? t('已完成') : t('执行中')) + '，' + (task.a_message || task.a_text || '暂无回显')).join('\n')
   const eventText = logs.slice(0, 5).map((log) => '- [' + (log.level || 'info') + '] ' + (log.text || '')).join('\n')
-  return '目标：' + targetName + '\n目标状态：' + targetState + '\n工作区在线主机：' + online + '/' + total + '\n目标任务：\n' + (taskText || '暂无任务') + '\n最近事件：\n' + (eventText || '暂无事件')
+  return '目标：' + targetName + '\n目标状态：' + targetState + '\n工作区在线主机：' + online + '/' + total + '\n目标任务：\n' + (taskText || t('暂无任务')) + '\n最近事件：\n' + (eventText || '暂无事件')
 }
 function localReply(target: any, targetTasks: any[], online: number, total: number, logs: any[]) {
-  const name = target?.a_computer || '整个工作区'
-  const state = target ? (isAgentOnline(target) ? '在线' : '离线') + ' · ' + (target.a_name || '未知 agent') : '工作区级分析'
+  const name = target?.a_computer || t('整个工作区')
+  const state = target ? (isAgentOnline(target) ? t('在线') : t('离线')) + ' · ' + (target.a_name || '未知 agent') : '工作区级分析'
   const running = targetTasks.filter((task) => !task.a_completed).length
   return '当前目标：' + name + '（' + state + '）\n工作区状态：' + online + '/' + total + ' 台在线，' + logs.length + ' 条事件。\n目标任务：' + targetTasks.length + ' 条，' + running + ' 条仍在执行。\n\n建议先核对最近一次回连、任务回显和 agent 类型，再决定下一步。命令下发前请确认目标和影响范围。\n\n当前未配置外部 AI，以上内容来自本地工作区数据。'
 }
@@ -115,7 +115,7 @@ export function AICollab() {
   const mode = hasAI ? (config.provider === 'compatible' ? 'AI' : config.provider.toUpperCase()) + ' · ' + config.model : 'LOCAL CONTEXT'
 
   useEffect(() => {
-    try { localStorage.setItem(ROOMS_KEY, JSON.stringify([{ id: 'battle', title: '对战助手', summary: '单一对话上下文', createdAt: Date.now(), messages: messages.slice(-80) }])) } catch { /* ignore */ }
+    try { localStorage.setItem(ROOMS_KEY, JSON.stringify([{ id: 'battle', title: t('对战助手'), summary: '单一对话上下文', createdAt: Date.now(), messages: messages.slice(-80) }])) } catch { /* ignore */ }
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
   useEffect(() => {
@@ -127,14 +127,14 @@ export function AICollab() {
   function chooseTarget(value: string) { setTargetId(value); if (value) selectAgent(value) }
   function saveConfig() {
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)) } catch { /* ignore */ }
-    setNotice('AI 配置已保存，仅保存在当前浏览器。')
+    setNotice(t('AI 配置已保存，仅保存在当前浏览器。'))
     setSettingsOpen(false)
   }
   function clearConfig() {
     const empty = { provider: 'compatible', baseUrl: '', model: '', apiKey: '' }
     setConfig(empty)
     try { localStorage.removeItem(CONFIG_KEY) } catch { /* ignore */ }
-    setNotice('已清除 AI 配置，恢复本地上下文模式。')
+    setNotice(t('已清除 AI 配置，恢复本地上下文模式。'))
   }
   async function testConnection() {
     if (!configured(config)) { setNotice('请先填写 API Base URL、模型和 API Key。'); return }
@@ -160,45 +160,45 @@ export function AICollab() {
   return (
     <div className="ai-page ai-battle-page">
       <header className="ai-header">
-        <div className="ai-title-block"><span className="ai-kicker">AI BATTLE ASSISTANT</span><h2>{t('对战助手')}</h2><p>围绕一个目标主机分析现状、任务和下一步。</p></div>
+        <div className="ai-title-block"><span className="ai-kicker">AI BATTLE ASSISTANT</span><h2>{t('对战助手')}</h2><p>{t('围绕一个目标主机分析现状、任务和下一步。')}</p></div>
         <div className="ai-header-actions">
           <span className={'ai-mode ' + (hasAI ? 'configured' : '')}><i /> {mode}</span>
           <button className="ghost" onClick={() => openUiTab('chat')}>{t('团队聊天')}</button>
           <button className="ghost" onClick={() => setSettingsOpen(true)}>{t('AI 设置')}</button>
-          <button className="ghost" onClick={() => setMessages([welcome()])}>清空对话</button>
+          <button className="ghost" onClick={() => setMessages([welcome()])}>{t('清空对话')}</button>
         </div>
       </header>
       <main className="ai-battle-main">
         <div className="ai-battle-context">
-          <label className="ai-target-select"><span>目标主机</span><select value={targetId} onChange={(event) => chooseTarget(event.target.value)}><option value="">整个工作区</option>{Object.values(agents).map((agent) => <option key={agent.a_id} value={agent.a_id}>{agent.a_computer || agent.a_id}</option>)}</select></label>
-          <span className="ai-context-stat"><b>{target ? (isAgentOnline(target) ? '在线' : '离线') : online + '/' + total}</b>{target ? ' · ' + (target.a_name || 'agent') : ' 台在线'}</span>
+          <label className="ai-target-select"><span>{t('目标主机')}</span><select value={targetId} onChange={(event) => chooseTarget(event.target.value)}><option value="">{t('整个工作区')}</option>{Object.values(agents).map((agent) => <option key={agent.a_id} value={agent.a_id}>{agent.a_computer || agent.a_id}</option>)}</select></label>
+          <span className="ai-context-stat"><b>{target ? (isAgentOnline(target) ? t('在线') : t('离线')) : online + '/' + total}</b>{target ? ' · ' + (target.a_name || 'agent') : ' 台在线'}</span>
           <span className="ai-context-stat"><b>{targetTasks.filter((task) => !task.a_completed).length}</b> {t('个任务执行中')}</span>
-          <span className="ai-context-stat"><b>{logs.length}</b> 条事件</span>
+          <span className="ai-context-stat"><b>{logs.length}</b> {t('条事件')}</span>
           {target && <button className="ghost ai-target-action" onClick={() => openConsole(target.a_id)}>{t('打开终端 →')}</button>}
           <button className="ghost ai-target-action" onClick={() => openUiTab('tasks')}>{t('任务中心 →')}</button>
         </div>
         <section className="ai-assistant-card">
           <div className="ai-assistant-head"><div><b>{t('对战助手')}</b><span>{hasAI ? '已连接外部模型' : '本地上下文模式'}</span></div>{notice && <span className="ai-notice">{notice}</span>}</div>
           <div className="ai-message-list">
-            {messages.map((message) => <article key={message.id} className={'ai-message ' + message.role}><div className="ai-message-avatar">{message.role === 'user' ? '你' : message.role === 'error' ? '!' : 'AI'}</div><div className="ai-message-body"><div className="ai-message-meta"><b>{message.role === 'user' ? '你' : message.role === 'error' ? 'AI 请求' : '对战助手'}</b><span>{fmtTime(message.ts)}</span></div><div className="ai-message-text">{message.text}</div></div></article>)}
-            {sending && <div className="ai-thinking"><i /> 正在分析当前上下文…</div>}
+            {messages.map((message) => <article key={message.id} className={'ai-message ' + message.role}><div className="ai-message-avatar">{message.role === 'user' ? '你' : message.role === 'error' ? '!' : 'AI'}</div><div className="ai-message-body"><div className="ai-message-meta"><b>{message.role === 'user' ? '你' : message.role === 'error' ? 'AI 请求' : t('对战助手')}</b><span>{fmtTime(message.ts)}</span></div><div className="ai-message-text">{message.text}</div></div></article>)}
+            {sending && <div className="ai-thinking"><i /> {t('正在分析当前上下文…')}</div>}
             <div ref={endRef} />
           </div>
           <div className="ai-suggestions">{SUGGESTIONS.map((item) => <button key={item} disabled={sending} onClick={() => void send(item)}>{item}</button>)}</div>
-          <div className="ai-composer"><textarea value={draft} placeholder="输入你要分析的目标、异常或下一步…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} /><div className="ai-composer-foot"><span>Enter 发送 · Shift+Enter 换行 · {hasAI ? '会调用已配置模型' : '仅使用本地数据'}</span><button className="primary" disabled={!draft.trim() || sending} onClick={() => void send()}>{sending ? '分析中…' : '发送'}</button></div></div>
+          <div className="ai-composer"><textarea value={draft} placeholder={t('输入你要分析的目标、异常或下一步…')} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} /><div className="ai-composer-foot"><span>Enter 发送 · Shift+Enter 换行 · {hasAI ? '会调用已配置模型' : t('仅使用本地数据')}</span><button className="primary" disabled={!draft.trim() || sending} onClick={() => void send()}>{sending ? '分析中…' : t('发送')}</button></div></div>
         </section>
-        <p className="ai-safety-note">助手只提供分析和建议，命令执行仍需你在终端或任务中心确认。</p>
+        <p className="ai-safety-note">{t('助手只提供分析和建议，命令执行仍需你在终端或任务中心确认。')}</p>
       </main>
       {settingsOpen && <div className="ai-settings-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><section className="ai-settings" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
         <div className="ai-settings-head"><div><span className="ai-kicker">MODEL CONNECTION</span><h3 id="ai-settings-title">{t('AI 设置')}</h3></div><button className="ghost" onClick={() => setSettingsOpen(false)}>{t('关闭')}</button></div>
-        <p className="ai-settings-intro">填写后，点击发送才会把当前对话和工作区上下文发给该接口。配置只保存在当前浏览器。</p>
-        <label>服务类型<select value={config.provider} onChange={(event) => { const provider = PROVIDERS.find((item) => item.id === event.target.value); setConfig((current) => ({ ...current, provider: event.target.value, baseUrl: provider?.baseUrl || '', model: provider?.model || '' })) }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+        <p className="ai-settings-intro">{t('填写后，点击发送才会把当前对话和工作区上下文发给该接口。配置只保存在当前浏览器。')}</p>
+        <label>{t('服务类型')}<select value={config.provider} onChange={(event) => { const provider = PROVIDERS.find((item) => item.id === event.target.value); setConfig((current) => ({ ...current, provider: event.target.value, baseUrl: provider?.baseUrl || '', model: provider?.model || '' })) }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
         <label>API Base URL<input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.openai.com/v1" /></label>
-        <label>模型<input value={config.model} onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))} placeholder="gpt-4o-mini / deepseek-chat" /></label>
-        <label>API Key<div className="ai-key-field"><input type={showKey ? 'text' : 'password'} value={config.apiKey} onChange={(event) => setConfig((current) => ({ ...current, apiKey: event.target.value }))} placeholder="sk-…" autoComplete="off" /><button className="ghost" onClick={() => setShowKey((value) => !value)}>{showKey ? '隐藏' : '显示'}</button></div></label>
-        <div className="ai-settings-hint">支持 OpenAI 兼容的 <span className="mono">/chat/completions</span> 接口。API Key 会存入浏览器 localStorage；共享电脑请使用短期 Key。</div>
+        <label>{t('模型')}<input value={config.model} onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))} placeholder="gpt-4o-mini / deepseek-chat" /></label>
+        <label>API Key<div className="ai-key-field"><input type={showKey ? 'text' : 'password'} value={config.apiKey} onChange={(event) => setConfig((current) => ({ ...current, apiKey: event.target.value }))} placeholder="sk-…" autoComplete="off" /><button className="ghost" onClick={() => setShowKey((value) => !value)}>{showKey ? t('隐藏') : t('显示')}</button></div></label>
+        <div className="ai-settings-hint">{t('支持 OpenAI 兼容的')} <span className="mono">/chat/completions</span> {t('接口。API Key 会存入浏览器 localStorage；共享电脑请使用短期 Key。')}</div>
         {notice && <div className="ai-settings-status">{notice}</div>}
-        <div className="ai-settings-actions"><button className="ghost" onClick={clearConfig}>清除配置</button><button className="ghost" disabled={testing} onClick={() => void testConnection()}>{testing ? '测试中…' : '测试连接'}</button><button className="primary" onClick={saveConfig}>保存配置</button></div>
+        <div className="ai-settings-actions"><button className="ghost" onClick={clearConfig}>{t('清除配置')}</button><button className="ghost" disabled={testing} onClick={() => void testConnection()}>{testing ? '测试中…' : '测试连接'}</button><button className="primary" onClick={saveConfig}>{t('保存配置')}</button></div>
       </section></div>}
     </div>
   )

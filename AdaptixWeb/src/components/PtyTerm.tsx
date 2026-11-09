@@ -160,7 +160,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
         dataDispRef.current = term.onData((data: string) => sendPty(data))
         const proc = String(agent?.a_process || '')
         term.writeln('\x1b[90m# 交互 PTY · 选择程序后点「启动」\x1b[0m')
-        term.writeln(`\x1b[90m# host=${agent?.a_computer || agentId} · ${live ? '在线' : '离线'} · oemcp=${oemCp}\x1b[0m`)
+        term.writeln(`\x1b[90m# host=${agent?.a_computer || agentId} · ${live ? t('在线') : t('离线')} · oemcp=${oemCp}\x1b[0m`)
         if (proc) term.writeln(`\x1b[90m# process=${proc}\x1b[0m`)
         term.writeln('\x1b[90m# 切换其它页签会保持会话；关闭 PTY 页签才会断开\x1b[0m')
         ro = new ResizeObserver(() => {
@@ -188,7 +188,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
 
   async function start() {
     if (!live) {
-      pushToast('warn', '主机离线，无法启动 PTY')
+      pushToast('warn', t('主机离线，无法启动 PTY'))
       return
     }
     if (!api) {
@@ -277,7 +277,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
         <strong>{t('交互 PTY')}</strong>
         <span className="mono dim">{agent?.a_computer || agentId}</span>
         {agent?.a_process ? <span className="mono dim" title={agent.a_process}>{agent.a_process}</span> : null}
-        <span className={`tag ${live ? 'online' : 'offline'}`}>{live ? '在线' : '离线'}</span>
+        <span className={`tag ${live ? 'online' : 'offline'}`}>{live ? t('在线') : t('离线')}</span>
         <span className={`tag ${status === 'running' ? 'listen' : status === 'error' ? 'offline' : 'warn'}`}>{status}</span>
         <div className="sep" />
         <select
@@ -290,7 +290,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
           style={{ width: 140 }}
         >
           {presets.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}
-          <option value="__custom__">自定义</option>
+          <option value="__custom__">{t('自定义')}</option>
         </select>
         {status === 'running' || status === 'connecting' ? (
           <span className="mono dim pty-prog" title={program}>{program}</span>
@@ -300,11 +300,11 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
             style={{ minWidth: 260, flex: 1 }}
             value={program}
             onChange={(e) => setProgram(e.target.value)}
-            placeholder="程序路径"
+            placeholder={t('程序路径')}
           />
         )}
         <button className="primary" disabled={!live || status === 'connecting' || status === 'running'} onClick={start}>
-          {status === 'connecting' ? '连接中…' : '启动'}
+          {status === 'connecting' ? t('连接中…') : '启动'}
         </button>
         <button disabled={status !== 'running' && status !== 'connecting'} onClick={() => stop()}>{t('停止')}</button>
         <button className="ghost" onClick={() => {
@@ -316,9 +316,9 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
         }}>适配</button>
         <button className="ghost" onClick={() => closeUiTab((tabId || `pty:${agentId}`) as any)}>{t('关闭')}</button>
         <PageTips id="pty">
-          <p>交互式 PTY 终端：预设 bash/sh 或自定义程序。</p>
-          <p>WebSocket 建立后需等待 agent 下一次回连完成通道握手。</p>
-          <p>关闭页签即结束会话；页签切换会保持会话存活。</p>
+          <p>{t('交互式 PTY 终端：预设 bash/sh 或自定义程序。')}</p>
+          <p>{t('WebSocket 建立后需等待 agent 下一次回连完成通道握手。')}</p>
+          <p>{t('关闭页签即结束会话；页签切换会保持会话存活。')}</p>
         </PageTips>
       </div>
       {err && <div className="banner warn">{err}</div>}
@@ -334,7 +334,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
           className="pty-cmd mono"
           disabled={status !== 'running'}
           value={line}
-          placeholder={status === 'running' ? (isWin ? '在此输入命令，回车发送，例如 dir / whoami' : '在此输入命令，回车发送') : '先点「启动」，通道就绪后再输入'}
+          placeholder={status === 'running' ? (isWin ? t('在此输入命令，回车发送，例如 dir / whoami') : t('在此输入命令，回车发送')) : '先点「启动」，通道就绪后再输入'}
           onChange={(e) => setLine(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {

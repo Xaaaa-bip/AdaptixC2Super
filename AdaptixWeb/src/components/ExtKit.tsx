@@ -65,26 +65,26 @@ type AgentBlock = { agent: string; groups: CmdGroup[]; names: Set<string> }
  *   不做静默归并。
  */
 const PURPOSE_OF: Record<string, string> = {
-  'AD-BOF': '域渗透',
-  'ADCS-BOF': '域渗透',
-  'Kerbeus-BOF': '域渗透',
-  'SQL-BOF': '域渗透',
-  'LDAP-BOF': '域渗透',
-  'AD RelayInformer': '域渗透',
-  'Mimikatz': '凭据获取',
-  'Creds-BOF': '凭据获取',
-  'Elevation-BOF': '提权',
-  'Execution-BOF': '执行与注入',
-  'Injection-BOF': '执行与注入',
-  'LateralMovement-BOF': '横向移动',
-  'PostEx-BOF': '后渗透',
-  'SAL-BOF': '侦察与态势',
-  'SAR-BOF': '侦察与态势',
-  'Process-BOF': '侦察与态势',
+  'AD-BOF': t('域渗透'),
+  'ADCS-BOF': t('域渗透'),
+  'Kerbeus-BOF': t('域渗透'),
+  'SQL-BOF': t('域渗透'),
+  'LDAP-BOF': t('域渗透'),
+  'AD RelayInformer': t('域渗透'),
+  'Mimikatz': t('凭据获取'),
+  'Creds-BOF': t('凭据获取'),
+  'Elevation-BOF': t('提权'),
+  'Execution-BOF': t('执行与注入'),
+  'Injection-BOF': t('执行与注入'),
+  'LateralMovement-BOF': t('横向移动'),
+  'PostEx-BOF': t('后渗透'),
+  'SAL-BOF': t('侦察与态势'),
+  'SAR-BOF': t('侦察与态势'),
+  'Process-BOF': t('侦察与态势'),
 }
 /** 按攻击链顺序排，不是字母序 —— 操作员一般是顺着链子往下找 */
-const PURPOSE_ORDER = ['侦察与态势', '域渗透', '凭据获取', '提权', '执行与注入', '横向移动', '后渗透', '其他']
-const purposeOf = (kit: string) => PURPOSE_OF[kit] || '其他'
+const PURPOSE_ORDER = [t('侦察与态势'), t('域渗透'), t('凭据获取'), t('提权'), t('执行与注入'), t('横向移动'), t('后渗透'), t('其他')]
+const purposeOf = (kit: string) => PURPOSE_OF[kit] || t('其他')
 
 /** 「必填且要填值」的参数——纯开关不算（它没值可填） */
 function requiredArgs(c: CmdDef): CmdArgDef[] {
@@ -298,7 +298,7 @@ export function ExtKit() {
 
   async function copy(text: string, what: string) {
     const ok = await copyText(text)
-    pushToast(ok ? 'ok' : 'err', ok ? `${what}已复制` : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? `${what}已复制` : t('复制失败'))
   }
 
   return (
@@ -307,8 +307,8 @@ export function ExtKit() {
         <span className="xkit-title">{t('Extension-Kit 命令')}</span>
         <span className="dim" style={{ fontSize: 12 }}>
           {blocks.length
-            ? <>{blocks.length} 个 agent 批次 · 当前 <b>{totalCmds}</b> 条 / <b>{block?.groups.length || 0}</b> 组 · 命令树 source=profile</>
-            : '等待命令树'}
+            ? <>{blocks.length} agent batches · <b>{totalCmds}</b> cmds / <b>{block?.groups.length || 0}</b> groups · source=profile</>
+            : t('等待命令树')}
         </span>
         <span style={{ flex: 1 }} />
         {/* 「下发」到底发给谁，必须写在脸上：焦点主机没选时会兜底到第一台在线主机，
@@ -323,7 +323,7 @@ export function ExtKit() {
             : '当前没有在线主机，所有「下发」都不可用'}
         >
           {target
-            ? <>下发目标 <b className="mono">{targetName}</b>{targetHost ? ` · ${targetHost}` : ''}{targetImplicit ? '（未选中，取第一台在线）' : ''}</>
+            ? <>{t('下发目标')} <b className="mono">{targetName}</b>{targetHost ? ` · ${targetHost}` : ''}{targetImplicit ? '（未选中，取第一台在线）' : ''}</>
             : '下发目标 无在线主机'}
         </span>
         {blocks.length > 1 && (
@@ -347,16 +347,16 @@ export function ExtKit() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <button type="button" className="ghost" onClick={() => { void load(true) }} disabled={loading || !api} title="重新拉取命令树">
-          {loading ? '…' : '刷新'}
+        <button type="button" className="ghost" onClick={() => { void load(true) }} disabled={loading || !api} title={t('重新拉取命令树')}>
+          {loading ? '…' : t('刷新')}
         </button>
         <PageTips id="extkit">
-          <p><b>这一页是什么。</b>Extension-Kit 那 11 个 <code>.axs</code> 注册进服务端的命令，按分组列全。数据来自控制台自己用的那棵命令树（<code>POST /api/axscript/commands</code> 里 <code>source=profile</code> 的批次），页面上没有任何硬编码的命令名 —— 改 <code>.axs</code> 后重载 extender 再刷新即可。</p>
-          <p><b>为什么给「示例」而不是「参数表单」。</b>这些命令带预钩子：服务端拿到命令行后先跑 <code>.axs</code> 的钩子，把它展开成 <code>execute bof …_bin/&lt;file&gt;.&lt;arch&gt;.o</code>。参数怎么写由钩子决定，参数表只是 schema。所以示例是权威用法，参数表是参考，两者冲突时以示例为准。</p>
-          <p><b>下发按钮为什么只出现在一部分命令上。</b>只有「命令名本身就是一条完整命令」的才给下发，三条全中才算：没有必填值参数、<b>没有子命令</b>、示例里没有 <code>&lt;dn&gt;</code>/<code>&#123;subcommand&#125;</code>/<code>[options]</code> 这类占位符。全表 62 条里只有 18 条合格（<code>whoami</code>、<code>hashdump</code>、<code>ipconfig</code>…）；其余一律只给复制。最容易看错的是子命令那条：子命令是必选的，但它不在参数表里，所以「无参数」不等于「无输入」—— <code>dcsync</code> 的示例就是 <code>dcsync &#123;subcommand&#125; [options]</code>，发一个光秃秃的 <code>dcsync</code> 出去不会报错，只是没有意义。</p>
-          <p><b>下发到哪台。</b>只发给主机页当前选中的那台，且必须与页面上显示的 agent 名一致（<span className="mono">主机 a_name == 批次 agent</span>）；不一致时按钮是灰的，不会拿 gopher 的命令去发给 beacon。</p>
-          <p><b>产物缺失不会报错。</b>这些命令最终落到 <code>&lt;script_dir&gt;_bin/</code> 下的 <code>.o</code>；产物没编译时下发不报错、也没有回显。到 <b>{t('BOF 模块')}</b>页确认真有那个产物，别在控制台里等一个永远不来的输出。</p>
-          <p><b>跨 agent 差异。</b>{uniform ? '当前各 agent 的命令集合完全相同。' : '各 agent 的命令集合不一致，差异标在对应命令上（「仅 xx」）。'}</p>
+          <p><b>这一页是什么。</b>{t('Extension-Kit 那 11 个')} <code>.axs</code> {t('注册进服务端的命令，按分组列全。数据来自控制台自己用的那棵命令树（')}<code>POST /api/axscript/commands</code> {t('里')} <code>source=profile</code> {t('的批次），页面上没有任何硬编码的命令名 —— 改')} <code>.axs</code> 后重载 extender 再刷新即可。</p>
+          <p><b>{t('为什么给「示例」而不是「参数表单」。')}</b>{t('这些命令带预钩子：服务端拿到命令行后先跑')} <code>.axs</code> {t('的钩子，把它展开成')} <code>execute bof …_bin/&lt;file&gt;.&lt;arch&gt;.o</code>{t('。参数怎么写由钩子决定，参数表只是 schema。所以示例是权威用法，参数表是参考，两者冲突时以示例为准。')}</p>
+          <p><b>{t('下发按钮为什么只出现在一部分命令上。')}</b>{t('只有「命令名本身就是一条完整命令」的才给下发，三条全中才算：没有必填值参数、')}<b>{t('没有子命令')}</b>{t('、示例里没有')} <code>&lt;dn&gt;</code>/<code>&#123;subcommand&#125;</code>/<code>[options]</code> {t('这类占位符。全表 62 条里只有 18 条合格（')}<code>whoami</code>、<code>hashdump</code>、<code>ipconfig</code>{t('…）；其余一律只给复制。最容易看错的是子命令那条：子命令是必选的，但它不在参数表里，所以「无参数」不等于「无输入」——')} <code>dcsync</code> {t('的示例就是')} <code>dcsync &#123;subcommand&#125; [options]</code>{t('，发一个光秃秃的')} <code>dcsync</code> {t('出去不会报错，只是没有意义。')}</p>
+          <p><b>{t('下发到哪台。')}</b>{t('只发给主机页当前选中的那台，且必须与页面上显示的 agent 名一致（')}<span className="mono">{t('主机 a_name == 批次 agent')}</span>{t('）；不一致时按钮是灰的，不会拿 gopher 的命令去发给 beacon。')}</p>
+          <p><b>{t('产物缺失不会报错。')}</b>{t('这些命令最终落到')} <code>&lt;script_dir&gt;_bin/</code> {t('下的')} <code>.o</code>{t('；产物没编译时下发不报错、也没有回显。到')} <b>{t('BOF 模块')}</b>{t('页确认真有那个产物，别在控制台里等一个永远不来的输出。')}</p>
+          <p><b>{t('跨 agent 差异。')}</b>{uniform ? '当前各 agent 的命令集合完全相同。' : '各 agent 的命令集合不一致，差异标在对应命令上（「仅 xx」）。'}</p>
         </PageTips>
       </div>
 
@@ -364,7 +364,7 @@ export function ExtKit() {
           而不是"哪个 kit 目录里有"。上面那排是套件，这排是用途。 */}
       {!!(block && purposesHere.length > 1) && (
         <div className="xkit-groups xkit-purposes">
-          <span className="xkit-purposes-k">用途</span>
+          <span className="xkit-purposes-k">{t('用途')}</span>
           <button type="button" className={`xkit-chip ${purpose === '' ? 'on' : ''}`} onClick={() => setPurpose('')}>
             全部
           </button>
@@ -389,7 +389,7 @@ export function ExtKit() {
 
       {!!(block && block.groups.length) && (
         <div className="xkit-groups">
-          <span className="xkit-purposes-k">套件</span>
+          <span className="xkit-purposes-k">{t('套件')}</span>
           <button type="button" className={`xkit-chip ${group === '' ? 'on' : ''}`} onClick={() => setGroup('')}>
             全部 <span className="dim">{totalCmds}</span>
           </button>
@@ -412,20 +412,20 @@ export function ExtKit() {
       {err ? (
         <div className="banner warn" style={{ marginBottom: 10 }}>
           拉取命令树失败：{err}
-          <button type="button" className="ghost" style={{ marginLeft: 8 }} onClick={() => { void load(true) }}>重试</button>
+          <button type="button" className="ghost" style={{ marginLeft: 8 }} onClick={() => { void load(true) }}>{t('重试')}</button>
         </div>
       ) : null}
 
       {!err && !loading && !blocks.length && (
         <EmptyState
           icon="❯"
-          title="服务端没有 Extension-Kit 命令"
+          title="t('服务端没有 Extension-Kit 命令')"
           hint="命令树里没有 source=profile 的批次。确认 profile 的 axscripts 指向 extension-kit.axs，且 extender 已重载。"
         />
       )}
 
       {!err && !!blocks.length && !visible.length && (
-        <EmptyState icon="❯" title="没有匹配的命令" hint={q ? `没有命令匹配「${q}」` : '这个分组下没有命令'} />
+        <EmptyState icon="❯" title={t('没有匹配的命令')} hint={q ? `没有命令匹配「${q}」` : '这个分组下没有命令'} />
       )}
 
       <div className="xkit-wrap">
@@ -449,7 +449,7 @@ export function ExtKit() {
                 <span className="xkit-group-n">{cmds.length}</span>
                 {g.group_description ? <span className="xkit-group-desc">{g.group_description}</span> : null}
                 <span style={{ flex: 1 }} />
-                {g.script_name ? <span className="xkit-src mono" title="注册这些命令的 .axs（分组按 script_name 归类）">{g.script_name}</span> : null}
+                {g.script_name ? <span className="xkit-src mono" title={t('注册这些命令的 .axs（分组按 script_name 归类）')}>{g.script_name}</span> : null}
               </div>
               <div className="xkit-grid">
                 {cmds.map((c) => {
@@ -459,7 +459,7 @@ export function ExtKit() {
                     <article key={c.name} className="xkit-card">
                       <div className="xkit-card-head">
                         <code className="xkit-name">{c.name}</code>
-                        {c.has_pre_hook ? <span className="xkit-badge hook" title="带预钩子：服务端会先把命令行展开成 execute bof …，参数写法以示例为准">钩子</span> : null}
+                        {c.has_pre_hook ? <span className="xkit-badge hook" title={t('带预钩子：服务端会先把命令行展开成 execute bof …，参数写法以示例为准')}>{t('钩子')}</span> : null}
                         {(c.subcommands || []).length > 0 ? <span className="xkit-badge" title={`有 ${c.subcommands!.length} 个子命令，必须挑一个 —— 所以这条不能一键下发，照示例写`}>子命令 {c.subcommands!.length}</span> : null}
                         {(c.args || []).length > 0 ? <span className="xkit-badge" title={`${c.args!.length} 个参数，其中 ${req.length} 个必填`}>参数 {c.args!.length}</span> : null}
                         {miss.length > 0 ? (
@@ -490,11 +490,11 @@ export function ExtKit() {
                       <div className="xkit-foot">
                         {c.example
                           ? <code className="xkit-ex" title={c.example}>{c.example}</code>
-                          : <code className="xkit-ex dim">（.axs 没给示例）</code>}
+                          : <code className="xkit-ex dim">{t('（.axs 没给示例）')}</code>}
                         {c.example ? (
-                          <button type="button" className="ghost" onClick={() => void copy(c.example!, '示例')} title="复制示例（权威用法）">复制示例</button>
+                          <button type="button" className="ghost" onClick={() => void copy(c.example!, '示例')} title={t('复制示例（权威用法）')}>{t('复制示例')}</button>
                         ) : null}
-                        <button type="button" className="ghost" onClick={() => void copy(cmdlineOf(c), '命令名')} title={`复制命令名：${c.name}`}>复制命令</button>
+                        <button type="button" className="ghost" onClick={() => void copy(cmdlineOf(c), '命令名')} title={`复制命令名：${c.name}`}>{t('复制命令')}</button>
                         {sendsAsIs(c) ? (
                           <button
                             type="button"

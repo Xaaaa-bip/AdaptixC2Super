@@ -147,11 +147,11 @@ export function Tunnels() {
       <div className="toolbar">
         <button className="primary" onClick={() => setShow(true)}>{t('+ 新建隧道')}</button>
         <button onClick={() => refresh()}>{t('刷新')}</button>
-        <div className="stats"><span>{list.length} 条隧道</span></div>
+        <div className="stats"><span>{list.length} {t('条隧道')}</span></div>
         <PageTips id="tunnels">
           <p>{t('新建隧道：SOCKS4/SOCKS5 代理、本地/远程端口转发。')}</p>
           <p>{t('SOCKS5 支持用户名密码认证。')}</p>
-          <p><b>Linux 主机暂不支持 RPF 反向转发</b>（选项自动禁用）。</p>
+          <p><b>{t('Linux 主机暂不支持 RPF 反向转发')}</b>{t('（选项自动禁用）。')}</p>
         </PageTips>
       </div>
       <div className="table-wrap">
@@ -172,7 +172,7 @@ export function Tunnels() {
                 <th>{t('状态')}</th>
                 <th>{t('主机')}</th>
                 <th>{t('类型')}</th>
-                <th>信息</th>
+                <th>{t('信息')}</th>
                 <th>{t('监听')}</th>
                 <th>{t('目标')}</th>
                 <th style={{ width: 240 }}></th>
@@ -199,7 +199,7 @@ export function Tunnels() {
                       {active ? (
                         <button onClick={() => doStop(id)}>{t('停止')}</button>
                       ) : (
-                        <button className="primary" onClick={() => doEnable(id)}>启用</button>
+                        <button className="primary" onClick={() => doEnable(id)}>{t('启用')}</button>
                       )}
                       <button onClick={() => {
                         setEditId(id)
@@ -218,16 +218,16 @@ export function Tunnels() {
       {editId && (
         <div className="mask" onClick={() => !busy && setEditId(null)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()}>
-            <h2>编辑隧道信息</h2>
+            <h2>{t('编辑隧道信息')}</h2>
             <div className="dim mono" style={{ marginBottom: 8 }}>{editId}</div>
             <div className="field">
               <label>描述 / Info</label>
-              <input value={editInfo} onChange={(e) => setEditInfo(e.target.value)} placeholder="备注" />
+              <input value={editInfo} onChange={(e) => setEditInfo(e.target.value)} placeholder={t('备注')} />
             </div>
-            <div className="hint">仅修改描述；端口/类型需删除后重建。</div>
+            <div className="hint">{t('仅修改描述；端口/类型需删除后重建。')}</div>
             <div className="btns">
               <button disabled={busy} onClick={() => setEditId(null)}>{t('取消')}</button>
-              <button className="primary" disabled={busy} onClick={doSaveInfo}>{busy ? '保存中…' : '保存'}</button>
+              <button className="primary" disabled={busy} onClick={doSaveInfo}>{busy ? t('保存中…') : t('保存')}</button>
             </div>
           </div>
         </div>
@@ -236,10 +236,10 @@ export function Tunnels() {
       {show && (
         <div className="mask" onClick={() => !busy && setShow(false)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()}>
-            <h2>新建隧道</h2>
+            <h2>{t('新建隧道')}</h2>
             <div className="field"><label>{t('主机')}</label>
               <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-                <option value="">选择上线主机</option>
+                <option value="">{t('选择上线主机')}</option>
                 {agentOptions.map((a) => (
                   <option key={a.a_id} value={a.a_id}>{a.a_computer || a.a_id} · {a.a_internal_ip}</option>
                 ))}
@@ -249,36 +249,36 @@ export function Tunnels() {
               <select value={kind} onChange={(e) => setKind(e.target.value as any)}>
                 <option value="socks5">SOCKS5</option>
                 <option value="socks4">SOCKS4</option>
-                <option value="lportfwd">本地端口转发 LPF</option>
-                <option value="rportfwd" disabled={linuxSelected}>远程端口转发 RPF</option>
+                <option value="lportfwd">{t('本地端口转发 LPF')}</option>
+                <option value="rportfwd" disabled={linuxSelected}>{t('远程端口转发 RPF')}</option>
               </select>
             </div>
             {linuxSelected && (
-              <div className="hint warn-hint">RPF 反向转发暂不支持 Linux 主机（插件未实现）</div>
+              <div className="hint warn-hint">{t('RPF 反向转发暂不支持 Linux 主机（插件未实现）')}</div>
             )}
-            <div className="field"><label>描述</label><input value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
+            <div className="field"><label>{t('描述')}</label><input value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
             {(kind === 'socks5' || kind === 'socks4' || kind === 'lportfwd') && (
               <>
-                <div className="field"><label>监听地址</label><input value={lhost} onChange={(e) => setLhost(e.target.value)} /></div>
+                <div className="field"><label>{t('监听地址')}</label><input value={lhost} onChange={(e) => setLhost(e.target.value)} /></div>
                 <div className="field"><label>{t('监听端口')}</label><input type="number" value={lport} onChange={(e) => setLport(Number(e.target.value))} /></div>
               </>
             )}
             {kind === 'lportfwd' && (
               <>
                 <div className="field"><label>目标地址</label><input value={thost} onChange={(e) => setThost(e.target.value)} /></div>
-                <div className="field"><label>目标端口</label><input type="number" value={tport} onChange={(e) => setTport(Number(e.target.value))} /></div>
+                <div className="field"><label>{t('目标端口')}</label><input type="number" value={tport} onChange={(e) => setTport(Number(e.target.value))} /></div>
               </>
             )}
             {kind === 'rportfwd' && (
               <>
-                <div className="field"><label>远程端口</label><input type="number" value={lport} onChange={(e) => setLport(Number(e.target.value))} /></div>
+                <div className="field"><label>{t('远程端口')}</label><input type="number" value={lport} onChange={(e) => setLport(Number(e.target.value))} /></div>
                 <div className="field"><label>目标地址</label><input value={thost} onChange={(e) => setThost(e.target.value)} /></div>
-                <div className="field"><label>目标端口</label><input type="number" value={tport} onChange={(e) => setTport(Number(e.target.value))} /></div>
+                <div className="field"><label>{t('目标端口')}</label><input type="number" value={tport} onChange={(e) => setTport(Number(e.target.value))} /></div>
               </>
             )}
             {kind === 'socks5' && (
               <>
-                <div className="field"><label>认证</label>
+                <div className="field"><label>{t('认证')}</label>
                   <label style={{ color: 'var(--text)' }}>
                     <input type="checkbox" checked={useAuth} onChange={(e) => setUseAuth(e.target.checked)} /> 启用用户名密码
                   </label>
@@ -291,7 +291,7 @@ export function Tunnels() {
                 )}
               </>
             )}
-            <div className="hint">隧道监听在 Teamserver 侧（listen=true）。停止后配置保留，可再启用；删除才会移除。</div>
+            <div className="hint">{t('隧道监听在 Teamserver 侧（listen=true）。停止后配置保留，可再启用；删除才会移除。')}</div>
             <div className="btns">
               <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !agentId || (linuxSelected && kind === 'rportfwd')} onClick={async () => {
@@ -320,7 +320,7 @@ export function Tunnels() {
                   pushLog('err', e.message || String(e))
                   alert(e.message || String(e))
                 } finally { setBusy(false) }
-              }}>创建</button>
+              }}>{t('创建')}</button>
             </div>
           </div>
         </div>

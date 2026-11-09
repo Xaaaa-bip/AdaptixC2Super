@@ -33,7 +33,6 @@ export const EN_DICT2: Record<string, string> = {
 
   /* 投递 */
   /* WebDelivery 第三批补充 */
-  'Web 投递 · 一键上线': 'Web Delivery · one-liner',
   '服务端没有返回任何变体': 'Server returned no variants',
   '有风险': 'risky',
   '目标机必须能': 'The target must be able to reach',
@@ -42,13 +41,11 @@ export const EN_DICT2: Record<string, string> = {
   '插件未加载时页面会提示；修改配置后需重新生成命令。': 'The page warns when the plugin is missing; regenerate commands after config changes.',
   '先选': 'Pick an',
   '1. 投递路由': '1. Delivery routes', 'Script 路由': 'Script route',
-  '2. Agent / 监听器': '2. Agent / listener',
   '架构（空=按 UA 自动）': 'Arch (empty = auto by UA)',
   'one-liner 拼：': 'one-liner built with:',
   '批量下载文件': 'Bulk download files',
   '打开终端 →': 'Open console →',
   '任务中心 →': 'Tasks →',
-  '当前目录': 'Current dir',
   'Stager 端点': 'Stager endpoint',
 
   'Web 投递': 'Web Delivery', 'Web 投递 · 一键上线': 'Web Delivery · one-liner',
@@ -62,9 +59,7 @@ export const EN_DICT2: Record<string, string> = {
   'certutil 直拉 EXE': 'certutil pull EXE', 'bitsadmin 直拉 EXE': 'bitsadmin pull EXE',
   'curl 直拉': 'curl pull', 'curl 直拉二进制': 'curl pull binary', 'python3 直拉': 'python3 pull',
   'C2 Host URL（目标机访问的 teamserver，含 /api）': 'C2 Host URL (teamserver reachable from target, incl. /api)',
-  'Web Delivery 配置已应用': 'Web Delivery config applied', '1. 投递路由': '1. Delivery route',
-  'Payload 路由': 'Payload route', 'Script 路由': 'Script route', 'Stager 端点': 'Stager endpoint',
-  'Stager 下载端点': 'Stager download endpoint', 'Agent 类型': 'Agent type', 'Agent 端口': 'Agent port',
+  'Web Delivery 配置已应用': 'Web Delivery config applied', 'Payload 路由': 'Payload route', 'Stager 下载端点': 'Stager download endpoint', 'Agent 类型': 'Agent type', 'Agent 端口': 'Agent port',
 
   /* 资产页 */
   '暂无下载文件': 'No downloads', '暂无凭据': 'No credentials', '暂无截图': 'No screenshots',

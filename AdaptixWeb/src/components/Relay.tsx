@@ -25,11 +25,11 @@ const POLL_MS = 5000
 type Tone = 'ok' | 'warn' | 'err' | 'info'
 
 function describe(st: RelayStatus | null): { text: string; tone: Tone } {
-  if (!st) return { text: '读取中…', tone: 'info' }
-  if (!st.systemctl_present) return { text: '本机无 systemd', tone: 'err' }
-  if (!st.unit_present) return { text: '未托管', tone: 'err' }
+  if (!st) return { text: t('读取中…'), tone: 'info' }
+  if (!st.systemctl_present) return { text: 'no systemd', tone: 'err' }
+  if (!st.unit_present) return { text: t('未托管'), tone: 'err' }
   switch (st.active) {
-    case 'active': return { text: '运行中', tone: 'ok' }
+    case 'active': return { text: t('运行中'), tone: 'ok' }
     case 'activating': return { text: '启动中…', tone: 'warn' }
     case 'deactivating': return { text: '停止中…', tone: 'warn' }
     case 'failed': return { text: '已失败', tone: 'err' }
@@ -108,7 +108,7 @@ export function Relay() {
 
   const act = async (a: 'start' | 'stop' | 'restart') => {
     if (!api) return
-    const label = a === 'start' ? '启动' : a === 'stop' ? '停止' : '重启'
+    const label = a === 'start' ? '启动' : a === 'stop' ? t('停止') : '重启'
     setBusy(a)
     try {
       const r = await api.relayAction(a)
@@ -145,18 +145,18 @@ export function Relay() {
           {busy === 'restart' ? '重启中…' : '重启'}
         </button>
         <button className="danger" onClick={() => act('stop')} disabled={disabled || !running}>
-          {busy === 'stop' ? '停止中…' : '停止'}
+          {busy === 'stop' ? '停止中…' : t('停止')}
         </button>
         <button onClick={() => void refresh()} disabled={!!busy}>{t('刷新')}</button>
         <PageTips id="relay">
-          <p>这一页管的是 <b>libp2p 中转进程（axrelay）本身</b>，不是监听器。</p>
-          <p>按钮转发给 systemd（<span className="mono">{st?.unit || 'axrelay.service'}</span>），
+          <p>{t('这一页管的是')} <b>{t('libp2p 中转进程（axrelay）本身')}</b>{t('，不是监听器。')}</p>
+          <p>{t('按钮转发给 systemd（')}<span className="mono">{st?.unit || 'axrelay.service'}</span>），
             不会另起一个进程 —— relay 的生死只能有一个 owner。</p>
-          <p>载荷要连的地址来自<b>{t('监听器')}</b>的 <span className="mono">l2p_relays</span>
+          <p>{t('载荷要连的地址来自')}<b>{t('监听器')}</b>{t('的')} <span className="mono">l2p_relays</span>
             （gopher_listener_tcp 的字段，不是本插件）—— 本页只管 relay 进程本身。</p>
-          <p>改 <span className="mono">/etc/axrelay/relaynode.key</span> 会换 peer id，
-            于是 <span className="mono">l2p_relays</span> 与<b>所有已发出的 agent 地址一起失效</b>。</p>
-          <p>状态每 5 秒自动读一次；读的是 systemd 的当前值，不是缓存。</p>
+          <p>{t('改')} <span className="mono">/etc/axrelay/relaynode.key</span> 会换 peer id，
+            于是 <span className="mono">l2p_relays</span> {t('与')}<b>{t('所有已发出的 agent 地址一起失效')}</b>。</p>
+          <p>{t('状态每 5 秒自动读一次；读的是 systemd 的当前值，不是缓存。')}</p>
         </PageTips>
       </div>
 
@@ -168,9 +168,9 @@ export function Relay() {
       {missing ? (
         <div style={{ padding: '10px 14px 0' }}>
           <div className="card" style={{ flex: '0 0 auto', padding: '10px 12px' }}>
-            <div className="lv err">relay 插件没注册</div>
+            <div className="lv err">{t('relay 插件没注册')}</div>
             <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>
-              接口回了<b>空响应</b> —— 说明 <span className="mono">extenders/relay</span> 没在
+              接口回了<b>{t('空响应')}</b> {t('—— 说明')} <span className="mono">extenders/relay</span> 没在
               profile 里列出，或 <span className="mono">relay.so</span> 没落位。改完要重启 teamserver。
             </div>
           </div>
@@ -180,10 +180,10 @@ export function Relay() {
       {err ? (
         <div style={{ padding: '10px 14px 0' }}>
           <div className="card" style={{ flex: '0 0 auto', padding: '10px 12px' }}>
-            <div className="lv err">读不到 relay 状态</div>
+            <div className="lv err">{t('读不到 relay 状态')}</div>
             <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>{err}</div>
             <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>
-              这是<b>请求失败</b>，与「插件没注册」是两回事（后者是 200 空响应，不会抛异常）。
+              这是<b>{t('请求失败')}</b>，与「插件没注册」是两回事（后者是 200 空响应，不会抛异常）。
               多半是 teamserver 正在重启或链接中断，刷新即可。
             </div>
           </div>
@@ -193,7 +193,7 @@ export function Relay() {
       {st?.hint ? (
         <div style={{ padding: '10px 14px 0' }}>
           <div className="card" style={{ flex: '0 0 auto', padding: '10px 12px' }}>
-            <div className="lv warn">relay 无法被托管</div>
+            <div className="lv warn">{t('relay 无法被托管')}</div>
             <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>{st.hint}</div>
           </div>
         </div>
@@ -215,7 +215,7 @@ export function Relay() {
             {/* ★ systemd 的 ActiveEnterTimestamp 在停止后**仍保留上次激活时间**
                 （真正的停止时刻在 StateChangeTimestamp）。直接写「启动于」会让一个
                 陈旧值读起来像当前事实 —— 正是这一页要防的那类误读，所以按状态换标签。 */}
-            <Fact k={running ? '启动于' : '上次启动'} v={st?.since || '—'} />
+            <Fact k={running ? '启动于' : t('上次启动')} v={st?.since || '—'} />
             <Fact k="unit 文件" v={st?.unit_file || '未找到'} title={st?.unit_file} />
             <Fact
               k="peer id"
@@ -230,7 +230,7 @@ export function Relay() {
                 className="ghost"
                 onClick={async () => {
                   const ok = await copyText(st.peer_id)
-                  pushToast(ok ? 'ok' : 'err', ok ? 'peer id 已复制' : '复制失败')
+                  pushToast(ok ? 'ok' : 'err', ok ? 'peer id 已复制' : t('复制失败'))
                 }}
               >
                 复制 peer id

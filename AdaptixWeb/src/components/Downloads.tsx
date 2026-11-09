@@ -37,7 +37,7 @@ export function Downloads() {
     setBusyId(fileId)
     try {
       const res = await api.downloadSync(fileId)
-      if (!res.content) throw new Error('空内容')
+      if (!res.content) throw new Error('empty content')
       const bin = atob(res.content)
       const bytes = new Uint8Array(bin.length)
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
@@ -61,13 +61,13 @@ export function Downloads() {
     // 对齐 Qt：生成可复制的 curl/wget；若服务端有 OTP 下载 URL 可再增强
     try {
       const res = await api.downloadSync(fileId)
-      if (!res.content) throw new Error('空内容')
+      if (!res.content) throw new Error('empty content')
       // 无法给外部 OTP URL 时，复制「已同步内容」提示不合适；改为下载并提示
       // 折中：生成 data-url 过大；复制指令模板 + fileId
       const base = (api as any).baseUrl || location.origin
       const hint = `${kind === 'curl' ? buildCurl(`${base}/api/download/sync`) : buildWget(`${base}/api/download/sync`)}\n# file_id=${fileId} （Web 使用 POST+JWT；浏览器请点「同步到本机」）`
       const ok = await copyText(hint)
-      pushToast(ok ? 'ok' : 'err', ok ? `已复制 ${kind} 模板` : '复制失败')
+      pushToast(ok ? 'ok' : 'err', ok ? `已复制 ${kind} 模板` : t('复制失败'))
       // 同时触发本机下载，行为接近 Sync
       await doDownload(fileId)
     } catch (e: any) {
@@ -91,11 +91,11 @@ export function Downloads() {
       toolbar={
         <>
           <input type="search" placeholder={t('搜索文件名 / 主机 / 用户')} value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="stats"><span>{list.length} 个文件</span></div>
+          <div className="stats"><span>{list.length} {t('个文件')}</span></div>
           <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>{t('刷新')}</button>
           <PageTips id="downloads">
             <p>{t('agent 回传的文件在此统一管理；「同步到本机」下载到浏览器。')}</p>
-            <p>右键可复制 <code>curl/wget</code> 下载命令（含 file_id 说明）。</p>
+            <p>{t('右键可复制')} <code>curl/wget</code> {t('下载命令（含 file_id 说明）。')}</p>
           </PageTips>
         </>
       }
@@ -109,8 +109,8 @@ export function Downloads() {
               <th>{t('文件名')}</th>
               <th>{t('主机')}</th>
               <th>{t('用户')}</th>
-              <th>计算机</th>
-              <th>大小</th>
+              <th>{t('计算机')}</th>
+              <th>{t('大小')}</th>
               <th style={{ width: 220 }}></th>
             </tr>
           </thead>
@@ -157,7 +157,7 @@ export function Downloads() {
           onMouseLeave={() => setCtx(null)}
         >
           <div className="ctx-hd">{ctx.name || ctx.id}</div>
-          <button type="button" onClick={() => { void doDownload(ctx.id, ctx.name); setCtx(null) }}>同步到本机</button>
+          <button type="button" onClick={() => { void doDownload(ctx.id, ctx.name); setCtx(null) }}>{t('同步到本机')}</button>
           <button type="button" onClick={() => { void copySyncCmd('curl', ctx.id); setCtx(null) }}>Sync as curl</button>
           <button type="button" onClick={() => { void copySyncCmd('wget', ctx.id); setCtx(null) }}>Sync as wget</button>
           <div className="sep" />

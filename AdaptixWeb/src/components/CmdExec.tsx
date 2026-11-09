@@ -91,7 +91,7 @@ export function CmdExec({ agentId }: { agentId: string }) {
     const c = raw.trim()
     if (!c) return
     if (inFlight.current) return      // 上一条还在发（连按回车不会重复下发）
-    if (!online) { pushToast('warn', '主机离线，命令无法执行'); return }
+    if (!online) { pushToast('warn', t('主机离线，命令无法执行')); return }
     setHist((h) => (h[h.length - 1] === c ? h : [...h, c]).slice(-200))
     setHistIdx(-1)
     inFlight.current = true
@@ -131,13 +131,13 @@ export function CmdExec({ agentId }: { agentId: string }) {
 
   async function copyAll() {
     const ok = await copyText(mine.map((l) => l.text).join('\n'))
-    pushToast(ok ? 'ok' : 'err', ok ? '回显已复制' : '复制失败')
+    pushToast(ok ? 'ok' : 'err', ok ? t('回显已复制') : t('复制失败'))
   }
 
   function taskLabel() {
     if (!latestTask) return '尚无任务'
-    if (!latestTask.a_completed) return '执行中'
-    return '已完成'
+    if (!latestTask.a_completed) return t('执行中')
+    return t('已完成')
   }
 
   return (
@@ -150,13 +150,13 @@ export function CmdExec({ agentId }: { agentId: string }) {
           {String(agent?.a_computer || agentId)}
           {agent?.a_username ? ` · ${agent.a_username}` : ''}
         </span>
-        <span className={`sdot ${online ? 'on' : 'off'}`} title={online ? '在线' : '离线'} />
-        <span className="dim" style={{ fontSize: 12 }}>{online ? '在线' : '离线（命令可排队）'}</span>
+        <span className={`sdot ${online ? 'on' : 'off'}`} title={online ? t('在线') : t('离线')} />
+        <span className="dim" style={{ fontSize: 12 }}>{online ? t('在线') : '离线（命令可排队）'}</span>
         <span className="cmd-exec-host-meta mono">{agent?.a_name || 'agent'} · {agent?.a_internal_ip || agent?.a_external_ip || '无地址'}</span>
         <span style={{ flex: 1 }} />
-        <button className="ghost" onClick={() => openUiTab('tasks')} title="查看这台主机的任务">任务 {mineTasks.length}</button>
+        <button className="ghost" onClick={() => openUiTab('tasks')} title={t('查看这台主机的任务')}>任务 {mineTasks.length}</button>
         <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>{t('复制回显')}</button>
-        <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>清空回显</button>
+        <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>{t('清空回显')}</button>
       </div>
 
       <div className="cmd-exec-workbar">
@@ -183,11 +183,11 @@ export function CmdExec({ agentId }: { agentId: string }) {
             <div className="cmd-exec-tip">
               {online
                 ? `输入命令开始执行 · ${linux ? 'linux_agent' : '当前 agent'} · ↑↓ 历史 · Tab 补全`
-                : '主机离线；恢复在线后再发送命令'}
+                : t('主机离线；恢复在线后再发送命令')}
             </div>
           ) : (
             mine.map((l) => (
-              <div key={l.id} className={`ln ${l.kind}`} title="双击复制此行" onDoubleClick={() => void copyText(l.text)}>
+              <div key={l.id} className={`ln ${l.kind}`} title={t('双击复制此行')} onDoubleClick={() => void copyText(l.text)}>
                 <span className="cmd-line-time">{new Date(l.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                 {l.text}
               </div>
@@ -196,7 +196,7 @@ export function CmdExec({ agentId }: { agentId: string }) {
         </div>
         <aside className="cmd-exec-history">
           <div className="cmd-side-hd">
-            <span>最近命令</span>
+            <span>{t('最近命令')}</span>
             <button className="ghost" disabled={!hist.length} onClick={() => setHist([])}>{t('清除')}</button>
           </div>
           {hist.length === 0 ? <div className="cmd-side-empty">{t('提交过的命令会出现在这里，可点击重放。')}</div> : (
@@ -209,7 +209,7 @@ export function CmdExec({ agentId }: { agentId: string }) {
             </div>
           )}
           <div className="cmd-side-foot">
-            <span>{mine.length} 条回显</span>
+            <span>{mine.length} {t('条回显')}</span>
             {latestTask?.a_start_time ? <span>最近 {fmtRelative(latestTask.a_start_time)}</span> : null}
           </div>
         </aside>
@@ -227,7 +227,7 @@ export function CmdExec({ agentId }: { agentId: string }) {
           spellCheck={false}
           autoComplete="off"
         />
-        <span className="cmd-exec-shortcuts">Enter 执行 · ↑↓ 历史 · Tab 补全</span>
+        <span className="cmd-exec-shortcuts">{t('Enter 执行 · ↑↓ 历史 · Tab 补全')}</span>
         <button className="primary cmd-exec-submit" disabled={!cmd.trim() || !online} onClick={() => void submit()}>
           执行
         </button>

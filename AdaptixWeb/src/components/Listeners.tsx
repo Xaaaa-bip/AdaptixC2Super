@@ -51,7 +51,7 @@ function ServerAddrHint() {
   if (!list.length) return null
   return (
     <div className="hint muted-hint">
-      回连地址要填<b>目标机能拨到</b>的服务端地址（缺省是按你访问控制台时用的地址推的）。
+      回连地址要填<b>{t('目标机能拨到')}</b>的服务端地址（缺省是按你访问控制台时用的地址推的）。
       服务端自报的其他地址：
       <div className="mono">{list.join('  ')}</div>
     </div>
@@ -110,7 +110,7 @@ function EditableList({
         <div className="elist-add">
           <input
             value={draft}
-            placeholder={placeholder || '添加一项后回车'}
+            placeholder={placeholder || t('添加一项后回车')}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -351,7 +351,7 @@ export function Listeners() {
                 : (<><option>POST</option><option>GET</option></>)}
             </select>
           </div>
-          <div className="field field-top"><label>URI 路径</label>
+          <div className="field field-top"><label>{t('URI 路径')}</label>
             <EditableList
               value={Array.isArray(c.uri) ? c.uri : linesToArr(String(c.uri || ''))}
               onChange={(v) => setCfg('uri', v)}
@@ -396,7 +396,7 @@ export function Listeners() {
           <div className="field"><label>{t('绑定端口')}</label>
             <input type="number" value={c.port_bind || 9000} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
           </div>
-          <div className="field"><label>前置数据</label>
+          <div className="field"><label>{t('前置数据')}</label>
             <input className="mono" value={c.prepend_data || ''} onChange={(e) => setCfg('prepend_data', e.target.value)} />
           </div>
           <div className="field"><label>{t('加密密钥')}</label>
@@ -412,7 +412,7 @@ export function Listeners() {
     if (ltype === 'BeaconSMB') {
       return (
         <>
-          <div className="field"><label>管道名 (C2)</label>
+          <div className="field"><label>{t('管道名 (C2)')}</label>
             <input value={c.pipename || ''} onChange={(e) => setCfg('pipename', e.target.value)} placeholder="mypipe" />
           </div>
           <div className="field"><label>{t('加密密钥')}</label>
@@ -435,10 +435,10 @@ export function Listeners() {
                 onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
             </div>
           </div>
-          <div className="field"><label>权威域名</label>
+          <div className="field"><label>{t('权威域名')}</label>
             <input value={c.domain || ''} onChange={(e) => setCfg('domain', e.target.value)} placeholder="ns1.c2.com,ns2.backup.com" />
           </div>
-          <div className="field"><label>最大载荷（字节）</label>
+          <div className="field"><label>{t('最大载荷（字节）')}</label>
             <input type="number" value={c.pkt_size || 4096} onChange={(e) => setCfg('pkt_size', Number(e.target.value))} />
           </div>
           <div className="field"><label>DNS TTL（秒）</label>
@@ -457,10 +457,10 @@ export function Listeners() {
           </div>
           {!!c.burst_enabled && (
             <>
-              <div className="field"><label>突发间隔（毫秒）</label>
+              <div className="field"><label>{t('突发间隔（毫秒）')}</label>
                 <input type="number" value={c.burst_sleep ?? 50} onChange={(e) => setCfg('burst_sleep', Number(e.target.value))} />
               </div>
-              <div className="field"><label>突发抖动（%）</label>
+              <div className="field"><label>{t('突发抖动（%）')}</label>
                 <input type="number" value={c.burst_jitter ?? 0} onChange={(e) => setCfg('burst_jitter', Number(e.target.value))} />
               </div>
             </>
@@ -486,14 +486,14 @@ export function Listeners() {
               <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
             </div>
           </div>
-          <div className="field field-top"><label>回连地址（反向 pivot）</label>
+          <div className="field field-top"><label>{t('回连地址（反向 pivot）')}</label>
             <textarea rows={3} value={revAddrs}
               onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
               placeholder={'留空 = 正向（agent 监听端口）\n填入 = 反向（agent 主动拨号）\n例：10.0.0.5:4444'} />
           </div>
           {revAddrs.trim() !== ''
-            ? <div className="hint muted-hint">反向 pivot：生成的子 agent <b>主动 dial</b> 上述地址，自身<b>不监听任何端口</b>，只要求出站可达。父 agent 需先执行 <span className="mono">listen &lt;绑定端口&gt;</span>。</div>
-            : <div className="hint muted-hint">正向：生成的 agent 监听 <span className="mono">{c.port_bind || 4444}</span>，要求目标可入站。填「回连地址」即切换为反向 pivot。</div>}
+            ? <div className="hint muted-hint">{t('反向 pivot：生成的子 agent')} <b>{t('主动 dial')}</b> {t('上述地址，自身')}<b>{t('不监听任何端口')}</b>，只要求出站可达。父 agent 需先执行 <span className="mono">listen &lt;绑定端口&gt;</span>。</div>
+            : <div className="hint muted-hint">正向：生成的 agent 监听 <span className="mono">{c.port_bind || 4444}</span>{t('，要求目标可入站。填「回连地址」即切换为反向 pivot。')}</div>}
         </>
       )
     }
@@ -512,8 +512,8 @@ export function Listeners() {
         <>
           <div className="field field-top"><label>{t('传输协议')}</label>
             <select value={proto} onChange={(e) => setGopherProtocol(e.target.value)}>
-              <option value="tcp">tcp — 直连，agent 拨回连地址</option>
-              <option value="libp2p">libp2p — circuit 中继，C2 真实 IP 不进载荷</option>
+              <option value="tcp">{t('tcp — 直连，agent 拨回连地址')}</option>
+              <option value="libp2p">{t('libp2p — circuit 中继，C2 真实 IP 不进载荷')}</option>
             </select>
             {protoNote && (
               <div className="hint muted-hint">
@@ -521,32 +521,32 @@ export function Listeners() {
                   <>已按新协议改写 {protoNote.converted.length} 条回连地址：{protoNote.converted.map((d, i) => <div key={i} className="mono">{d}</div>)}</>
                 )}
                 {protoNote.kept.length > 0 && (
-                  <>★ 以下 {protoNote.kept.length} 条<b>无法无损转换</b>，已原样保留（未丢值）——形状与当前协议不符，提交会被服务端拒绝，请手工改写：{protoNote.kept.map((d, i) => <div key={i} className="mono">{d}</div>)}</>
+                  <>★ 以下 {protoNote.kept.length} 条<b>{t('无法无损转换')}</b>，已原样保留（未丢值）——形状与当前协议不符，提交会被服务端拒绝，请手工改写：{protoNote.kept.map((d, i) => <div key={i} className="mono">{d}</div>)}</>
                 )}
               </div>
             )}
           </div>
-          <div className="field"><label>{isL2p ? '绑定地址（libp2p 监听）与端口' : '绑定地址与端口'}</label>
+          <div className="field"><label>{isL2p ? t('绑定地址（libp2p 监听）与端口') : t('绑定地址与端口')}</label>
             <div className="field-inline">
               <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
               <input type="number" style={{ width: 110 }} value={c.port_bind || 4444}
                 onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
             </div>
-            {isL2p && <div className="hint muted-hint">libp2p 的 <span className="mono">port_bind</span> 留 0 ⇒ 服务端从下面的 multiaddr 里推；推不出来会建 listener 失败（不会静默绑随机端口）。</div>}
+            {isL2p && <div className="hint muted-hint">{t('libp2p 的')} <span className="mono">port_bind</span> 留 0 ⇒ 服务端从下面的 multiaddr 里推；推不出来会建 listener 失败（不会静默绑随机端口）。</div>}
           </div>
-          <div className="field field-top"><label>{isL2p ? '回连地址（multiaddr）' : '回连地址'}</label>
+          <div className="field field-top"><label>{isL2p ? t('回连地址（multiaddr）') : t('回连地址')}</label>
             <textarea rows={3} value={arrToLines(c.callback_addresses)}
               onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
               placeholder={isL2p
                 ? '/ip4/1.2.3.4/tcp/39017\n可缺 /p2p/<本 listener PeerID>：服务端按私钥自动补'
                 : '192.168.1.1:4444\nserver2.com:5555'} />
             {isL2p
-              ? <div className="hint muted-hint">libp2p 模式下这里是 <b>multiaddr</b>（非 host:port）。若手写 /p2p/&lt;peerID&gt;，必须与下面私钥一致，否则建 listener 直接报错。</div>
+              ? <div className="hint muted-hint">{t('libp2p 模式下这里是')} <b>multiaddr</b>{t('（非 host:port）。若手写 /p2p/&lt;peerID&gt;，必须与下面私钥一致，否则建 listener 直接报错。')}</div>
               : <ServerAddrHint />}
           </div>
           <div className="field"><label>{t('握手超时（秒）· tcp / libp2p 共用')}</label>
             <input type="number" min={1} value={c.timeout ?? 10} onChange={(e) => setCfg('timeout', Number(e.target.value))} />
-            <div className="hint muted-hint">两种传输都消费，且服务端要求 ≥1（该校验位于 libp2p 分支短路<b>之前</b>）。</div>
+            <div className="hint muted-hint">{t('两种传输都消费，且服务端要求 ≥1（该校验位于 libp2p 分支短路')}<b>{t('之前')}</b>）。</div>
           </div>
           {isL2p && (
             <>
@@ -554,13 +554,13 @@ export function Listeners() {
                 <input className="mono" value={c.l2p_protocol || ''} onChange={(e) => setCfg('l2p_protocol', e.target.value)}
                   placeholder="/gopher/1.0.0" />
               </div>
-              <div className="field field-top"><label>libp2p relays（隐藏 C2）</label>
+              <div className="field field-top"><label>{t('libp2p relays（隐藏 C2）')}</label>
                 <textarea rows={3} value={String(c.l2p_relays || '')}
                   onChange={(e) => setCfg('l2p_relays', e.target.value)}
                   placeholder={'/ip4/<relay 公网IP>/tcp/4446/p2p/<relayPeerID>\n一行一条；填了它 ⇒ agent 只拨 circuit 地址，C2 真实 IP:端口不进载荷'} />
-                <div className="hint muted-hint">每条必须带 <span className="mono">/p2p/&lt;relayPeerID&gt;</span>（预约的路由键），且<b>不能</b>含 <span className="mono">/p2p-circuit</span>（由 listener 自己补）。relay 起在 <span className="mono">extenders/gopher_listener_tcp/relaynode</span>。</div>
+                <div className="hint muted-hint">{t('每条必须带')} <span className="mono">/p2p/&lt;relayPeerID&gt;</span>{t('（预约的路由键），且')}<b>{t('不能')}</b>{t('含')} <span className="mono">/p2p-circuit</span>（由 listener 自己补）。relay 起在 <span className="mono">extenders/gopher_listener_tcp/relaynode</span>。</div>
               </div>
-              <div className="field field-top"><label>libp2p addrs（agent 拨号地址）</label>
+              <div className="field field-top"><label>{t('libp2p addrs（agent 拨号地址）')}</label>
                 <textarea rows={2} value={String(c.l2p_addrs || '')}
                   onChange={(e) => setCfg('l2p_addrs', e.target.value)}
                   placeholder={'留空 ⇒ 由 relays 自动派生（推荐）\n填了 ⇒ 覆盖回连地址（高级：自建 circuit / 多跳）'} />
@@ -570,12 +570,12 @@ export function Listeners() {
               </div>
               <div className="field"><label>{t('libp2p 拨号超时（秒）· 0 = 用库默认')}</label>
                 <input type="number" value={c.l2p_dial_timeout ?? 0} onChange={(e) => setCfg('l2p_dial_timeout', Number(e.target.value))} />
-                <div className="hint muted-hint">与上面的「握手超时」是两回事：这个是 agent <b>拨 relay</b> 的连接超时。</div>
+                <div className="hint muted-hint">{t('与上面的「握手超时」是两回事：这个是 agent')} <b>{t('拨 relay')}</b> {t('的连接超时。')}</div>
               </div>
-              <div className="field field-top"><label>libp2p 私钥（b64）</label>
+              <div className="field field-top"><label>{t('libp2p 私钥（b64）')}</label>
                 <input className="mono" value={c.l2p_privkey || ''} onChange={(e) => setCfg('l2p_privkey', e.target.value)}
-                  placeholder="留空 ⇒ 服务端新建时生成" />
-                <div className="hint muted-hint">留空 ⇒ 每次<b>{t('新建')}</b>都换身份（PeerID 变），<b>已生成的 agent 全部失效</b>。要agent 可复用就别清空它 —— 编辑既有 listener 时该值原样回填。</div>
+                  placeholder={t('留空 ⇒ 服务端新建时生成')} />
+                <div className="hint muted-hint">{t('留空 ⇒ 每次')}<b>{t('新建')}</b>{t('都换身份（PeerID 变），')}<b>已生成的 agent 全部失效</b>{t('。要agent 可复用就别清空它 —— 编辑既有 listener 时该值原样回填。')}</div>
               </div>
             </>
           )}
@@ -584,13 +584,13 @@ export function Listeners() {
               写明 l2p 分支的 agent 既不设也不读 BannerSize，写出去的 banner 会被当成
               4 字节长度头 ⇒ 帧错位。故 l2p 下整块不显示。 */}
           {!isL2p && (
-            <div className="field field-top"><label>TCP 横幅（仅 tcp）</label>
+            <div className="field field-top"><label>{t('TCP 横幅（仅 tcp）')}</label>
               <textarea rows={2} value={c.tcp_banner || c.banner || ''} onChange={(e) => setCfg('tcp_banner', e.target.value)} />
               {/* 措辞按**读者所在的分支**写：本条 hint 只在 tcp 下渲染，所以不能说
                   「此处不显示」—— 那正是它此刻在做的事，读者看到的是一句自相矛盾的说明
                   （用户实测：新建 Gopher TCP 时该字段在屏上，而它的帮助文字说它不在）。
                   改成从 tcp 读者的位置描述「切过去会消失」，信息量不变且为真。 */}
-              <div className="hint muted-hint">给扫描器看的伪装页。libp2p 下服务端不消费（硬守卫），故切到 libp2p 后本项不再显示。</div>
+              <div className="hint muted-hint">{t('给扫描器看的伪装页。libp2p 下服务端不消费（硬守卫），故切到 libp2p 后本项不再显示。')}</div>
             </div>
           )}
           <div className="field field-top"><label>{t('错误应答 · tcp / libp2p 共用')}</label>
@@ -626,15 +626,15 @@ export function Listeners() {
         <>
           <div className="field"><label>机器人 Token</label>
             <input className="mono" value={c.bot_token || ''} onChange={(e) => setCfg('bot_token', e.target.value)}
-              placeholder="Discord bot token（仅服务端）" />
+              placeholder={t('Discord bot token（仅服务端）')} />
           </div>
           <div className="field"><label>{t('Beacon 频道 ID')}</label>
             <input className="mono" value={c.channel_beacon || ''} onChange={(e) => setCfg('channel_beacon', e.target.value)}
-              placeholder="beacon → server 消息频道" />
+              placeholder={t('beacon → server 消息频道')} />
           </div>
-          <div className="field"><label>Tasks 频道 ID</label>
+          <div className="field"><label>{t('Tasks 频道 ID')}</label>
             <input className="mono" value={c.channel_tasks || ''} onChange={(e) => setCfg('channel_tasks', e.target.value)}
-              placeholder="server → beacon 任务频道" />
+              placeholder={t('server → beacon 任务频道')} />
           </div>
           <div className="field"><label>{t('Webhook 地址')}</label>
             <input className="mono" value={c.webhook_url || ''} onChange={(e) => setCfg('webhook_url', e.target.value)}
@@ -644,7 +644,7 @@ export function Listeners() {
             <input type="number" min={1} value={c.poll_interval ?? 5}
               onChange={(e) => setCfg('poll_interval', Number(e.target.value))} />
           </div>
-          <div className="field"><label>清理</label>
+          <div className="field"><label>{t('清理')}</label>
             <label className="check-inline" style={{ color: 'var(--text)' }}>
               <input type="checkbox" checked={!!c.cleanup} onChange={(e) => setCfg('cleanup', e.target.checked)} />
               读取后删除消息
@@ -656,7 +656,7 @@ export function Listeners() {
               <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey() + randomEncryptKey())}>{t('生成')}</button>
             </div>
           </div>
-          <div className="hint muted-hint">对齐 AXS：Discord C2 通道。Token/频道 ID 勿提交到公开仓库。</div>
+          <div className="hint muted-hint">{t('对齐 AXS：Discord C2 通道。Token/频道 ID 勿提交到公开仓库。')}</div>
         </>
       )
     }
@@ -718,11 +718,11 @@ export function Listeners() {
             </div>
             <textarea rows={3} className="mono" value={c.uploaded_file || ''}
               onChange={(e) => { setCfg('uploaded_file', e.target.value); setProfileName('') }}
-              placeholder="或直接粘贴 profile JSON / base64" />
+              placeholder={t('或直接粘贴 profile JSON / base64')} />
             <div className="field-hint">
               {c.uploaded_file
                 ? <>当前值 {String(c.uploaded_file).length} 字符（
-                    {String(c.uploaded_file).trim().startsWith('{') ? '原始 JSON'
+                    {String(c.uploaded_file).trim().startsWith('{') ? t('原始 JSON')
                       : String(c.uploaded_file).trim().startsWith('/') ? '服务端路径 —— 该文件必须真实存在且可读'
                       : 'base64'}）。</>
                 : <>{t('必填：KharonHTTP 没有内置默认 profile，留空监听器起不来。')}</>}
@@ -763,7 +763,7 @@ export function Listeners() {
               )}
             </div>
           </div>
-          <div className="hint muted-hint">对齐 <code>listener_kharon_http</code> ListenerUI（字段不同于 BeaconHTTP）。</div>
+          <div className="hint muted-hint">{t('对齐')} <code>listener_kharon_http</code> {t('ListenerUI（字段不同于 BeaconHTTP）。')}</div>
         </>
       )
     }
@@ -783,7 +783,7 @@ export function Listeners() {
             信任 X-Forwarded-For
           </label>
         </div>
-        <div className="field field-top"><label>Host 头</label>
+        <div className="field field-top"><label>{t('Host 头')}</label>
           <EditableList
             value={Array.isArray(c.host_header) ? c.host_header : linesToArr(String(c.host_header || ''))}
             onChange={(v) => setCfg('host_header', v)}
@@ -847,7 +847,7 @@ export function Listeners() {
         //   在提交前拦住 —— 否则现象是「创建成功但监听器不出现」，操作员无从判断
         //   是端口被占、profile 没填、还是服务端坏了。
         if (!String(cfg.uploaded_file || '').trim()) {
-          throw new Error('KharonHTTP 需要 profile：选一个 profile JSON 文件，或粘贴 JSON / base64')
+          throw new Error(t('KharonHTTP 需要 profile：选一个 profile JSON 文件，或粘贴 JSON / base64'))
         }
       }
       if (editMode) {
@@ -886,7 +886,7 @@ export function Listeners() {
       </div>
       <div className="listener-context">
         <span className="listener-context-mark" />
-        <span>入口状态</span>
+        <span>{t('入口状态')}</span>
         <span className="dim">{t('Windows 常用 HTTP · Linux 常用 WS')}</span>
         <span className="listener-context-note">{t('选中一行编辑配置，暂停只影响新的回连')}</span>
       </div>
@@ -895,7 +895,7 @@ export function Listeners() {
         {filtered.length === 0 ? (
           <EmptyState
             icon="◉"
-            title="t('暂无监听器')"
+            title={t('暂无监听器')}
             hint="Windows 上线建 HTTP，Linux 上线建 WS"
             action={<button className="primary" onClick={() => openCreate()}>+ Windows HTTP</button>}
           />
@@ -933,7 +933,7 @@ export function Listeners() {
                         并说明原因 —— 按钮还在，不会让人找不到功能。 */}
                     <button
                       disabled={!isRunning(l)}
-                      title={isRunning(l) ? '暂停监听：暂不接受新的回连，可以恢复' : '监听器当前不在运行状态，无需暂停'}
+                      title={isRunning(l) ? t('暂停监听：暂不接受新的回连，可以恢复') : '监听器当前不在运行状态，无需暂停'}
                       onClick={async () => {
                       try {
                         await api.pauseListener(l.l_name, l.l_reg_name || 'BeaconHTTP')
@@ -943,7 +943,7 @@ export function Listeners() {
                     }}>{t('暂停')}</button>
                     <button
                       disabled={isRunning(l)}
-                      title={isRunning(l) ? '监听器正在运行中，无需恢复' : '恢复监听：重新接受回连'}
+                      title={isRunning(l) ? '监听器正在运行中，无需恢复' : t('恢复监听：重新接受回连')}
                       onClick={async () => {
                       try {
                         await api.resumeListener(l.l_name, l.l_reg_name || 'BeaconHTTP')
@@ -981,7 +981,7 @@ export function Listeners() {
               <button className="ghost" disabled={busy} onClick={() => setShow(false)}>{t('关闭')}</button>
             </div>
 
-            <div className="field"><label>显示名称</label>
+            <div className="field"><label>{t('显示名称')}</label>
               <input
                 value={form.name}
                 disabled={editMode}
@@ -1009,9 +1009,9 @@ export function Listeners() {
               <>
                 <div className="ax-tabs">
                   <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>t('主要设置')</button>
-                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP 头</button>
+                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>{t('HTTP 头')}</button>
                   <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>{t('错误页')}</button>
-                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>载荷页</button>
+                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>{t('载荷页')}</button>
                 </div>
                 <div className="ax-tab-body">
                   {tab === 'main' && renderMain()}
@@ -1027,7 +1027,7 @@ export function Listeners() {
                         <div className="page-preview">
                           <div className="page-preview-k">{t('预览')}</div>
                           <iframe
-                            title="错误页预览"
+                            title={t('错误页预览')}
                             sandbox=""
                             srcDoc={form.config['page-error'] || '<p style="font:13px sans-serif;color:#888;padding:12px">' + t('（空）') + '</p>'}
                           />
@@ -1039,7 +1039,7 @@ export function Listeners() {
                     </div>
                   )}
                   {tab === 'payload' && (
-                    <div className="field field-top"><label>载荷页内容</label>
+                    <div className="field field-top"><label>{t('载荷页内容')}</label>
                       <div className="page-preview-wrap">
                         <textarea rows={10} className="mono" value={form.config['page-payload'] || ''}
                           onChange={(e) => setCfg('page-payload', e.target.value)} />
@@ -1048,7 +1048,7 @@ export function Listeners() {
                           {/* 载荷页里的 <<<PAYLOAD_DATA>>> 是**占位符**，预览里不会替换成真数据 ——
                               它只是个形状参考，别把预览当成真回包。 */}
                           <iframe
-                            title="载荷页预览"
+                            title={t('载荷页预览')}
                             sandbox=""
                             srcDoc={form.config['page-payload'] || '<p style="font:13px sans-serif;color:#888;padding:12px">' + t('（空）') + '</p>'}
                           />
@@ -1068,7 +1068,7 @@ export function Listeners() {
             <div className="btns" style={{ marginTop: 12 }}>
               <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !form.name.trim()} onClick={onSubmit}>
-                {busy ? (editMode ? '保存中…' : '创建中…') : (editMode ? '保存修改' : t('创建监听器'))}
+                {busy ? (editMode ? t('保存中…') : t('创建中…')) : (editMode ? '保存修改' : t('创建监听器'))}
               </button>
             </div>
           </div>
