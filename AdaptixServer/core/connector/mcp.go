@@ -86,7 +86,8 @@ func (tc *TsConnector) TcMcpPost(ctx *gin.Context) {
 		mcpWriteJSONRPC(ctx, req.ID, gin.H{}, nil)
 
 	case "tools/list":
-		mcpWriteJSONRPC(ctx, req.ID, gin.H{"tools": mcpTools()}, nil)
+		tools := append(mcpTools(), mcpToolsExtra()...)
+		mcpWriteJSONRPC(ctx, req.ID, gin.H{"tools": tools}, nil)
 
 	case "tools/call":
 		tc.mcpToolsCall(ctx, req)
@@ -344,6 +345,16 @@ func (tc *TsConnector) mcpToolsCall(ctx *gin.Context, req mcpRequest) {
 	case "chat_send":
 		text, callErr = tc.mcpChatSend(p.Arguments, username)
 	default:
+		// 第二批（mcp_extra.go）：命中返回 (text, err, true)
+		if extraText, extraErr, handled := tc.mcpToolsCallExtra(ctx, p.Name, p.Arguments, username); handled {
+			res := mcpCallResult{Content: []mcpTextContent{{Type: "text", Text: extraText}}}
+			if extraErr != nil {
+				res.IsError = true
+				res.Content[0].Text = extraErr.Error()
+			}
+			mcpWriteJSONRPC(ctx, req.ID, res, nil)
+			return
+		}
 		mcpWriteJSONRPC(ctx, req.ID, nil, mcpErr(-32602, "unknown tool: "+p.Name))
 		return
 	}
@@ -435,14 +446,8 @@ func (tc *TsConnector) mcpAgentCommand(args json.RawMessage, username string) (s
 	if p.AgentID == "" || p.Cmdline == "" {
 		return "", errors.New("agent_id and cmdline are required")
 	}
-	if !tc.teamserver.TsAgentIsExists(p.AgentID) {
-		return "", errors.New("agent not found: " + p.AgentID)
-	}
-	// 与 /api/agent/command/raw 同一条解析链（含 axscript 命令树/钩子展开）。
-	if err := tc.teamserver.TsAxScriptParseAndExecute(p.AgentID, username, p.Cmdline); err != nil {
-		return "", errors.New("command rejected: " + err.Error())
-	}
-	return "queued on " + p.AgentID + ": " + p.Cmdline + " — poll agent_tasks for output", nil
+	text, err, _ := tc.mcpQueueCommand(p.AgentID, username, p.Cmdline)
+	return text, err
 }
 
 func (tc *TsConnector) mcpAgentTasks(args json.RawMessage) (string, error) {
