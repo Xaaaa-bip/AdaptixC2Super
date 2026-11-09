@@ -188,7 +188,11 @@ func mcpTools() []mcpTool {
 			Name:  "get_agent",
 			Title: "Get one host",
 			Description: "One implant session by id (8-32 hex). Returns the same record set as list_agents, filtered.",
-			InputSchema: mcpProp(mcpStr(map[string]any{}), "agent_id", "string", "Agent/session id (hex)", true),
+			InputSchema: func() map[string]any {
+				s := map[string]any{}
+				mcpProp(s, "agent_id", "string", "Agent/session id (hex)", true)
+				return mcpStr(s)
+			}(),
 		},
 		{
 			Name:  "agent_command",
@@ -269,7 +273,11 @@ func mcpTools() []mcpTool {
 			Name:  "chat_send",
 			Title: "Team chat",
 			Description: "Send a message to the operator team chat (broadcast to all online consoles).",
-			InputSchema: mcpProp(mcpStr(map[string]any{}), "message", "string", "Message text", true),
+			InputSchema: func() map[string]any {
+				s := map[string]any{}
+				mcpProp(s, "message", "string", "Message text", true)
+				return mcpStr(s)
+			}(),
 		},
 	}
 }
@@ -310,7 +318,8 @@ func (tc *TsConnector) mcpToolsCall(ctx *gin.Context, req mcpRequest) {
 	case "server_status":
 		text, callErr = tc.mcpServerStatus()
 	case "list_agents":
-		text, callErr = tc.mcpPassThrough("agents", tc.teamserver.TsAgentList())
+		payload, err := tc.teamserver.TsAgentList()
+		text, callErr = tc.mcpPassThrough("agents", payload, err)
 	case "get_agent":
 		text, callErr = tc.mcpGetAgent(p.Arguments)
 	case "agent_command":
@@ -318,7 +327,8 @@ func (tc *TsConnector) mcpToolsCall(ctx *gin.Context, req mcpRequest) {
 	case "agent_tasks":
 		text, callErr = tc.mcpAgentTasks(p.Arguments)
 	case "list_listeners":
-		text, callErr = tc.mcpPassThrough("listeners", tc.teamserver.TsListenerList())
+		payload, err := tc.teamserver.TsListenerList()
+		text, callErr = tc.mcpPassThrough("listeners", payload, err)
 	case "listener_create":
 		text, callErr = tc.mcpListenerCreate(p.Arguments)
 	case "listener_stop":
@@ -326,9 +336,11 @@ func (tc *TsConnector) mcpToolsCall(ctx *gin.Context, req mcpRequest) {
 	case "generate_payload":
 		text, callErr = tc.mcpGeneratePayload(p.Arguments)
 	case "credentials_list":
-		text, callErr = tc.mcpPassThrough("credentials", tc.teamserver.TsCredentilsList())
+		payload, err := tc.teamserver.TsCredentilsList()
+		text, callErr = tc.mcpPassThrough("credentials", payload, err)
 	case "targets_list":
-		text, callErr = tc.mcpPassThrough("targets", tc.teamserver.TsTargetsList())
+		payload, err := tc.teamserver.TsTargetsList()
+		text, callErr = tc.mcpPassThrough("targets", payload, err)
 	case "chat_send":
 		text, callErr = tc.mcpChatSend(p.Arguments, username)
 	default:
