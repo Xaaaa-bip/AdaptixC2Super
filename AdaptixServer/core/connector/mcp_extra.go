@@ -224,7 +224,12 @@ func (tc *TsConnector) mcpToolsCallExtra(ctx *gin.Context, name string, args jso
 		if e := mcpParseParams(args, &p); e != nil {
 			return "", errors.New(e.Message), true
 		}
-		return tc.mcpQueueCommand(p.AgentID, username, "ps")
+		// ★ beacon 的进程命令带子命令（ps list），linux/macos 是裸 ps —— 按 a_os 分派。
+		cmd := "ps"
+		if os, ok := tc.mcpAgentOs(p.AgentID); ok && os == 1 {
+			cmd = "ps list"
+		}
+		return tc.mcpQueueCommand(p.AgentID, username, cmd)
 
 	case "process_kill":
 		var p struct {
@@ -237,7 +242,11 @@ func (tc *TsConnector) mcpToolsCallExtra(ctx *gin.Context, name string, args jso
 		if p.Pid == 0 {
 			return "", errors.New("pid is required"), true
 		}
-		return tc.mcpQueueCommand(p.AgentID, username, "kill "+itoa64(p.Pid))
+		killCmd := "kill " + itoa64(p.Pid)
+		if os, ok := tc.mcpAgentOs(p.AgentID); ok && os == 1 {
+			killCmd = "ps kill " + itoa64(p.Pid)
+		}
+		return tc.mcpQueueCommand(p.AgentID, username, killCmd)
 
 	case "bof_execute":
 		var p struct {
@@ -408,6 +417,24 @@ func (tc *TsConnector) mcpToolsCallExtra(ctx *gin.Context, name string, args jso
 }
 
 /* ── 帮手 ─────────────────────────────────────────────────────────────── */
+
+// mcpAgentOs — 从 agent 列表查某主机的 a_os（1=Windows 2=Linux 3=macOS）。
+func (tc *TsConnector) mcpAgentOs(agentID string) (int, bool) {
+	agentsJSON, err := tc.teamserver.TsAgentList()
+	if err != nil {
+		return 0, false
+	}
+	var agents []map[string]any
+	_ = json.Unmarshal([]byte(agentsJSON), &agents)
+	for _, a := range agents {
+		if id, _ := a["a_id"].(string); id == agentID {
+			if os, ok := a["a_os"].(float64); ok {
+				return int(os), true
+			}
+		}
+	}
+	return 0, false
+}
 
 // mcpQueueCommand — agent 侧命令统一入口：存在性校验 + raw 解析链 + 应答话术。
 func (tc *TsConnector) mcpQueueCommand(agentID, username, cmdline string, note ...string) (string, error, bool) {
