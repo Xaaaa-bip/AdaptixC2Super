@@ -1,6 +1,7 @@
 package token
 
 import (
+	"AdaptixServer/core/profile"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -94,6 +95,15 @@ func ValidateAccessToken() gin.HandlerFunc {
 			tokenString = tokenString[7:]
 		} else {
 			_ = ctx.Error(errors.New("authorization token required"))
+			return
+		}
+
+		// ★ 静态 API token（profile 的 Teamserver.api_token）：constant-time
+		//   比对，通过即与 JWT 同权限 —— MCP/自动化客户端用它免 login、跨重启。
+		if profile.CheckStaticApiToken(tokenString) {
+			ctx.Set("username", "api-token")
+			ctx.Set("version", "")
+			ctx.Next()
 			return
 		}
 

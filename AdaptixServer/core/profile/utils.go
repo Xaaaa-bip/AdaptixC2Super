@@ -39,6 +39,9 @@ type TsProfile struct {
 	Password       string            `yaml:"password"`
 	ManagePassword string            `yaml:"manage_password"`
 	OnlyPassword   bool              `yaml:"only_password"`
+	// 静态 API token：空 = 首次启动随机生成并写回；之后 REST/MCP 可直接
+	// Bearer 调用（跨重启稳定，区别于随进程轮换的 JWT）。
+	ApiToken       string            `yaml:"api_token"`
 	Operators      map[string]string `yaml:"operators"`
 	Cert           string            `yaml:"cert"`
 	Key            string            `yaml:"key"`

@@ -76,6 +76,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	if apiToken, generated, err := profile.EnsureApiToken(*profilePath, ts.Profile.Server); err != nil {
+		logs.Error("", "api_token: "+err.Error())
+		os.Exit(1)
+	} else if generated {
+		fmt.Printf("[*] MCP/API static token (generated & saved to profile): %s\n", apiToken)
+	} else {
+		fmt.Printf("[*] MCP/API static token (from profile): %s\n", apiToken)
+	}
+
 	token.InitJWT(ts.Profile.Server.ATokenLive, ts.Profile.Server.RTokenLive)
 
 	ts.EnableWeb = *enableWeb
