@@ -215,10 +215,10 @@ const MENUS: Menu[] = [
   { id: 'screens', label: '截图', ico: 'screens', group: '资产' },
   { id: 'creds', label: '凭据', ico: 'creds', group: '资产' },
   { id: 'targets', label: '目标', ico: 'targets', group: '资产' },
-  { id: 'graph', label: '拓扑', ico: 'graph', group: '协作' },
-  { id: 'chat', label: '聊天', ico: 'chat', group: '协作' },
+  { id: 'graph', label: '拓扑', ico: 'graph', group: '协作', shortcut: 'G G' },
+  { id: 'chat', label: '聊天', ico: 'chat', group: '协作', shortcut: 'G C' },
   { id: 'ai', label: 'AI 协作', ico: 'ai', group: '协作', shortcut: 'G I' },
-  { id: 'relay', label: '中转', ico: 'relay', group: '系统' },
+  { id: 'relay', label: '中转', ico: 'relay', group: '系统', shortcut: 'G R' },
   { id: 'logs', label: '日志', ico: 'logs', group: '系统', shortcut: 'G O' },
 ]
 
@@ -499,6 +499,11 @@ export default function App() {
           x: 'extkit',
           o: 'logs',
           i: 'ai',
+          // ★ 2026-11-09 补：拓扑/聊天/中转在 MENUS 里有、主排按钮没有，
+          //   chord 和命令面板又都漏了 —— 拓扑页一度在整个 UI 上无入口。
+          g: 'graph',
+          c: 'chat',
+          r: 'relay',
         }
         const dest = map[k]
         if (dest) go(dest)

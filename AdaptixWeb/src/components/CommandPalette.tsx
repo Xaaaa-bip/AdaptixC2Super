@@ -52,6 +52,11 @@ export function CommandPalette({ open, onClose, go }: Props) {
       { id: 'nav-targets', group: '导航', label: '目标资产', keywords: 'targets', run: () => go('targets') },
       { id: 'nav-logs', group: '导航', label: '系统日志', keywords: 'logs events', run: () => go('logs') },
       { id: 'nav-ai', group: '协作', label: 'AI 协作平台', hint: 'G I', keywords: 'ai assistant copilot collaboration context analysis', run: () => go('ai') },
+      // ★ 2026-11-09 补：这三个页面 MENUS 里有、主排按钮没有，之前导航列表
+      //   也漏了 —— 拓扑页一度在整个 UI 上无任何可达入口。
+      { id: 'nav-graph', group: '协作', label: '拓扑图', hint: 'G G', keywords: 'graph topology 拓扑 图 pivot 网络关系', run: () => go('graph') },
+      { id: 'nav-chat', group: '协作', label: '团队聊天', hint: 'G C', keywords: 'chat team message 聊天 消息', run: () => go('chat') },
+      { id: 'nav-relay', group: '系统', label: '中转节点', hint: 'G R', keywords: 'relay libp2p 中转 转发', run: () => go('relay') },
     ]
 
     const sys: PaletteAction[] = [
