@@ -119,13 +119,16 @@ body {
 
 .cl-tools::-webkit-scrollbar { display: none; }
 
-/* 工具条按钮：图标钮（对齐 Qt 客户端 37×28 图标钮的密度） */
+/* 工具条按钮：图标钮（对齐 Qt 客户端 37×28 图标钮的密度）。
+ * ★ flex-shrink:0 必须有 —— 20 个按钮 + 右侧控件挤一排时，按钮默认可被
+ *   flex 压扁（文字换行糊成一团）。不缩、超出靠 .cl-tools 的横向滚动。 */
 .cl-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
+  flex-shrink: 0;
   height: 28px;
   min-width: 28px;
   padding: 0 6px;
