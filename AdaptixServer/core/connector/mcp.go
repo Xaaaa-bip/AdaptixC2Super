@@ -24,6 +24,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -253,8 +254,15 @@ func mcpTools() []mcpTool {
 			InputSchema: func() map[string]any {
 				s := map[string]any{}
 				mcpProp(s, "agent", "string", "Agent name (beacon/linux/gopher/macos/kharon)", true)
-				mcpProp(s, "listener_name", "string", "Listener to bind (must be running)", true)
 				mcpProp(s, "config", "string", "Build config JSON string", true)
+				props, _ := s["properties"].(map[string]any)
+				props["listener_name"] = map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"},
+					"minItems": 1,
+					"description": "Listener(s) to bind (must be running), e.g. [\"BH-WIN\"]",
+				}
+				req, _ := s["required"].([]string)
+				s["required"] = append(req, "listener_name")
 				return mcpStr(s)
 			}(),
 		},
@@ -508,12 +516,29 @@ func (tc *TsConnector) mcpListenerStop(args json.RawMessage) (string, error) {
 
 func (tc *TsConnector) mcpGeneratePayload(args json.RawMessage) (string, error) {
 	var p struct {
-		Agent         string   `json:"agent"`
-		ListenerNames []string `json:"listener_name"`
-		Config        string   `json:"config"`
+		Agent         string      `json:"agent"`
+		ListenerNames []string    `json:"listener_name"`
+		ListenerRaw   interface{} `json:"-"`
+		Config        string      `json:"config"`
 	}
 	if e := mcpParseParams(args, &p); e != nil {
 		return "", errors.New(e.Message)
+	}
+	// 兼容 string 形态（单个或逗号分隔）：schema 是 array，但别把宽容输入拒了
+	if len(p.ListenerNames) == 0 {
+		var raw struct {
+			ListenerName interface{} `json:"listener_name"`
+		}
+		if json.Unmarshal(args, &raw) == nil {
+			switch v := raw.ListenerName.(type) {
+			case string:
+				for _, part := range strings.Split(v, ",") {
+					if part = strings.TrimSpace(part); part != "" {
+						p.ListenerNames = append(p.ListenerNames, part)
+					}
+				}
+			}
+		}
 	}
 	if p.Agent == "" || len(p.ListenerNames) == 0 || p.Config == "" {
 		return "", errors.New("agent, listener_name and config are required")
