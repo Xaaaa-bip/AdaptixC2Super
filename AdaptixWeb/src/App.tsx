@@ -31,6 +31,7 @@ import { ConnStatus } from './components/StatusPill'
 import { CommandPalette } from './components/CommandPalette'
 import { ShortcutHelp } from './components/ui'
 import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, isCmdTab, tabAgentId } from './store'
+import { t, setLang, LANG } from './i18n'
 import { isAgentOnline, loadDensity, loadTheme, saveDensity, saveTheme, type Density } from './utils'
 
 type Menu = { id: TabId; label: string; ico: string; group?: string; shortcut?: string }
@@ -562,8 +563,8 @@ export default function App() {
   function tabLabel(id: string) {
     if (id === 'sessions') return '主机'
     if (id === 'terminal') return '命令终端'
-    const staticLabel = MENUS.find((m) => m.id === id)?.label
-    if (staticLabel) return staticLabel
+    const menu = MENUS.find((m) => m.id === id)
+    if (menu) return t(menu.label)
     if (isFilesTab(id)) {
       const aid = tabAgentId(id)
       const a = aid ? agents[aid] : null
@@ -612,10 +613,10 @@ export default function App() {
             type="button"
             className={`cl-btn ${current === 'sessions' ? 'active' : ''}`}
             onClick={() => go('sessions')}
-            title={`主机 (${onlineCount}/${agentCount}) — G H`}
+            title={`${t('主机')} (${onlineCount}/${agentCount}) — G H`}
           >
             {ICO.sessions}
-            <span className="cl-btn-label">主机</span>
+            <span className="cl-btn-label">{t('主机')}</span>
             <span className={`cl-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
           </button>
           <span className="cl-sep" />
@@ -629,10 +630,10 @@ export default function App() {
                   type="button"
                   className={`cl-btn ${current === m.id ? 'active' : ''}`}
                   onClick={() => go(m.id)}
-                  title={m.shortcut ? `${m.label} (${m.shortcut})` : m.label}
+                  title={m.shortcut ? `${t(m.label)} (${m.shortcut})` : t(m.label)}
                 >
                   {ICO[m.ico] || null}
-                  <span className="cl-btn-label">{m.label}</span>
+                  <span className="cl-btn-label">{t(m.label)}</span>
                 </button>
               </span>
             )
@@ -645,7 +646,7 @@ export default function App() {
             title="事件日志"
           >
             {ICO.events}
-            <span className="cl-btn-label">事件</span>
+            <span className="cl-btn-label">{t('事件')}</span>
           </button>
           {chord === 'g' && <span className="cl-chord">G …</span>}
         </div>
@@ -654,17 +655,23 @@ export default function App() {
             <span className="signal">{onlineCount}</span>
             <span>/{agentCount}</span>
           </span>
-          <span className="cl-pill">{listenerCount} 监听</span>
-          <button type="button" className="cl-ghost" onClick={() => setPaletteOpen(true)} title="更多功能与命令面板 ⌘K">更多</button>
-          <button type="button" className="cl-ghost" title="刷新" onClick={() => refreshRest().catch(() => {})}>↻</button>
-          <button type="button" className="cl-ghost" title={dark ? '浅色' : '深色'} onClick={() => setDark((v) => !v)}>
+          <span className="cl-pill">{listenerCount} {t('监听')}</span>
+          <button
+            type="button"
+            className="cl-ghost"
+            title={LANG === 'zh' ? 'Switch to English' : '切换到中文'}
+            onClick={() => setLang(LANG === 'zh' ? 'en' : 'zh')}
+          >{LANG === 'zh' ? 'EN' : '中'}</button>
+          <button type="button" className="cl-ghost" onClick={() => setPaletteOpen(true)} title={t('更多功能与命令面板 ⌘K')}>{t('更多')}</button>
+          <button type="button" className="cl-ghost" title={t('刷新')} onClick={() => refreshRest().catch(() => {})}>↻</button>
+          <button type="button" className="cl-ghost" title={dark ? t('浅色') : t('深色')} onClick={() => setDark((v) => !v)}>
             {dark ? '☀' : '☾'}
           </button>
-          <button type="button" className="cl-ghost" title="密度" onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
+          <button type="button" className="cl-ghost" title={t('密度')} onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
             {density === 'compact' ? '▣' : '▢'}
           </button>
           <span className="cl-user" title={username}>{username}</span>
-          <button type="button" className="cl-ghost" onClick={() => disconnect()}>退出</button>
+          <button type="button" className="cl-ghost" onClick={() => disconnect()}>{t('退出')}</button>
         </div>
       </header>
 
@@ -771,9 +778,9 @@ export default function App() {
       {/* ── 状态栏（连接态与计数，客户端底部状态行的 Web 形态） ── */}
       <footer className="ops-status">
         <ConnStatus connected={connected} wsConnected={wsConnected} syncing={syncing} />
-        {lastError && !wsConnected ? <span className="ops-status-note warn">通道降级</span> : null}
+        {lastError && !wsConnected ? <span className="ops-status-note warn">{t('通道降级')}</span> : null}
         <span className="vsep" />
-        <span className="ops-status-counts">{onlineCount} 在线 · {listenerCount} 监听 · {taskCount} 任务</span>
+        <span className="ops-status-counts">{onlineCount} {t('在线')} · {listenerCount} {t('监听')} · {taskCount} {t('任务')}</span>
         <span className="spacer" />
         <span className="dim">⌘K 命令 · G H 主机 · ? 帮助</span>
       </footer>

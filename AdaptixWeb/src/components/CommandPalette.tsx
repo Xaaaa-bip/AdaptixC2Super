@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { t } from '../i18n'
 import { useStore, type TabId } from '../store'
 import { isAgentOnline } from '../utils'
 
@@ -36,46 +37,46 @@ export function CommandPalette({ open, onClose, go }: Props) {
 
   const actions = useMemo<PaletteAction[]>(() => {
     const nav: PaletteAction[] = [
-      { id: 'nav-dash', group: '导航', label: '仪表盘', hint: 'G D', keywords: 'dashboard home', run: () => go('dashboard') },
-      { id: 'nav-hosts', group: '导航', label: '主机列表', hint: 'G H', keywords: 'sessions hosts agents', run: () => go('sessions') },
-      { id: 'nav-delivery', group: '导航', label: '投递一键上线', hint: 'G W', keywords: 'webdelivery deliver oneliner powershell curl', run: () => go('delivery') },
-      { id: 'nav-listeners', group: '导航', label: '监听器', keywords: 'listener', run: () => go('listeners') },
-      { id: 'nav-gen', group: '导航', label: '生成载荷', keywords: 'generate payload beacon stager', run: () => go('generate') },
-      { id: 'nav-tasks', group: '导航', label: '任务中心', keywords: 'tasks jobs', run: () => go('tasks') },
-      { id: 'nav-bofs', group: '导航', label: 'BOF 模块', hint: 'G B', keywords: 'bof execute in-memory', run: () => go('bofs') },
-      { id: 'nav-argf', group: '导航', label: '参数混淆', hint: 'G A', keywords: 'argfuscator obfuscate powershell commandline evade', run: () => go('argfuscator') },
-      { id: 'nav-extkit', group: '导航', label: '扩展命令', hint: 'G X', keywords: 'extkit extension-kit bof ad adcs kerberos ldap creds sal sar 命令 清单 参考', run: () => go('extkit') },
-      { id: 'nav-dl', group: '导航', label: '文件下载', keywords: 'downloads', run: () => go('downloads') },
-      { id: 'nav-tunnels', group: '导航', label: '隧道代理', keywords: 'tunnels proxy socks', run: () => go('tunnels') },
-      { id: 'nav-screens', group: '导航', label: '截图中心', keywords: 'screenshots', run: () => go('screens') },
-      { id: 'nav-creds', group: '导航', label: '凭据仓库', keywords: 'credentials', run: () => go('creds') },
-      { id: 'nav-targets', group: '导航', label: '目标资产', keywords: 'targets', run: () => go('targets') },
-      { id: 'nav-logs', group: '导航', label: '系统日志', keywords: 'logs events', run: () => go('logs') },
-      { id: 'nav-ai', group: '协作', label: 'AI 协作平台', hint: 'G I', keywords: 'ai assistant copilot collaboration context analysis', run: () => go('ai') },
+      { id: 'nav-dash', group: t('导航'), label: t('仪表盘'), hint: 'G D', keywords: 'dashboard home', run: () => go('dashboard') },
+      { id: 'nav-hosts', group: t('导航'), label: t('主机列表'), hint: 'G H', keywords: 'sessions hosts agents', run: () => go('sessions') },
+      { id: 'nav-delivery', group: t('导航'), label: t('投递一键上线'), hint: 'G W', keywords: 'webdelivery deliver oneliner powershell curl', run: () => go('delivery') },
+      { id: 'nav-listeners', group: t('导航'), label: t('监听器'), keywords: 'listener', run: () => go('listeners') },
+      { id: 'nav-gen', group: t('导航'), label: t('生成载荷'), keywords: 'generate payload beacon stager', run: () => go('generate') },
+      { id: 'nav-tasks', group: t('导航'), label: t('任务中心'), keywords: 'tasks jobs', run: () => go('tasks') },
+      { id: 'nav-bofs', group: t('导航'), label: t('BOF 模块'), hint: 'G B', keywords: 'bof execute in-memory', run: () => go('bofs') },
+      { id: 'nav-argf', group: t('导航'), label: t('参数混淆'), hint: 'G A', keywords: 'argfuscator obfuscate powershell commandline evade', run: () => go('argfuscator') },
+      { id: 'nav-extkit', group: t('导航'), label: t('扩展命令'), hint: 'G X', keywords: 'extkit extension-kit bof ad adcs kerberos ldap creds sal sar 命令 清单 参考', run: () => go('extkit') },
+      { id: 'nav-dl', group: t('导航'), label: t('文件下载'), keywords: 'downloads', run: () => go('downloads') },
+      { id: 'nav-tunnels', group: t('导航'), label: t('隧道代理'), keywords: 'tunnels proxy socks', run: () => go('tunnels') },
+      { id: 'nav-screens', group: t('导航'), label: t('截图中心'), keywords: 'screenshots', run: () => go('screens') },
+      { id: 'nav-creds', group: t('导航'), label: t('凭据仓库'), keywords: 'credentials', run: () => go('creds') },
+      { id: 'nav-targets', group: t('导航'), label: t('目标资产'), keywords: 'targets', run: () => go('targets') },
+      { id: 'nav-logs', group: t('导航'), label: t('系统日志'), keywords: 'logs events', run: () => go('logs') },
+      { id: 'nav-ai', group: t('协作'), label: t('AI 协作平台'), hint: 'G I', keywords: 'ai assistant copilot collaboration context analysis', run: () => go('ai') },
       // ★ 2026-11-09 补：这三个页面 MENUS 里有、主排按钮没有，之前导航列表
       //   也漏了 —— 拓扑页一度在整个 UI 上无任何可达入口。
-      { id: 'nav-graph', group: '协作', label: '拓扑图', hint: 'G G', keywords: 'graph topology 拓扑 图 pivot 网络关系', run: () => go('graph') },
-      { id: 'nav-chat', group: '协作', label: '团队聊天', hint: 'G C', keywords: 'chat team message 聊天 消息', run: () => go('chat') },
-      { id: 'nav-relay', group: '系统', label: '中转节点', hint: 'G R', keywords: 'relay libp2p 中转 转发', run: () => go('relay') },
+      { id: 'nav-graph', group: t('协作'), label: t('拓扑图'), hint: 'G G', keywords: 'graph topology 拓扑 图 pivot 网络关系', run: () => go('graph') },
+      { id: 'nav-chat', group: t('协作'), label: t('团队聊天'), hint: 'G C', keywords: 'chat team message 聊天 消息', run: () => go('chat') },
+      { id: 'nav-relay', group: t('系统'), label: t('中转节点'), hint: 'G R', keywords: 'relay libp2p 中转 转发', run: () => go('relay') },
     ]
 
     const sys: PaletteAction[] = [
       {
         id: 'sys-refresh',
-        group: '系统',
-        label: '刷新 REST 数据',
+        group: t('系统'),
+        label: t('刷新 REST 数据'),
         hint: 'R',
         keywords: 'refresh sync',
         run: () => {
           refreshRest()
-            .then(() => pushToast('ok', '数据已刷新'))
+            .then(() => pushToast('ok', t('数据已刷新')))
             .catch((e: any) => pushToast('err', e?.message || String(e)))
         },
       },
       {
         id: 'sys-logout',
-        group: '系统',
-        label: '退出登录',
+        group: t('系统'),
+        label: t('退出登录'),
         keywords: 'logout disconnect exit',
         run: () => disconnect(),
       },
@@ -98,7 +99,7 @@ export function CommandPalette({ open, onClose, go }: Props) {
         const acts: PaletteAction[] = [
           {
             id: `host-term-${a.a_id}`,
-            group: live ? '在线主机' : '离线主机',
+            group: live ? t('在线主机') : t('离线主机'),
             label: `终端 · ${name}`,
             hint: a.a_internal_ip || a.a_id.slice(0, 8),
             keywords: base + ' term console shell',
@@ -113,28 +114,28 @@ export function CommandPalette({ open, onClose, go }: Props) {
           acts.push(
             {
               id: `host-pty-${a.a_id}`,
-              group: '在线主机',
+              group: t('在线主机'),
               label: `PTY · ${name}`,
               keywords: base + ' pty terminal interactive shell',
               run: () => openPty(a.a_id),
             },
             {
               id: `host-files-${a.a_id}`,
-              group: '在线主机',
+              group: t('在线主机'),
               label: `文件 · ${name}`,
               keywords: base + ' files browser',
               run: () => openFilesBrowser(a.a_id),
             },
             {
               id: `host-procs-${a.a_id}`,
-              group: '在线主机',
+              group: t('在线主机'),
               label: `进程 · ${name}`,
               keywords: base + ' process ps',
               run: () => openProcsBrowser(a.a_id),
             },
             {
               id: `host-vnc-${a.a_id}`,
-              group: '在线主机',
+              group: t('在线主机'),
               label: `VNC · ${name}`,
               keywords: base + ' vnc desktop screen',
               run: () => openVnc(a.a_id),

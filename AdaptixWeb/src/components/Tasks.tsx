@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { copyText, fmtRelative, fmtTime } from '../utils'
 import { EmptyState, PageShell } from './ui'
 import { PageTips } from './PageTips'
@@ -40,12 +41,12 @@ export function Tasks() {
       <PageShell
         toolbar={
           <>
-            <input type="search" placeholder="搜索任务 / 命令 / 主机" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input type="search" placeholder={t('搜索任务 / 命令 / 主机')} value={q} onChange={(e) => setQ(e.target.value)} />
             <label className="muted check-inline">
-              <input type="checkbox" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} /> 仅当前主机
+              <input type="checkbox" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} /> t('仅当前主机')
             </label>
             <label className="muted check-inline">
-              <input type="checkbox" checked={onlyRunning} onChange={(e) => setOnlyRunning(e.target.checked)} /> 仅执行中
+              <input type="checkbox" checked={onlyRunning} onChange={(e) => setOnlyRunning(e.target.checked)} /> t('仅执行中')
             </label>
             {selected && onlySelected && (
               <span className="muted mono">{agents[selected]?.a_computer || selected}</span>
@@ -57,14 +58,14 @@ export function Tasks() {
             <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
             <PageTips id="tasks">
               <p><b>双击</b>任务跳转到对应主机控制台；单击查看详情与输出。</p>
-              <p>筛选：仅当前主机 / 仅执行中。</p>
+              <p>筛选：t('仅当前主机') / t('仅执行中')。</p>
               <p>BOF / 下载 / run 等长任务以 <code>job</code> 形式显示（控制台 <code>job list</code> 可查）。</p>
             </PageTips>
           </>
         }
       >
         {list.length === 0 ? (
-          <EmptyState icon="☰" title="暂无任务" hint="在主机终端执行命令后会出现在这里" action={
+          <EmptyState icon="☰" title="t('暂无任务')" hint="在主机终端执行命令后会出现在这里" action={
             <button onClick={() => { setTab('sessions'); openUiTab('sessions') }}>去主机列表</button>
           } />
         ) : (
@@ -72,10 +73,10 @@ export function Tasks() {
             <thead>
               <tr>
                 <th style={{ width: 72 }}>状态</th>
-                <th>命令</th>
+                <th>{t('命令')}</th>
                 <th>主机</th>
-                <th>操作员</th>
-                <th>时间</th>
+                <th>{t('操作员')}</th>
+                <th>{t('时间')}</th>
                 <th>摘要</th>
               </tr>
             </thead>
@@ -122,7 +123,7 @@ export function Tasks() {
           <div className="dlg dlg-lg" style={{ height: 'auto', maxHeight: '86vh' }} onClick={(e) => e.stopPropagation()}>
             <div className="dlg-hd">
               <div>
-                <h2>任务详情</h2>
+                <h2>t('任务详情')</h2>
                 <div className="dim mono" style={{ fontSize: 12 }}>{detail.a_task_id || '-'}</div>
               </div>
               <button onClick={() => setDetail(null)}>关闭</button>

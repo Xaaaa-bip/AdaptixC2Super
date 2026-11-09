@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, cmdTabId } from '../store'
+import { t } from '../i18n'
 import type { Agent } from '../api/types'
 import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline, isLinuxAgent } from '../utils'
 import { lookupIpGeoSync, preloadIpGeo } from '../utils/ipdb'
@@ -56,10 +57,10 @@ function CmdDlg({
   return (
     <div className="mask" onClick={onClose}>
       <div className="dlg" onClick={(e) => e.stopPropagation()}>
-        <h2>执行命令</h2>
+        <h2>{t('执行命令')}</h2>
         <div className="dim mono" style={{ marginBottom: 8 }}>{id}</div>
         <div className="field">
-          <label>命令行</label>
+          <label>{t('命令行')}</label>
           <input
             ref={inputRef}
             className="mono"
@@ -89,8 +90,8 @@ function CmdDlg({
           )}
         </div>
         <div className="btns">
-          <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={submit}>执行</button>
+          <button onClick={onClose}>{t('取消')}</button>
+          <button className="primary" onClick={submit}>{t('执行')}</button>
         </div>
       </div>
     </div>
@@ -237,22 +238,22 @@ export function Hosts() {
 
   function tryFiles(id: string) {
     const a = agents[id]
-    if (!a || !isAgentOnline(a)) { pushToast('warn', '主机离线，无法打开文件管理'); return }
+    if (!a || !isAgentOnline(a)) { pushToast('warn', t('主机离线，无法打开文件管理')); return }
     openFilesBrowser(id)
   }
   function tryProcs(id: string) {
     const a = agents[id]
-    if (!a || !isAgentOnline(a)) { pushToast('warn', '主机离线，无法打开进程管理'); return }
+    if (!a || !isAgentOnline(a)) { pushToast('warn', t('主机离线，无法打开进程管理')); return }
     openProcsBrowser(id)
   }
   function tryPty(id: string) {
     const a = agents[id]
-    if (!a || !isAgentOnline(a)) { pushToast('warn', '主机离线，无法打开 PTY'); return }
+    if (!a || !isAgentOnline(a)) { pushToast('warn', t('主机离线，无法打开 PTY')); return }
     openPty(id)
   }
   function tryVnc(id: string) {
     const a = agents[id]
-    if (!a || !isAgentOnline(a)) { pushToast('warn', '主机离线，无法打开 VNC'); return }
+    if (!a || !isAgentOnline(a)) { pushToast('warn', t('主机离线，无法打开 VNC')); return }
     openVnc(id)
   }
   function openTunnels(id: string) {
@@ -264,7 +265,7 @@ export function Hosts() {
     try {
       await api.consoleRemove([id])
       clearConsole(id)
-      pushToast('ok', '已清除控制台数据')
+      pushToast('ok', t('已清除控制台数据'))
     } catch (e: any) {
       clearConsole(id)
       pushToast('warn', `服务端清除失败，已清本地：${e?.message || e}`)
@@ -279,7 +280,7 @@ export function Hosts() {
   async function submitCmd(id: string, c: string) {
     try {
       await api.commandRaw(id, c)
-      pushToast('ok', '已下发')
+      pushToast('ok', t('已下发'))
       // ★ 不关对话框：主机页底部的 Terminal 已按需求去掉，右键「执行命令」就是
       //   命令执行的入口。它要能连跑多条 —— 关不关由操作员点「关闭」决定，
       //   跑一条就自动关会逼着他每跑一条就重新右键一次。
@@ -301,7 +302,7 @@ export function Hosts() {
           setCtx({ x: e.clientX, y: e.clientY, id: a.a_id })
         }}
       >
-        <span className={`sdot ${live ? 'on' : 'off'}`} title={live ? '在线' : '离线'} />
+        <span className={`sdot ${live ? 'on' : 'off'}`} title={live ? t('在线') : t('离线')} />
         <div className="meta">
           <div className="name">{a.a_computer || a.a_id}</div>
           <div className="ip mono">{a.a_internal_ip || a.a_external_ip || '-'}</div>
@@ -340,13 +341,13 @@ export function Hosts() {
           <input
             className="sess-search"
             type="search"
-            placeholder="搜索主机 / IP / 用户 / 标签"
+            placeholder={t('搜索主机 / IP / 用户 / 标签')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
           <label className="sess-check">
             <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
-            仅在线
+            {t('仅在线')}
           </label>
 
           {/* 批量条独立于 .sess-actions：后者是**单选**工具条（作用于 selectedAgentId），
@@ -360,9 +361,9 @@ export function Hosts() {
                 </span>
               )}
               <button className="ghost" onClick={() => setChecked(tableIds, !allChecked)}>
-                {allChecked ? '取消全选' : '全选当前结果'}
+                {allChecked ? '取消全选' : t('全选当前结果')}
               </button>
-              <button className="ghost" onClick={clearChecked}>清除</button>
+              <button className="ghost" onClick={clearChecked}>{t('清除')}</button>
               <button className="danger" onClick={() => setBulkDlg(true)}>
                 删除 {checkedIds.size} 台
               </button>
@@ -374,15 +375,15 @@ export function Hosts() {
               <>
                 <span className="sess-sel mono">{selectedAgent.a_computer || selected}</span>
                 <span className="sep" />
-                <button disabled={!selectedOnline} onClick={() => selected && tryFiles(selected)}>文件</button>
-                <button disabled={!selectedOnline} onClick={() => selected && tryProcs(selected)}>进程</button>
+                <button disabled={!selectedOnline} onClick={() => selected && tryFiles(selected)}>{t('文件')}</button>
+                <button disabled={!selectedOnline} onClick={() => selected && tryProcs(selected)}>{t('进程')}</button>
                 <button disabled={!selectedOnline} onClick={() => selected && tryPty(selected)}>PTY</button>
                 <button disabled={!selectedOnline} onClick={() => selected && tryVnc(selected)}>VNC</button>
-                <button onClick={() => selected && openTunnels(selected)}>隧道</button>
-                <button className="danger" onClick={() => removeSelected().catch((e) => pushLog('err', String(e)))}>删除</button>
+                <button onClick={() => selected && openTunnels(selected)}>{t('隧道')}</button>
+                <button className="danger" onClick={() => removeSelected().catch((e) => pushLog('err', String(e)))}>{t('删除')}</button>
               </>
             ) : (
-              <span className="dim">点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量</span>
+              <span className="dim">t('点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量')</span>
             )}
           </div>
         </div>
@@ -392,21 +393,21 @@ export function Hosts() {
             <div className="sess-empty big">
               {Object.keys(agents).length === 0 ? (
                 <>
-                  <div className="title">还没有主机</div>
-                  <div className="hint">打开投递，复制一条命令到目标机器执行</div>
+                  <div className="title">{t('还没有主机')}</div>
+                  <div className="hint">{t('打开投递，复制一条命令到目标机器执行')}</div>
                   <button
                     type="button"
                     className="primary"
                     style={{ marginTop: 12 }}
                     onClick={() => { setTab('delivery'); openUiTab('delivery') }}
                   >
-                    去投递
+                    {t('去投递')}
                   </button>
                 </>
               ) : (
                 <>
-                  <div className="title">无匹配主机</div>
-                  <div className="hint">调整搜索条件，或取消「仅在线」</div>
+                  <div className="title">{t('无匹配主机')}</div>
+                  <div className="hint">{t('调整搜索条件，或取消「仅在线」')}</div>
                 </>
               )}
             </div>
@@ -426,17 +427,17 @@ export function Hosts() {
                       />
                     </label>
                   </th>
-                  <th style={{ width: 56 }}>状态</th>
-                  <th>主机</th>
-                  <th>用户</th>
-                  <th>内网</th>
-                  <th>外网</th>
-                  <th>归属地</th>
-                  <th>进程</th>
-                  <th>系统</th>
-                  <th>监听</th>
-                  <th title="距上次回连 / 配置 sleep（动态刷新）">心跳</th>
-                  <th>标签</th>
+                  <th style={{ width: 56 }}>{t('状态')}</th>
+                  <th>{t('主机')}</th>
+                  <th>{t('用户')}</th>
+                  <th>{t('内网')}</th>
+                  <th>{t('外网')}</th>
+                  <th>{t('归属地')}</th>
+                  <th>{t('进程')}</th>
+                  <th>{t('系统')}</th>
+                  <th>{t('监听器')}</th>
+                  <th title="距上次回连 / 配置 sleep（动态刷新）">{t('心跳')}</th>
+                  <th>{t('标签')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -472,7 +473,7 @@ export function Hosts() {
                         </label>
                       </td>
                       <td>
-                        <span className={`st ${live ? 'on' : 'off'}`}>{live ? '在线' : '离线'}</span>
+                        <span className={`st ${live ? 'on' : 'off'}`}>{live ? t('在线') : t('离线')}</span>
                       </td>
                       <td>
                         <div className="cell-main">{a.a_computer || '-'}</div>
@@ -512,16 +513,16 @@ export function Hosts() {
           onClick={(e) => e.stopPropagation()}
         >
           <div className="ctx-hd mono">{agents[ctx.id]?.a_computer || ctx.id}</div>
-          <button type="button" onClick={() => { openConsole(ctx.id); setCtx(null) }}>命令终端</button>
+          <button type="button" onClick={() => { openConsole(ctx.id); setCtx(null) }}>{t('命令终端')}</button>
           {/* 全屏**终端式**的命令执行台：走命令通道（不是交互 PTY，要真 shell 用下面的
               「交互 PTY」）。**每次都新开一个会话** —— 一台主机同时开几个是刚需
               （跟 shell / 跟日志 / 另一个窗口各一个），关掉就是关页签，随时可再开。 */}
-          <button type="button" disabled={!ctxOnline} onClick={() => { openCmdTab(ctx.id); setCtx(null) }}>执行命令…</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { tryPty(ctx.id); setCtx(null) }}>交互 PTY</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { tryFiles(ctx.id); setCtx(null) }}>文件管理</button>
-          <button type="button" disabled={!ctxOnline} onClick={() => { tryProcs(ctx.id); setCtx(null) }}>进程管理</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { openCmdTab(ctx.id); setCtx(null) }}>{t('执行命令…')}</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { tryPty(ctx.id); setCtx(null) }}>{t('交互 PTY')}</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { tryFiles(ctx.id); setCtx(null) }}>{t('文件管理')}</button>
+          <button type="button" disabled={!ctxOnline} onClick={() => { tryProcs(ctx.id); setCtx(null) }}>{t('进程管理')}</button>
           <button type="button" disabled={!ctxOnline} onClick={() => { tryVnc(ctx.id); setCtx(null) }}>VNC</button>
-          <button type="button" onClick={() => { openTunnels(ctx.id); setCtx(null) }}>打开隧道</button>
+          <button type="button" onClick={() => { openTunnels(ctx.id); setCtx(null) }}>{t('打开隧道')}</button>
           {/* 「查看当前目录」「获取当前用户」与 Term 快捷按钮重复，已移除 */}
           {/* Linux 主机无截图 BOF（Windows PostEx-BOF 专有） */}
           {!ctxLinux && (
@@ -530,7 +531,7 @@ export function Hosts() {
               try { await api.commandRaw(ctx.id, 'screenshot_bof'); openConsole(ctx.id); pushToast('ok', '已下发截图 BOF (screenshot_bof)') }
               catch (e: any) { pushLog('err', e.message || String(e)) }
               setCtx(null)
-            }}>截图 (BOF)</button>
+            }}>{t('截图 (BOF)')}</button>
           )}
           {/* Linux 主机 sleep 0 交互加速无意义：隐藏 Sleep… 与交互加速两项 */}
           {!ctxLinux && (
@@ -564,7 +565,7 @@ export function Hosts() {
             </>
           )}
           <div className="sep" />
-          <button type="button" onClick={async () => { await clearServerConsole(ctx.id); setCtx(null) }}>清除控制台数据</button>
+          <button type="button" onClick={async () => { await clearServerConsole(ctx.id); setCtx(null) }}>{t('清除控制台数据')}</button>
           <button type="button" onClick={() => {
             const a = agents[ctx.id]
             setDataDlg({
@@ -579,26 +580,26 @@ export function Hosts() {
               external_ip: a?.a_external_ip || '',
             })
             setCtx(null)
-          }}>设置资料…</button>
+          }}>{t('设置资料…')}</button>
           <button type="button" onClick={async () => {
             const ok = await copyText(ctx.id)
-            pushToast(ok ? 'ok' : 'err', ok ? `已复制 ${ctx.id}` : '复制失败')
+            pushToast(ok ? 'ok' : 'err', ok ? `已复制 ${ctx.id}` : t('复制失败'))
             setCtx(null)
-          }}>复制会话 ID</button>
+          }}>{t('复制会话 ID')}</button>
           <button type="button" onClick={async () => {
             const tag = prompt('标签：')
             if (tag != null) {
-              try { await api.setTag([ctx.id], tag); await refreshRest(); pushToast('ok', '标签已更新') }
+              try { await api.setTag([ctx.id], tag); await refreshRest(); pushToast('ok', t('标签已更新')) }
               catch (e: any) { pushLog('err', e.message || String(e)) }
             }
             setCtx(null)
-          }}>设置标签</button>
+          }}>{t('设置标签')}</button>
           <div className="sep" />
           <button type="button" className="danger" onClick={async () => {
             if (!confirm(`删除主机 ${ctx.id}？`)) { setCtx(null); return }
             selectAgent(ctx.id); setCtx(null)
             await removeSelected().catch((e) => pushLog('err', String(e)))
-          }}>删除主机</button>
+          }}>{t('删除主机')}</button>
         </div>
       )}
 
@@ -633,7 +634,7 @@ export function Hosts() {
               在线主机会在下次回连时重新注册。
             </p>
             <div className="btns">
-              <button onClick={() => setBulkDlg(false)}>取消</button>
+              <button onClick={() => setBulkDlg(false)}>{t('取消')}</button>
               <button className="danger" onClick={() => {
                 setBulkDlg(false)
                 removeChecked().catch((e) => pushLog('err', String(e)))
@@ -646,7 +647,7 @@ export function Hosts() {
       {dataDlg && (
         <div className="mask" onClick={() => setDataDlg(null)}>
           <div className="dlg" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-            <h2>设置资料</h2>
+            <h2>{t('设置资料')}</h2>
             <div className="dim mono" style={{ marginBottom: 8 }}>{dataDlg.id}</div>
             {/* Linux 主机 sleep 为编译期固定：不下发 sleep 命令，隐藏输入 */}
             {isLinuxAgent(agents[dataDlg.id]) ? (
@@ -685,7 +686,7 @@ export function Hosts() {
               </div>
             </div>
             <div className="btns">
-              <button onClick={() => setDataDlg(null)}>取消</button>
+              <button onClick={() => setDataDlg(null)}>{t('取消')}</button>
               <button className="primary" onClick={async () => {
                 try {
                   // Linux 主机 sleep 为编译期固定：跳过 sleep 下发，仅更新展示数据
@@ -707,7 +708,7 @@ export function Hosts() {
                     external_ip: dataDlg.external_ip,
                   })
                   await refreshRest()
-                  pushToast('ok', '已更新')
+                  pushToast('ok', t('已更新'))
                   setDataDlg(null)
                 } catch (e: any) {
                   pushToast('err', e?.message || String(e))

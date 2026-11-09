@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { loadLoginPrefs, loadRuntimeConfig } from '../utils'
 
 export function Login() {
@@ -40,7 +41,7 @@ export function Login() {
       await loginAndConnect({ baseUrl: baseUrl.trim(), username, password })
     } catch (ex: any) {
       const msg = ex?.message || String(ex)
-      const nice = /429|too many|rate/i.test(msg) ? '尝试过于频繁，请约一分钟后再试' : msg
+      const nice = /429|too many|rate/i.test(msg) ? t('尝试过于频繁，请约一分钟后再试') : msg
       setErr(nice)
       pushLog?.('err', nice, false)
     } finally {
@@ -94,12 +95,12 @@ export function Login() {
               placeholder="••••••••"
             />
             <button type="button" className="lx-textbtn" onClick={() => setShowPass((v) => !v)}>
-              {showPass ? '隐藏' : '显示'}
+              {showPass ? t('隐藏') : t('显示')}
             </button>
           </div>
 
           <button type="button" className="lx-textbtn lx-adv" onClick={() => setAdvanced((v) => !v)}>
-            {advanced ? '收起服务器设置' : '服务器设置'}
+            {advanced ? '收起服务器设置' : t('服务器设置')}
           </button>
           {advanced && (
             <div className="lx-advbox">
@@ -115,7 +116,7 @@ export function Login() {
           )}
 
           <button className="lx-submit" type="submit" disabled={busy || !username || !password}>
-            {busy ? '连接中…' : '继续'}
+            {busy ? t('连接中…') : t('继续')}
           </button>
 
           {err ? <div className="lx-err">{err}</div> : <div className="lx-err spacer" />}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import { LISTENER_TYPES, defaultListenerConfig, randomEncryptKey } from '../api/listeners'
 import { applyTrafficTemplate, templatesFor } from '../api/trafficTemplates'
 import { convertCallbackAddrs, deriveCircuitAddrs, firstTcpPort, normalizeGopherConfig, splitLines } from '../lib/gopherListener'
@@ -180,7 +181,7 @@ export function Listeners() {
   }, [list, q])
 
   const typeDef = LISTENER_TYPES.find((t) => t.type === form.type)
-  // 这三者的表单是同一套（主要设置 / HTTP 头 / 错误页 / 页面模板 四个标签页）。
+  // 这三者的表单是同一套（t('主要设置') / HTTP 头 / 错误页 / 页面模板 四个标签页）。
   // ★ 漏掉 BeaconHTTPS 的后果不是"少几个字段"，而是整个 HTTP 表单**不渲染** —— 只剩
   // 名称和类型两个框。
   const isHttpLike = form.type === 'BeaconHTTP' || form.type === 'BeaconWS' || form.type === 'BeaconHTTPS'
@@ -286,7 +287,7 @@ export function Listeners() {
     const c = form.config
     const t = form.type
 
-    // ★ 三个类型共用这一套表单（主要设置 / HTTP 头 / 错误页 / 页面模板），BeaconHTTPS
+    // ★ 三个类型共用这一套表单（t('主要设置') / HTTP 头 / 错误页 / 页面模板），BeaconHTTPS
     //   必须在这里。本函数是一串**独立的 `if … return`**：谁都不命中就落到底返回
     //   undefined，而 `{tab === 'main' && renderMain()}` 的 undefined 渲染成空白 ——
     //   现象是「标签栏在、主面板整个空」，不是「少几个字段」，很容易误判成后端坏了。
@@ -879,7 +880,7 @@ export function Listeners() {
         <div className="listener-controls">
           <button className="primary" onClick={() => openCreate('BeaconHTTP')}>新建 HTTP</button>
           <button onClick={() => openCreate('BeaconWS')}>新建 WS</button>
-          <input type="search" placeholder="搜索名称 / 类型 / 端口" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input type="search" placeholder={t('搜索名称 / 类型 / 端口')} value={q} onChange={(e) => setQ(e.target.value)} />
           <button className="listener-refresh" onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>刷新</button>
         </div>
       </div>
@@ -894,7 +895,7 @@ export function Listeners() {
         {filtered.length === 0 ? (
           <EmptyState
             icon="◉"
-            title="暂无监听器"
+            title="t('暂无监听器')"
             hint="Windows 上线建 HTTP，Linux 上线建 WS"
             action={<button className="primary" onClick={() => openCreate()}>+ Windows HTTP</button>}
           />
@@ -902,12 +903,12 @@ export function Listeners() {
           <table>
             <thead>
               <tr>
-                <th>名称</th>
-                <th>类型</th>
+                <th>{t('名称')}</th>
+                <th>{t('类型')}</th>
                 <th>协议</th>
                 <th>绑定</th>
                 <th>回连/地址</th>
-                <th>状态</th>
+                <th>{t('状态')}</th>
                 <th style={{ width: 180 }}></th>
               </tr>
             </thead>
@@ -925,7 +926,7 @@ export function Listeners() {
                     </span>
                   </td>
                   <td className="lst-actions">
-                    <button onClick={() => openEdit(l)} title="修改这个监听器的配置">编辑</button>
+                    <button onClick={() => openEdit(l)} title="修改这个监听器的配置">{t('编辑')}</button>
                     {/* 暂停 / 恢复是一对互斥动作：原来两个都无条件渲染，
                         运行中的监听器上「恢复」照样能点，点下去会发生什么
                         界面上看不出来。现在按状态二选一启用，另一个置灰
@@ -939,7 +940,7 @@ export function Listeners() {
                         pushLog('warn', `已暂停 ${l.l_name}`)
                         await refreshRest()
                       } catch (e: any) { pushLog('err', e.message || String(e)) }
-                    }}>暂停</button>
+                    }}>{t('暂停')}</button>
                     <button
                       disabled={isRunning(l)}
                       title={isRunning(l) ? '监听器正在运行中，无需恢复' : '恢复监听：重新接受回连'}
@@ -949,7 +950,7 @@ export function Listeners() {
                         pushLog('ok', `已恢复 ${l.l_name}`)
                         await refreshRest()
                       } catch (e: any) { pushLog('err', e.message || String(e)) }
-                    }}>恢复</button>
+                    }}>{t('恢复')}</button>
                     <button className="danger" onClick={async () => {
                       if (!confirm(`停止并删除 ${l.l_name}？`)) return
                       try {
@@ -957,7 +958,7 @@ export function Listeners() {
                         pushLog('warn', `已停止 ${l.l_name}`)
                         await refreshRest()
                       } catch (e: any) { pushLog('err', e.message || String(e)) }
-                    }}>停止</button>
+                    }}>{t('停止')}</button>
                   </td>
                 </tr>
               ))}
@@ -971,9 +972,9 @@ export function Listeners() {
           <div className="dlg listener-dlg" onClick={(e) => e.stopPropagation()}>
             <div className="dlg-hd">
               <div>
-                <h2>{editMode ? '编辑监听器' : '新建监听器'}</h2>
+                <h2>{editMode ? t('编辑监听器') : t('新建监听器')}</h2>
                 <div className="dim" style={{ fontSize: 12 }}>
-                  {typeDef ? `${typeDef.label} · ${typeDef.agentHint}` : '选择类型'}
+                  {typeDef ? `${typeDef.label} · ${typeDef.agentHint}` : t('选择类型')}
                   {editMode ? ' · 名称/类型创建后不可改' : ''}
                 </div>
               </div>
@@ -1007,7 +1008,7 @@ export function Listeners() {
             {isHttpLike ? (
               <>
                 <div className="ax-tabs">
-                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>主要设置</button>
+                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>t('主要设置')</button>
                   <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>HTTP 头</button>
                   <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>错误页</button>
                   <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>载荷页</button>
@@ -1065,9 +1066,9 @@ export function Listeners() {
             )}
 
             <div className="btns" style={{ marginTop: 12 }}>
-              <button disabled={busy} onClick={() => setShow(false)}>取消</button>
+              <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
               <button className="primary" disabled={busy || !form.name.trim()} onClick={onSubmit}>
-                {busy ? (editMode ? '保存中…' : '创建中…') : (editMode ? '保存修改' : '创建监听器')}
+                {busy ? (editMode ? '保存中…' : '创建中…') : (editMode ? '保存修改' : t('创建监听器'))}
               </button>
             </div>
           </div>

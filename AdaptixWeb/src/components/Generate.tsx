@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
+import { t } from '../i18n'
 import {
   AGENT_PROFILES,
   defaultAgentConfig,
@@ -311,7 +312,7 @@ export function Generate() {
 
   async function onGenerate() {
     if (!listener) {
-      pushToast('warn', '请先选择监听器')
+      pushToast('warn', t('请先选择监听器'))
       return
     }
     setBusy(true)
@@ -393,7 +394,7 @@ export function Generate() {
       <div className="gen-pagebar">
         <div className="gen-page-title">
           <span className="gen-kicker">BUILD</span>
-          <h2>生成载荷</h2>
+          <h2>t('生成载荷')</h2>
           <span className="gen-page-note">从一个可用监听器生成可投递的产物</span>
         </div>
         <div className="gen-flow" aria-label="生成流程">
@@ -407,7 +408,7 @@ export function Generate() {
       <div className="gen-layout">
         <div className="gen-main card">
           <div className="card-hd">
-            <h3>配置参数</h3>
+            <h3>t('配置参数')</h3>
             <span className="spacer" />
             <span className="gen-hint">必填项按当前 Agent 自动筛选</span>
           </div>
@@ -728,7 +729,7 @@ export function Generate() {
               </button>
               {!listener && (
                 <span className="dim" style={{ alignSelf: 'center' }}>
-                  请先选择监听器
+                  t('请先选择监听器')
                 </span>
               )}
             </div>
@@ -749,7 +750,7 @@ export function Generate() {
 
         <aside className="gen-side card">
           <div className="card-hd">
-            <h3>当前选择</h3>
+            <h3>t('当前选择')</h3>
             <span className="gen-side-status">实时</span>
           </div>
           <div className="card-bd" style={{ padding: 14 }}>

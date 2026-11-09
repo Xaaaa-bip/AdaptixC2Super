@@ -37,8 +37,23 @@ vim profile.yaml        # 至少改掉 Teamserver.password；监听器按需改 
 
 - 浏览器打开 `https://<ip>:8080<Web.path>/` —— 入口路径见 `profile.yaml` 的 `Web.path`（CI 包里是 `/bf21a14d8b0eb60f8b95ae0df61162b8/`），自签证书点「继续访问」。
 - 登录：默认 `only_password: true`，**任意用户名 + `Teamserver.password`**；改成 `false` 则按 `operators:` 账号表逐个登录。
+- **界面语言（中文 / English）**：控制台内置双语，两种切换方式 ——
+  - 打开 `https://<ip>:8080<Web.path>/?lang=en` 即英文版（`?lang=zh` 或去掉参数回中文）；
+  - 或登录后在右上角点 **EN / 中** 按钮即时切换。选择会记住（localStorage），下次打开保持。
+  - 英文覆盖：工具条 / 登录 / 主机 / 监听器 / 载荷 / 任务 / 命令面板 / 状态栏等高频界面；未翻译的长尾页面回退中文，词典在 `AdaptixWeb/src/i18n/dict.en.ts`（键 = 中文原文，缺哪条补哪条，无需改组件）。
 - ★ 换控制台入口路径必须**同时**改前端构建前缀 `VITE_BASE` 并重编 web —— 两边不一致就是整页白屏（资源全 404）。
 - API 与控制台同源同端口：REST 在 `Teamserver.endpoint`（默认 `/api`），协作多端走 WebSocket。
+
+#### Web Console (English)
+
+- Open `https://<ip>:8080<Web.path>/` (the entry path is `Web.path` in `profile.yaml`; the CI package ships `/bf21a14d8b0eb60f8b95ae0df61162b8/`). Accept the self-signed certificate warning.
+- Login: by default `only_password: true` — **any username + `Teamserver.password`**; set it to `false` to use the `operators:` account table instead.
+- **UI language (中文 / English)**: the console is bilingual —
+  - open `https://<ip>:8080<Web.path>/?lang=en` for English (`?lang=zh` or no parameter for Chinese);
+  - or click the **EN / 中** button in the top-right corner after login. The choice is remembered (localStorage).
+  - English covers the high-frequency surfaces (toolbar, login, hosts, listeners, payloads, tasks, command palette, status bar); pages not yet translated fall back to Chinese. To extend, add entries to `AdaptixWeb/src/i18n/dict.en.ts` (keys are the Chinese source strings — no component changes needed).
+- Changing the console entry path requires updating the frontend build prefix `VITE_BASE` and rebuilding — a mismatch yields a blank page (all assets 404).
+- REST API and the console share the same origin/port: REST under `Teamserver.endpoint` (default `/api`), multi-operator collaboration over WebSocket.
 
 ### 3. 使用 Android 控制端（AdaptixApp）
 
