@@ -1197,6 +1197,12 @@ static int agent_main(void) {
             ws_init(&ws);
 
             if (https_connect(&ws, host_buf, host_port, prof->use_ssl) != 0) {
+                // ★ 2026-11-17：连接失败不消耗 conn_count —— 原实现失败也
+                //   attempt++，服务端重启期间连续失败 reconn_count 次（UI
+                //   默认 3）后 agent 进程直接退出，永远不再回连。失败重试
+                //   应无限（按 conn_timeout 退避），conn_count 只约束已建立
+                //   会话的轮换节奏（rotate 本来就 attempt=-1）。
+                attempt = -1;
                 continue;
             }
 
@@ -1291,6 +1297,8 @@ static int agent_main(void) {
 
             if (ws_connect(&ws, host_buf, host_port, current_uri, current_ua,
                           (const char*)ws_beat_buf, prof->use_ssl) != 0) {
+                // 同 https：失败不消耗 conn_count，无限退避重试（见上）。
+                attempt = -1;
                 continue;
             }
 
@@ -1443,7 +1451,11 @@ static int agent_main(void) {
 
             // Connect
             connector_t conn;
-            if (conn_open(&conn, prof->addresses[addr_idx]) != 0) continue;
+            if (conn_open(&conn, prof->addresses[addr_idx]) != 0) {
+                // 同 https：失败不消耗 conn_count，无限退避重试（见上）。
+                attempt = -1;
+                continue;
+            }
 
             // Reset attempt counter on successful connect
             ax_test_log("connect");
