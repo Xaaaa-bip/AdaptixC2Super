@@ -198,6 +198,10 @@ function RegisterCommands(listenerType)
     let cmd_shell = ax.create_command("shell", "通过 /bin/sh 执行命令", "shell id", "Task: command execute");
     cmd_shell.addArgString("cmd", true);
 
+    // ★ 2026-11-17 运行时心跳基准：默认 30s；0 = 交互加速。重连间隔不受影响。
+    let cmd_sleep = ax.create_command("sleep", "设置心跳间隔（秒，0=交互加速，上限 3600；兼容 30s 写法）", "sleep 30", "Task: set sleep interval");
+    cmd_sleep.addArgString("seconds", true);
+
     let cmd_upload = ax.create_command("upload", "上传文件", "upload /tmp/file.txt /root/file.txt", "Task: upload file");
     cmd_upload.addArgFile("local_file", true);
     cmd_upload.addArgString("remote_path", false);
@@ -221,7 +225,7 @@ function RegisterCommands(listenerType)
     let cmd_execute = ax.create_command("execute", "在内存中执行 BOF 文件");
     cmd_execute.addSubCommands([_cmd_exec_bof]);
 
-    let commands = ax.create_commands_group("linux", [cmd_cat, cmd_cd, cmd_cleanlog, cmd_container, cmd_cp, cmd_creds, cmd_download, cmd_edr, cmd_env, cmd_execute, cmd_exit, cmd_getuid, cmd_whoami, cmd_ipconfig, cmd_inject, cmd_job, cmd_kill, cmd_link, cmd_listen, cmd_ls, cmd_masquerade, cmd_migrate, cmd_mounts, cmd_mv, cmd_mkdir, cmd_netstat, cmd_persist, cmd_ps, cmd_pwd, cmd_rm, cmd_run, cmd_shell, cmd_socks, cmd_timestomp, cmd_unlink, cmd_upload]);
+    let commands = ax.create_commands_group("linux", [cmd_cat, cmd_cd, cmd_cleanlog, cmd_container, cmd_cp, cmd_creds, cmd_download, cmd_edr, cmd_env, cmd_execute, cmd_exit, cmd_getuid, cmd_whoami, cmd_ipconfig, cmd_inject, cmd_job, cmd_kill, cmd_link, cmd_listen, cmd_ls, cmd_masquerade, cmd_migrate, cmd_mounts, cmd_mv, cmd_mkdir, cmd_netstat, cmd_persist, cmd_ps, cmd_pwd, cmd_rm, cmd_run, cmd_shell, cmd_sleep, cmd_socks, cmd_timestomp, cmd_unlink, cmd_upload]);
 
     return {
         commands_linux: commands

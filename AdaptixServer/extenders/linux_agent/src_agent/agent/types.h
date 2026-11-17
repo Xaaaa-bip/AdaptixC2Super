@@ -63,6 +63,9 @@ typedef _Bool bool;
 /* Reverse pivot: parent listens, child dials in.  port==0 stops listening. */
 #define COMMAND_PIVOT_LISTEN    46
 
+/* Runtime heartbeat control: {seconds: int} — 0 = interactive boost. */
+#define COMMAND_SET_SLEEP       47
+
 // Tunnel/Terminal commands (control)
 #define COMMAND_TUNNEL_START    31
 #define COMMAND_TUNNEL_STOP     32

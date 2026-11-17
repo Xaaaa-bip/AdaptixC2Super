@@ -190,6 +190,10 @@ type ParamsKill struct {
 	Pid int `msgpack:"pid"`
 }
 
+type ParamsSetSleep struct {
+	Seconds uint32 `msgpack:"seconds"`
+}
+
 type ParamsZip struct {
 	Src string `msgpack:"src"`
 	Dst string `msgpack:"dst"`
@@ -414,6 +418,9 @@ const (
 	// Reverse pivot: parent agent listens, child agent dials in.
 	// port == 0 asks the agent to stop listening.
 	COMMAND_PIVOT_LISTEN = 46
+
+	// Runtime heartbeat control: {seconds: int} — 0 = interactive boost.
+	COMMAND_SET_SLEEP = 47
 
 	COMMAND_TUNNEL_START  = 31
 	COMMAND_TUNNEL_STOP   = 32

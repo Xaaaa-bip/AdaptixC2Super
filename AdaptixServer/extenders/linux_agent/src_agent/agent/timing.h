@@ -27,6 +27,12 @@ uint64_t ax_rotation_interval_ms(uint32_t conn_timeout_ms);
 /// persistent last-beacon timestamp (ms, 0 = never).
 int ax_beacon_due(uint64_t now_ms, uint64_t *last_beacon_ms);
 
+/* ★ 运行时心跳基准（"sleep" 命令）：默认 30000ms。
+ * 0 = 交互加速（每轮轮询都 due，节拍受 idle pacing 限制 ~150ms）；
+ * 上限 1 小时。set 同时清漂移历史，让新节奏立即生效。 */
+void ax_beacon_base_set(uint32_t base_ms);
+uint32_t ax_beacon_base_get(void);
+
 /// Append "<monotonic_ms> <event>\n" to AX_TEST_LOG (env) if set; no-op
 /// otherwise. Events: "connect", "rotate", "reconnect" (Phase 4 gap 5 feed).
 void ax_test_log(const char *event);

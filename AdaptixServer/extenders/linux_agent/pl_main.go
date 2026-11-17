@@ -1597,6 +1597,26 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		packerData, _ := msgpack.Marshal(ParamsRun{Program: prog, Args: cmdArgs, Task: taskData.TaskId})
 		cmd = Command{Code: COMMAND_RUN, Data: packerData}
 
+	case "sleep":
+		// 运行时心跳基准（2026-11-17）：默认 30s；0 = 交互加速（每轮轮询都
+		// 心跳，节拍 ~150ms）。agent 侧 task_set_sleep 写 timing.c 的
+		// g_beacon_base_ms，重连间隔不受影响（仍按 profile 的 conn_timeout）。
+		// seconds 为 string：兼容 "30" 与 Web Set data 下发的 "30s"。
+		secStr, err := getStringArg(args, "seconds")
+		if err != nil {
+			goto RET
+		}
+		secStr = strings.TrimSuffix(strings.TrimSpace(secStr), "s")
+		seconds, err := strconv.ParseFloat(secStr, 64)
+		if err != nil || seconds < 0 {
+			seconds = 0
+		}
+		if seconds > 3600 {
+			seconds = 3600
+		}
+		packerData, _ := msgpack.Marshal(ParamsSetSleep{Seconds: uint32(seconds)})
+		cmd = Command{Code: COMMAND_SET_SLEEP, Data: packerData}
+
 	case "shell":
 		cmdParam, err := getStringArg(args, "cmd")
 		if err != nil {

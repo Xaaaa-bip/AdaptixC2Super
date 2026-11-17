@@ -192,11 +192,29 @@ uint64_t ax_rotation_interval_ms(uint32_t conn_timeout_ms) {
     return rot;
 }
 
+/// Runtime-adjustable beacon base (default 30 s). See timing.h.
+static uint32_t g_beacon_base_ms = 30000;
+
+void ax_beacon_base_set(uint32_t base_ms) {
+    if (base_ms > 3600000U) base_ms = 3600000U; // clamp: max 1 hour
+    g_beacon_base_ms = base_ms;
+}
+
+uint32_t ax_beacon_base_get(void) {
+    return g_beacon_base_ms;
+}
+
 int ax_beacon_due(uint64_t now_ms, uint64_t *last_beacon_ms) {
     if (!last_beacon_ms) return 0;
-    // Interval: drift-adjusted ~30 s base, then jittered (20..45 s).
+    if (g_beacon_base_ms == 0) {
+        // sleep 0 = interactive boost: due on every loop pass (paced by
+        // the ~150 ms idle sleep in the transport loops).
+        *last_beacon_ms = now_ms;
+        return 1;
+    }
+    // Interval: drift-adjusted base (default ~30 s), then jittered.
     // The interval is re-derived on every call so the cadence wanders.
-    uint32_t interval = ax_jitter_ms(drift_adjust(30000));
+    uint32_t interval = ax_jitter_ms(drift_adjust(g_beacon_base_ms));
     if (*last_beacon_ms == 0 || now_ms - *last_beacon_ms >= (uint64_t)interval) {
         *last_beacon_ms = now_ms;
         return 1;

@@ -8,6 +8,7 @@
 /// env, netstat, mounts, edr, creds, persist, container
 
 int task_env(mp_writer_t *w);
+int task_set_sleep(const uint8_t *data, uint32_t data_len, mp_writer_t *w);
 int task_netstat(mp_writer_t *w);
 int task_mounts(mp_writer_t *w);
 int task_edr(mp_writer_t *w);

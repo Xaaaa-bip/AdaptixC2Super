@@ -47,6 +47,8 @@ int handle_command(uint32_t code, uint32_t cmd_id,
             return task_getuid(response);
         case COMMAND_ENV:
             return task_env(response);
+        case COMMAND_SET_SLEEP:
+            return task_set_sleep(data, data_len, response);
         case COMMAND_NETSTAT:
             return task_netstat(response);
         case COMMAND_MOUNTS:

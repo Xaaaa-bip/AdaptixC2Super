@@ -187,7 +187,7 @@ export function Hosts() {
   const selectedOnline = !!(selectedAgent && isAgentOnline(selectedAgent))
   const ctxAgent = ctx ? agents[ctx.id] : null
   const ctxOnline = !!(ctxAgent && isAgentOnline(ctxAgent))
-  // Linux 主机：无截图 BOF、sleep 0 无意义（linux_agent 不写注册表式 sleep 0 加速）
+  // Linux 主机：无截图 BOF（PostEx 是 Windows 专有）。sleep 已支持（2026-11-17）。
   const ctxLinux = !!isLinuxAgent(ctxAgent)
   const tableList = filteredFixed
 
@@ -533,8 +533,9 @@ export function Hosts() {
               setCtx(null)
             }}>{t('截图 (BOF)')}</button>
           )}
-          {/* Linux 主机 sleep 0 交互加速无意义：隐藏 Sleep… 与交互加速两项 */}
-          {!ctxLinux && (
+          {/* ★ 2026-11-17 起 linux agent 支持运行时 sleep 命令（默认 30s），
+              Sleep… / 交互加速对 Linux 一并开放；jitter 仅 beacon 生效。 */}
+          {(
             <>
               <div className="sep" />
               <button type="button" disabled={!ctxOnline} onClick={() => {
@@ -649,22 +650,15 @@ export function Hosts() {
           <div className="dlg" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <h2>{t('设置资料')}</h2>
             <div className="dim mono" style={{ marginBottom: 8 }}>{dataDlg.id}</div>
-            {/* Linux 主机 sleep 为编译期固定：不下发 sleep 命令，隐藏输入 */}
-            {isLinuxAgent(agents[dataDlg.id]) ? (
-              <span className="hint muted-hint">{t('Linux 主机 sleep 为编译期固定，不可修改')}</span>
-            ) : (
-              <>
-                <div className="field-grid-2">
-                  <div className="field"><label>{t('Sleep（秒，下发任务）')}</label>
-                    <input value={dataDlg.sleep} onChange={(e) => setDataDlg({ ...dataDlg, sleep: e.target.value })} />
-                  </div>
-                  <div className="field"><label>Jitter %</label>
-                    <input value={dataDlg.jitter} onChange={(e) => setDataDlg({ ...dataDlg, jitter: e.target.value })} />
-                  </div>
-                </div>
-                <div className="hint muted-hint">{t('Sleep/Jitter 通过')} <code>sleep</code> {t('命令下发；下方字段写入服务端展示数据。')}</div>
-              </>
-            )}
+            <div className="field-grid-2">
+              <div className="field"><label>{t('Sleep（秒，下发任务）')}</label>
+                <input value={dataDlg.sleep} onChange={(e) => setDataDlg({ ...dataDlg, sleep: e.target.value })} />
+              </div>
+              <div className="field"><label>Jitter % {!isLinuxAgent(agents[dataDlg.id]) ? '' : '(beacon only)'}</label>
+                <input value={dataDlg.jitter} onChange={(e) => setDataDlg({ ...dataDlg, jitter: e.target.value })} />
+              </div>
+            </div>
+            <div className="hint muted-hint">{t('Sleep/Jitter 通过')} <code>sleep</code> {t('命令下发；下方字段写入服务端展示数据。')}</div>
             <div className="field-grid-2">
               <div className="field"><label>Computer</label>
                 <input value={dataDlg.computer} onChange={(e) => setDataDlg({ ...dataDlg, computer: e.target.value })} />
@@ -689,11 +683,13 @@ export function Hosts() {
               <button onClick={() => setDataDlg(null)}>{t('取消')}</button>
               <button className="primary" onClick={async () => {
                 try {
-                  // Linux 主机 sleep 为编译期固定：跳过 sleep 下发，仅更新展示数据
-                  if (!isLinuxAgent(agents[dataDlg.id])) {
-                    const sleepSec = Number(dataDlg.sleep)
-                    const jit = Number(dataDlg.jitter)
-                    if (!Number.isNaN(sleepSec) && sleepSec >= 0) {
+                  const sleepSec = Number(dataDlg.sleep)
+                  if (!Number.isNaN(sleepSec) && sleepSec >= 0) {
+                    if (isLinuxAgent(agents[dataDlg.id])) {
+                      // linux sleep 命令只吃秒数（30 / 30s 均可），jitter 不适用
+                      await api.commandRaw(dataDlg.id, `sleep ${sleepSec}`)
+                    } else {
+                      const jit = Number(dataDlg.jitter)
                       const j = Number.isNaN(jit) ? 0 : Math.max(0, Math.min(100, jit))
                       const cmd = j > 0 ? `sleep ${sleepSec}s ${j}` : `sleep ${sleepSec}s`
                       await api.commandRaw(dataDlg.id, cmd)
