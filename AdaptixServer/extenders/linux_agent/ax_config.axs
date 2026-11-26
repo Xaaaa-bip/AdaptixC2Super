@@ -246,6 +246,17 @@ function GenerateUI(listeners_type)
 
     let hline = form.create_hline()
 
+    // 心跳节奏。留空 = 插件默认 30s；0 = 交互加速（~150ms 节拍）。
+    // 纯数字按秒算（与 Reconnect timeout 同一套写法）。
+    let labelSleep = form.create_label("Sleep:");
+    let textSleep = form.create_textline("");
+    textSleep.setPlaceholder("30 (seconds, 0 = interactive)")
+
+    let labelJitter = form.create_label("Jitter:");
+    let spinJitter = form.create_spin();
+    spinJitter.setRange(0, 3600);
+    spinJitter.setValue(0);
+
     let labelReconnTimeout = form.create_label("Reconnect timeout:");
     let textReconnTimeout = form.create_textline("10");
     textReconnTimeout.setPlaceholder("seconds")
@@ -274,17 +285,23 @@ function GenerateUI(listeners_type)
     layout.addWidget(comboFormat, 1, 1, 1, 1);
     layout.addWidget(labelStagerHint, 6, 0, 1, 2);
     layout.addWidget(hline, 2, 0, 1, 2);
-    layout.addWidget(labelReconnTimeout, 3, 0, 1, 1);
-    layout.addWidget(textReconnTimeout, 3, 1, 1, 1);
-    layout.addWidget(labelReconnCount, 4, 0, 1, 1);
-    layout.addWidget(spinReconnCount, 4, 1, 1, 1);
-    layout.addWidget(hline2, 5, 0, 1, 2);
-    layout.addWidget(checkOpsec, 6, 0, 1, 2);
-    layout.addWidget(checkOpsecVmExit, 7, 0, 1, 2);
+    layout.addWidget(labelSleep, 3, 0, 1, 1);
+    layout.addWidget(textSleep, 3, 1, 1, 1);
+    layout.addWidget(labelJitter, 4, 0, 1, 1);
+    layout.addWidget(spinJitter, 4, 1, 1, 1);
+    layout.addWidget(labelReconnTimeout, 5, 0, 1, 1);
+    layout.addWidget(textReconnTimeout, 5, 1, 1, 1);
+    layout.addWidget(labelReconnCount, 6, 0, 1, 1);
+    layout.addWidget(spinReconnCount, 6, 1, 1, 1);
+    layout.addWidget(hline2, 7, 0, 1, 2);
+    layout.addWidget(checkOpsec, 8, 0, 1, 2);
+    layout.addWidget(checkOpsecVmExit, 9, 0, 1, 2);
 
     let container = form.create_container()
     container.put("arch", comboArch)
     container.put("format", comboFormat)
+    container.put("sleep", textSleep)
+    container.put("jitter", spinJitter)
     container.put("reconn_timeout", textReconnTimeout)
     container.put("reconn_count", spinReconnCount)
     container.put("opsec_enabled", checkOpsec)
@@ -334,6 +351,11 @@ function BuildSchema(listener_type)
               group: "基础" },
             { key: "arch",   label: "架构",     type: "select", options: ["x86_64", "ARM64"], group: "基础",
               hint: "只影响 Stager 内层载荷的选型（pl_main.go:769）" },
+            { key: "sleep", label: "心跳间隔", type: "text", placeholder: "30 / 30s / 5m",
+              group: "重连与 OPSEC",
+              hint: "纯数字按秒算（插件会自动补 s，pl_utils.go:448）；0 = 交互加速（~150ms 节拍）。留空 = 插件默认 30s。也可上线后用 sleep 命令动态改" },
+            { key: "jitter", label: "抖动（秒）", type: "number", min: 0, max: 3600,
+              group: "重连与 OPSEC", hint: "在心跳间隔上叠加的随机偏移；0 = 不抖动" },
             { key: "reconn_timeout", label: "重连间隔", type: "text", placeholder: "10 / 30s / 5m",
               group: "重连与 OPSEC", hint: "纯数字按秒算（插件会自动补 s，pl_utils.go:448）" },
             { key: "reconn_count", label: "重连次数", type: "number", min: 0, max: 1000000000,

@@ -3,10 +3,12 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 /// Protocol types — msgpack structs for agent communication
@@ -38,6 +40,22 @@ type Profile struct {
 	// base64 on either side (beacon_listener_http serves beacon semantics).
 	// Shares the https-emulation loop skeleton in the agent.
 	IsRawHttp         bool     `msgpack:"is_raw_http,omitempty"`
+	// 心跳节奏（生成期下发）。此前缺这两项 ⇒ agent 永远吃硬编码的 30s 默认。
+	// SleepMs 单位毫秒，与 timing.c 的 ax_beacon_base_set() 同口径（0 = 交互加速）。
+	//
+	// ★ HasSleep 用 uint32 而不是 bool：agent 侧 msgpack 解析器只有
+	//   mp_read_uint / mp_read_int，**没有 bool 读法**（msgpack 的 bool 是
+	//   0xC2/0xC3，落在 mp_read_uint 的 default 分支直接失败）。写成 bool 时
+	//   has_sleep 在 agent 侧恒为 0，生成页填的 sleep 永远不生效 —— 实测就是
+	//   「填 5s 仍按 30s 心跳」。用 0/1 数值规避跨语言编码差异。
+	// omitempty 保留：不填时这俩键根本不出现，agent 保持默认，与旧载荷逐字节一致。
+	// sleep_ms **不能** omitempty：sleep=0（交互加速）是合法且常用的值，
+	// 一旦被省略，agent 读到 has_sleep=1 却拿不到基准，只能落回 0 —— 巧的是
+	// 0 在这里恰好也等于「交互加速」，语义侥幸正确；但为免日后调整默认值时
+	// 踩坑，显式保留该键。jitter_ms 可以省（0 = 不抖动，与缺省等价）。
+	SleepMs           uint32   `msgpack:"sleep_ms"`
+	JitterMs          uint32   `msgpack:"jitter_ms,omitempty"`
+	HasSleep          uint32   `msgpack:"has_sleep,omitempty"`
 }
 
 type SessionInfo struct {
@@ -455,6 +473,41 @@ const (
 )
 
 /// Utility functions
+
+// coerceSeconds 把不同控制台传来的「秒数」归一到 int。
+//
+// 为什么需要它：同一份 GenerateConfig 的键，Web 端（Generate.tsx 的
+// defaultAgentConfig / schema 表单）与 Qt 端（ax_config.axs 的 GenerateUI +
+// container.put）下发的 JSON 类型并不一致 —— 数字可能以 float64 / int /
+// json.Number 甚至 string（form.create_textline）出现。把字段钉死成 int 时，
+// 任一端传来字符串就会让**整份**生成请求 unmarshal 失败，操作员只看到
+// 「生成失败」而看不出是哪个字段。这里统一收口。
+func coerceSeconds(v interface{}) (int, error) {
+	switch t := v.(type) {
+	case nil:
+		return 0, nil
+	case int:
+		return t, nil
+	case int64:
+		return int(t), nil
+	case float64:
+		return int(t), nil
+	case json.Number:
+		n, err := t.Int64()
+		if err != nil {
+			return 0, err
+		}
+		return int(n), nil
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0, nil
+		}
+		return parseDurationToSeconds(s)
+	default:
+		return 0, fmt.Errorf("unsupported type %T", v)
+	}
+}
 
 func parseDurationToSeconds(input string) (int, error) {
 	re := regexp.MustCompile(`(\d+)(h|m|s)`)

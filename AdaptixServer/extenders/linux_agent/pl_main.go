@@ -366,6 +366,20 @@ type GenerateConfig struct {
 	Arch             string `json:"arch"`
 	ReconnectTimeout string `json:"reconn_timeout"`
 	ReconnectCount   int    `json:"reconn_count"`
+	// ★ 心跳间隔：此前 linux 完全没有这两个字段 —— ax_config.axs 的表单 / Web 的
+	//   defaultAgentConfig 都不发，插件也不读，profile 里更没有这对键，于是 agent
+	//   只能吃 timing.c 里硬编码的 g_beacon_base_ms = 30000。表现就是「生成页填
+	//   多少都不生效，永远 30 秒一跳」，隧道代理每跳还要多等一个心跳。
+	//   语义与 beacon 的 sleep_delay / jitter_delay 对齐：纯数字按秒算。
+	//   留空/0 ⇒ 交给 agent 侧默认（30s）；显式 0 ⇒ 交互加速（timing.c 的 150ms 节拍，
+	//   与运行时 `sleep 0` 命令同一语义）。
+	Sleep            string `json:"sleep"`
+	// interface{} + 自解析：Web 端 defaultAgentConfig 的 jitter 是可编辑数字，
+	// 但 Qt 的 form.create_spin / container.put 可能按字符串下发，不同控制台
+	// 传的类型不一致。写成 int 会让其中一端整份生成请求 unmarshal 失败
+	// （实测：json: cannot unmarshal string into ... jitter of type int）。
+	// 这里两种都收，统一归一到「秒」。
+	Jitter           interface{} `json:"jitter"`
 	OpsecEnabled     bool   `json:"opsec_enabled"`
 	// 云主机（KVM/QEMU ECS）与分析沙箱在 DMI/cpuinfo 上不可区分，VM 检测
 	// 默认只跑不拦；明确只打物理机时才勾选它（→ -DOPSEC_VM_EXIT）。
@@ -424,6 +438,42 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		reconnectTimeout, err := parseDurationToSeconds(generateConfig.ReconnectTimeout)
 		if err != nil {
 			return nil, err
+		}
+
+		// 心跳节奏：留空 ⇒ 不下发（agent 保持 timing.c 的 30s 默认）；
+		// 显式填（含 "0"）⇒ 下发并置 has_sleep，agent 侧才覆盖默认值。
+		// 纯数字按秒算，与 reconn_timeout 同一套写法（pl_utils.go parseDurationToSeconds）。
+		var (
+			sleepMs  uint32
+			jitterMs uint32
+			hasSleep uint32   // 0/1，见 Profile.HasSleep 注释（agent 侧只读数值）
+		)
+		if strings.TrimSpace(generateConfig.Sleep) != "" {
+			sleepSec, errSleep := parseDurationToSeconds(strings.TrimSpace(generateConfig.Sleep))
+			if errSleep != nil {
+				return nil, fmt.Errorf("invalid sleep interval %q: %w", generateConfig.Sleep, errSleep)
+			}
+			if sleepSec < 0 {
+				return nil, fmt.Errorf("sleep interval must not be negative: %q", generateConfig.Sleep)
+			}
+			if sleepSec > 3600 {
+				return nil, fmt.Errorf("sleep interval %q exceeds 1h cap (3600s)", generateConfig.Sleep)
+			}
+			sleepMs = uint32(sleepSec) * 1000
+			hasSleep = 1
+		}
+		if generateConfig.Jitter != nil {
+			jitterSec, errJit := coerceSeconds(generateConfig.Jitter)
+			if errJit != nil {
+				return nil, fmt.Errorf("invalid jitter %v: %w", generateConfig.Jitter, errJit)
+			}
+			if jitterSec < 0 {
+				return nil, fmt.Errorf("jitter must not be negative: %v", generateConfig.Jitter)
+			}
+			if jitterSec > 3600 {
+				return nil, fmt.Errorf("jitter %ds exceeds 1h cap (3600s)", jitterSec)
+			}
+			jitterMs = uint32(jitterSec) * 1000
 		}
 
 		protocol, _ := listenerMap["protocol"].(string)
@@ -488,6 +538,9 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				BannerSize:        len(tcp_banner),
 				ConnTimeout:       reconnectTimeout,
 				ConnCount:         generateConfig.ReconnectCount,
+				SleepMs:           sleepMs,
+				JitterMs:          jitterMs,
+				HasSleep:          hasSleep,
 				UseSSL:            Ssl,
 				SslCert:           sslCert,
 				SslKey:            sslKey,
@@ -535,6 +588,9 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				BannerSize:        0,
 				ConnTimeout:       0,
 				ConnCount:         0,
+				SleepMs:           sleepMs,
+				JitterMs:          jitterMs,
+				HasSleep:          hasSleep,
 				BindPort:          int(port),
 			}
 			profileData, _ = msgpack.Marshal(profile)
@@ -612,6 +668,9 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				BannerSize:        0,
 				ConnTimeout:       reconnectTimeout,
 				ConnCount:         generateConfig.ReconnectCount,
+				SleepMs:           sleepMs,
+				JitterMs:          jitterMs,
+				HasSleep:          hasSleep,
 				UseSSL:            sslFromListenerMap(listenerMap), // H1: WSS when the WS listener serves TLS
 				Uris:              uriList,
 				UaList:            uaList,
