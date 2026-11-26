@@ -851,6 +851,9 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		case "http":
 			fallthrough
 
+		case "https":
+			fallthrough
+
 		case "ws":
 
 			lines, _ := listenerMap["callback_addresses"].([]interface{})
@@ -1108,7 +1111,14 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 
 	protocol := inferBeaconProtocol(listenerMap)
-	if protocol == "http" {
+	if protocol == "http" || protocol == "https" {
+		// BeaconHTTPS（listener_name=BeaconHTTPS，config.yaml protocol:"https"）走的是
+		// 与 BeaconHTTP 完全相同的 HTTPS-emulation 线格式：每跳一个普通 HTTPS POST，
+		// beat 走浏览器头，响应模板槽位回填同一份 payload。**它必须映射到
+		// ConnectorHTTP + objects_http**，只是 URL scheme 为 https（由 profile 的
+		// use_ssl 决定，不改变 connector 选择）。
+		// 此前这里没有 "https" 分支 ⇒ 用 BeaconHTTPS 生成 beacon 时一律
+		// `protocol unknown`（实测），操作员只看到「生成失败」。
 		ObjectDir = ObjectDir_http
 		ConnectorFile = "ConnectorHTTP"
 	} else if protocol == "bind_smb" {

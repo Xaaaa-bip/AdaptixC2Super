@@ -7,6 +7,7 @@
 #include "jobs.h"
 #include "crt.h"
 #include "types.h"
+#include "dns.h"   // ax_parse_endpoint —— 隧道目标地址解析（IPv4 直通 / 域名走内置 DNS）
 
 #ifdef BUILD_SO
 #include "elf_resolve.h"
@@ -193,23 +194,22 @@ static void pack_tunnel_close(mp_writer_t *collector, int channel_id, int reason
 // ── Parse IP:port and create non-blocking socket ──
 
 static int parse_and_connect(const char *address, int *out_fd) {
-    char host_buf[256] = {0};
-    uint16_t port = 0;
-    const char *colon = (const char *)0;
-
-    for (const char *p = address; *p; p++) {
-        if (*p == ':') colon = p;
-    }
-    if (!colon) return -1;
-
-    size_t hlen = (size_t)(colon - address);
-    if (hlen >= sizeof(host_buf)) return -1;
-    ax_memcpy(host_buf, address, hlen);
-    host_buf[hlen] = '\0';
-
-    for (const char *p = colon + 1; *p >= '0' && *p <= '9'; p++)
-        port = port * 10 + (uint16_t)(*p - '0');
-    if (port == 0) return -1;
+    /* ★ 目标地址解析必须走 dns.c 的 ax_parse_endpoint，**不能**再手工扫点分十进制。
+     *
+     *   老实现只认 IPv4 字面量：它逐段累加数字、把结果直接当 sin_addr。
+     *   于是浏览器走 SOCKS5 给的**域名**（远端 DNS 是常态：example.com、
+     *   内网主机名、CDN 域名）会被解析成 octets 全 0 ⇒ sin_addr = 0.0.0.0
+     *   ⇒ connect(0.0.0.0:port) 既不会成功也不能立即失败，通道永远停在
+     *   TUNNEL_STATE_CONNECTING，客户端表现为**CONNECT 永久挂起**
+     *   （实测：IP 目标 5.6s 成功，域名目标 200s 超时无响应）。
+     *
+     *   ax_parse_endpoint 的语义正好是我们需要的：IPv4 字面量直通（零开销、
+     *   不发 DNS 查询），域名走内置 DNS（/etc/resolv.conf，带正/负缓存），
+     *   端口按网络字节序返回 —— 与 sin_port 的期望一致。 */
+    uint32_t ip_be = 0;
+    uint16_t port_be = 0;
+    if (ax_parse_endpoint(address, &ip_be, &port_be) != 0)
+        return -1;
 
     struct {
         uint16_t sin_family;
@@ -219,15 +219,8 @@ static int parse_and_connect(const char *address, int *out_fd) {
     } addr;
     ax_memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = ((port >> 8) & 0xFF) | ((port & 0xFF) << 8);
-
-    uint32_t octets[4] = {0};
-    int oidx = 0;
-    for (const char *p = host_buf; *p && oidx < 4; p++) {
-        if (*p == '.') oidx++;
-        else if (*p >= '0' && *p <= '9') octets[oidx] = octets[oidx] * 10 + (*p - '0');
-    }
-    addr.sin_addr = octets[0] | (octets[1] << 8) | (octets[2] << 16) | (octets[3] << 24);
+    addr.sin_port   = port_be;
+    addr.sin_addr   = ip_be;
 
     int fd = PF_socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;

