@@ -15,16 +15,28 @@ export class SyncSocket {
     const ws = new WebSocket(url)
     ws.binaryType = 'arraybuffer'
     this.ws = ws
-    ws.onopen = () => handlers.onOpen?.()
-    ws.onclose = (ev) => handlers.onClose?.(ev)
-    ws.onerror = (ev) => handlers.onError?.(ev)
+    ws.onopen = () => {
+      if (this.ws !== ws) return
+      handlers.onOpen?.()
+    }
+    ws.onclose = (ev) => {
+      if (this.ws !== ws) return
+      this.ws = null
+      handlers.onClose?.(ev)
+    }
+    ws.onerror = (ev) => {
+      if (this.ws !== ws) return
+      handlers.onError?.(ev)
+    }
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return
       try {
         let text = ''
         if (typeof ev.data === 'string') text = ev.data
         else if (ev.data instanceof ArrayBuffer) text = new TextDecoder().decode(ev.data)
         else return
         for (const c of text.split('\n').map((s) => s.trim()).filter(Boolean)) {
+          if (this.ws !== ws) return
           handlers.onPacket?.(JSON.parse(c) as Packet)
         }
       } catch (e) {
@@ -34,9 +46,14 @@ export class SyncSocket {
   }
 
   close() {
-    if (this.ws) {
-      try { this.ws.close() } catch { /* ignore */ }
+    const ws = this.ws
+    if (ws) {
       this.ws = null
+      ws.onopen = null
+      ws.onclose = null
+      ws.onerror = null
+      ws.onmessage = null
+      try { ws.close() } catch { /* ignore */ }
     }
   }
 }

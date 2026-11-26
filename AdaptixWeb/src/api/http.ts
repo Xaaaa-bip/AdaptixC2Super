@@ -1,4 +1,5 @@
 import type { BuildSchema, CmdBatch } from './types'
+import { syncServerClock } from '../utils'
 
 export type LoginResult = { access_token: string; refresh_token: string }
 
@@ -39,6 +40,7 @@ export class ApiClient {
   accessToken = ''
   refreshToken = ''
   private refreshBlockedUntil = 0
+  private refreshInFlight: Promise<string> | null = null
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
@@ -69,15 +71,30 @@ export class ApiClient {
 
   async refreshAccess(): Promise<string> {
     if (!this.refreshToken) throw new Error('no refresh token')
-    const res = await fetch(joinUrl(this.baseUrl, '/api/refresh'), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.refreshToken}` },
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!data.access_token) throw new Error(data.message || 'refresh failed')
-    // 保留 refresh；部分实现会轮换 refresh_token
-    this.setTokens(data.access_token, data.refresh_token || this.refreshToken)
-    return data.access_token
+    // 合并并发 401 触发的多次 /api/refresh，避免刷新时并发请求互相打爆限流或轮换失效
+    if (this.refreshInFlight) return this.refreshInFlight
+    const run = (async () => {
+      const res = await fetch(joinUrl(this.baseUrl, '/api/refresh'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.refreshToken}` },
+      })
+      const dateHdr = res.headers.get('date')
+      if (dateHdr) {
+        const parsed = Date.parse(dateHdr)
+        if (Number.isFinite(parsed)) syncServerClock(parsed)
+      }
+      const data = await res.json().catch(() => ({}))
+      if (!data.access_token) throw new Error(data.message || 'refresh failed')
+      // 保留 refresh；部分实现会轮换 refresh_token
+      this.setTokens(data.access_token, data.refresh_token || this.refreshToken)
+      return data.access_token
+    })()
+    this.refreshInFlight = run
+    try {
+      return await run
+    } finally {
+      if (this.refreshInFlight === run) this.refreshInFlight = null
+    }
   }
 
   private async request<T = any>(method: string, path: string, body?: any, retry = true): Promise<T> {
@@ -89,6 +106,11 @@ export class ApiClient {
       payload = JSON.stringify(body)
     }
     const res = await fetch(joinUrl(this.baseUrl, path), { method, headers, body: payload })
+    const dateHdr = res.headers.get('date')
+    if (dateHdr) {
+      const parsed = Date.parse(dateHdr)
+      if (Number.isFinite(parsed)) syncServerClock(parsed)
+    }
     // 401 → try refresh once；刷新失败进入 60s 熔断，避免
     // REST 兜底轮询的并发 401 触发 /refresh 风暴打爆登录限流
     if (res.status === 401 && retry && this.refreshToken && Date.now() > this.refreshBlockedUntil) {

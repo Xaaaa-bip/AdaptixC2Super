@@ -85,9 +85,18 @@ export async function openTerminalChannel(
       ws.onmessage = handler
     }
     let settled = false
+    let openTimer: number | null = null
+    const cleanupTimers = () => {
+      clearTimeout(timer)
+      if (openTimer !== null) {
+        clearTimeout(openTimer)
+        openTimer = null
+      }
+    }
     const timer = window.setTimeout(() => {
       if (!settled) {
         settled = true
+        cleanupTimers()
         try { ws.close() } catch { /* ignore */ }
         reject(new Error(`PTY WebSocket 连接超时\n${url.replace(/otp=[^&]+/, 'otp=…')}`))
       }
@@ -95,11 +104,12 @@ export async function openTerminalChannel(
     ws.onopen = () => {
       if (settled) return
       // Give server a moment to CreateChannel; if it fails it will close immediately.
-      window.setTimeout(() => {
+      openTimer = window.setTimeout(() => {
+        openTimer = null
         if (settled) return
         if (ws.readyState === WebSocket.OPEN) {
           settled = true
-          clearTimeout(timer)
+          cleanupTimers()
           resolve(ws)
         }
       }, 120)
@@ -107,13 +117,13 @@ export async function openTerminalChannel(
     ws.onclose = (ev) => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      cleanupTimers()
       reject(new Error(`PTY 通道被关闭 (code=${ev.code})，请确认主机在线且已 sleep 0`))
     }
     ws.onerror = () => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      cleanupTimers()
       reject(new Error('PTY WebSocket 连接失败（检查 Vite /api 代理与 teamserver）'))
     }
   })

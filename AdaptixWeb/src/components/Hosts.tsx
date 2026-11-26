@@ -158,9 +158,12 @@ export function Hosts() {
     external_ip: string
   } | null>(null)
 
+  // 仅在线筛选时每 5 秒跟随 nowTick 刷新一次，避免已超时离线的主机滞留在「仅在线」结果中
+  const onlyActiveBucket = onlyActive ? Math.floor(nowTick / 5000) : 0
   const filteredFixed = useMemo(() => {
+    void onlyActiveBucket
     let arr = Object.values(agents)
-    if (onlyActive) arr = arr.filter((a) => isAgentOnline(a))
+    if (onlyActive) arr = arr.filter((a) => isAgentOnline(a, { now: nowTick }))
     if (filter.trim()) {
       const q = filter.trim().toLowerCase()
       arr = arr.filter((a) =>
@@ -179,14 +182,14 @@ export function Hosts() {
       if (ta !== tb) return tb - ta // 新注册在前，贴近原「最新在顶部」的习惯
       return String(a.a_id).localeCompare(String(b.a_id))
     })
-  }, [agents, filter, onlyActive])
+  }, [agents, filter, onlyActive, onlyActiveBucket])
 
-  const online = filteredFixed.filter((a) => isAgentOnline(a))
-  const offline = filteredFixed.filter((a) => !isAgentOnline(a))
+  const online = filteredFixed.filter((a) => isAgentOnline(a, { now: nowTick }))
+  const offline = filteredFixed.filter((a) => !isAgentOnline(a, { now: nowTick }))
   const selectedAgent = selected ? agents[selected] : null
-  const selectedOnline = !!(selectedAgent && isAgentOnline(selectedAgent))
+  const selectedOnline = !!(selectedAgent && isAgentOnline(selectedAgent, { now: nowTick }))
   const ctxAgent = ctx ? agents[ctx.id] : null
-  const ctxOnline = !!(ctxAgent && isAgentOnline(ctxAgent))
+  const ctxOnline = !!(ctxAgent && isAgentOnline(ctxAgent, { now: nowTick }))
   // Linux 主机：无截图 BOF（PostEx 是 Windows 专有）。sleep 已支持（2026-11-17）。
   const ctxLinux = !!isLinuxAgent(ctxAgent)
   const tableList = filteredFixed
@@ -202,7 +205,7 @@ export function Hosts() {
   const someChecked = checkedVisible > 0 && !allChecked
   const hiddenChecked = checkedIds.size - checkedVisible
   const bulkAgents = [...checkedIds].map((id) => agents[id]).filter(Boolean) as Agent[]
-  const bulkOnline = bulkAgents.filter((a) => isAgentOnline(a)).length
+  const bulkOnline = bulkAgents.filter((a) => isAgentOnline(a, { now: nowTick })).length
 
   useEffect(() => {
     const close = () => setCtx(null)
@@ -290,7 +293,7 @@ export function Hosts() {
   }
 
   function SideItem({ a }: { a: Agent }) {
-    const live = isAgentOnline(a)
+    const live = isAgentOnline(a, { now: nowTick })
     return (
       <button
         type="button"
@@ -383,7 +386,7 @@ export function Hosts() {
                 <button className="danger" onClick={() => removeSelected().catch((e) => pushLog('err', String(e)))}>{t('删除')}</button>
               </>
             ) : (
-              <span className="dim">t('点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量')</span>
+              <span className="dim">{t('点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量')}</span>
             )}
           </div>
         </div>

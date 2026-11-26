@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Adaptix-Framework/axc2"
@@ -168,6 +169,16 @@ type TsConnector struct {
 	// optional Web console (-web); nil when disabled
 	webUI     *WebUI
 	webEngine *gin.Engine // used only when Web.port != Teamserver.port
+
+	// guards the race between WS Upgrade (101) + TsClientConnect registration
+	// and immediate follow-up /api/sync, /api/subscribe, /api/channel calls
+	pendingConnectMu sync.Mutex
+	pendingConnect   map[string]*pendingConnectEntry
+}
+
+type pendingConnectEntry struct {
+	count int
+	done  chan struct{}
 }
 
 func tlsVersionFromString(v string) (uint16, error) {

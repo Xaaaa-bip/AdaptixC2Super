@@ -74,12 +74,13 @@ func (ts *Teamserver) TsAgentTerminalCreateChannel(terminalData string, wsconn *
 
 	terminal.Callbacks = agent.TerminalCallbacks()
 
+	// Always store under %08x BEFORE dispatching Start so a fast agent reply
+	// cannot race ahead of ts.terminals.Put and miss Resume(task.TaskId).
+	ts.terminals.Put(termKey, terminal)
+
 	taskData := terminal.Callbacks.Start(terminal.TerminalId, td.Program, td.SizeH, td.SizeW, td.OemCP)
 
 	tunnelManageTask(agent, taskData)
-
-	// Always store under %08x so Resume(task.TaskId) hits the same key.
-	ts.terminals.Put(termKey, terminal)
 
 	return nil
 }
@@ -129,6 +130,9 @@ func (ts *Teamserver) TsTerminalConnResume(agentId string, terminalId string, io
 	}
 	terminal, ok := value.(*Terminal)
 	if !ok {
+		return
+	}
+	if !terminal.resumed.CompareAndSwap(false, true) {
 		return
 	}
 
@@ -203,7 +207,6 @@ func closeTerminalResources(terminal *Terminal) {
 func relayWebsocketToTerminal(ts *Teamserver, agent *Agent, terminal *Terminal, terminalId string, direct bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
-	var wsWriteMu sync.Mutex
 	finish := func() {
 		once.Do(func() {
 			cancel()
@@ -248,9 +251,9 @@ func relayWebsocketToTerminal(ts *Teamserver, agent *Agent, terminal *Terminal, 
 		for {
 			n, err := terminal.prTun.Read(buf)
 			if n > 0 {
-				wsWriteMu.Lock()
+				terminal.wsWriteMu.Lock()
 				writeErr := terminal.wsconn.WriteMessage(websocket.BinaryMessage, buf[:n])
-				wsWriteMu.Unlock()
+				terminal.wsWriteMu.Unlock()
 				if writeErr != nil {
 					break
 				}

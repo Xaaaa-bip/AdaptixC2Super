@@ -113,7 +113,6 @@ func (ts *Teamserver) RestoreData() {
 			RunningJobs:       safe.NewMap(),
 			PivotParent:       nil,
 			PivotChilds:       safe.NewSlice(),
-			Tick:              false,
 			Active:            true,
 		}
 

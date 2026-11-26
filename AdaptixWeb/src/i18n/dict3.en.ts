@@ -265,7 +265,7 @@ export const EN_DICT3: Record<string, string> = {
   '现场复原 / 撤离（按显式清单删落盘物）': 'Cleanup / evacuation (delete listed artifacts)',
   '参数编解码探针（零副作用）': 'Argument codec probe (zero side effects)',
   '服务端存在、但本地 META 表里没有描述。可能是新加的，或你自己上传的。': 'Exists on the server but absent from local META. New, or uploaded by you.',
-  '服务端': 'Server', '可执行': 'executable', '服务端还没有 BOF': 'No BOFs on the server yet',
+  '可执行': 'executable', '服务端还没有 BOF': 'No BOFs on the server yet',
   '用上方「上传 BOF」投递一个 .c（会自动编译）或 .o': 'Use "Upload BOF" above to deliver a .c (auto-compiled) or .o',
   '等待命令树': 'Waiting for command tree',
   'JWT 登录成功': 'JWT login ok', 'REST 数据已加载': 'REST data loaded',

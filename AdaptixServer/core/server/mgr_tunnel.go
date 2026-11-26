@@ -221,6 +221,8 @@ func (tm *TunnelManager) closeChannelInternal(tunnel *Tunnel, channel *TunnelCha
 		return
 	}
 
+	channel.markClosed()
+
 	if channel.conn != nil {
 		_ = channel.conn.Close()
 	}
@@ -274,6 +276,9 @@ func (tm *TunnelManager) WriteToChannel(tunnelId string, channelId int, data []b
 	}
 
 	if entry.Channel != nil && entry.Channel.ingressChan != nil {
+		if entry.Channel.chanClosed.Load() {
+			return false
+		}
 		curLen := len(entry.Channel.ingressChan)
 		capLen := cap(entry.Channel.ingressChan)
 		if capLen > 0 && curLen > (capLen*tunnelIngressHiWM)/100 {
@@ -283,6 +288,8 @@ func (tm *TunnelManager) WriteToChannel(tunnelId string, channelId int, data []b
 		}
 
 		select {
+		case <-entry.Channel.closedCh:
+			return false
 		case entry.Channel.ingressChan <- data:
 			tm.stats.TotalBytesRecv.Add(uint64(len(data)))
 			return true
@@ -308,6 +315,9 @@ func (tm *TunnelManager) WriteToChannelByIdOnly(channelId int, data []byte) bool
 	}
 
 	if entry.Channel != nil && entry.Channel.ingressChan != nil {
+		if entry.Channel.chanClosed.Load() {
+			return false
+		}
 		curLen := len(entry.Channel.ingressChan)
 		capLen := cap(entry.Channel.ingressChan)
 		if capLen > 0 && curLen > (capLen*tunnelIngressHiWM)/100 {
@@ -317,6 +327,8 @@ func (tm *TunnelManager) WriteToChannelByIdOnly(channelId int, data []byte) bool
 		}
 
 		select {
+		case <-entry.Channel.closedCh:
+			return false
 		case entry.Channel.ingressChan <- data:
 			tm.stats.TotalBytesRecv.Add(uint64(len(data)))
 			return true
@@ -416,6 +428,7 @@ func NewSafeTunnelChannel(tm *TunnelManager, channelId int, conn net.Conn, wscon
 	stc.prSrv, stc.pwSrv = io.Pipe()
 	stc.prTun, stc.pwTun = io.Pipe()
 	stc.ingressChan = make(chan []byte, tunnelIngressQueueDepth)
+	stc.closedCh = make(chan struct{})
 	go stc.ingressPump()
 	return stc
 }
@@ -427,7 +440,18 @@ func (stc *SafeTunnelChannel) ingressPump() {
 		}
 	}()
 
-	for data := range stc.ingressChan {
+	for {
+		var data []byte
+		var ok bool
+		select {
+		case <-stc.closedCh:
+			return
+		case data, ok = <-stc.ingressChan:
+			if !ok {
+				return
+			}
+		}
+
 		// RESUME
 		if stc.flowPaused.Load() {
 			capLen := cap(stc.ingressChan)
@@ -445,7 +469,7 @@ func (stc *SafeTunnelChannel) ingressPump() {
 				return
 			}
 		} else if stc.wsconn != nil {
-			if err := stc.wsconn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			if err := stc.WriteWSMessage(websocket.BinaryMessage, data); err != nil {
 				return
 			}
 		} else if stc.pwTun != nil {
@@ -462,10 +486,7 @@ func (stc *SafeTunnelChannel) Close() bool {
 	}
 
 	stc.closing.Store(true)
-	if stc.ingressChan != nil {
-		close(stc.ingressChan)
-		stc.ingressChan = nil
-	}
+	stc.markClosed()
 
 	stc.cancel()
 

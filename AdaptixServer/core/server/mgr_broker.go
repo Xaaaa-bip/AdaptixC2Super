@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -111,6 +112,7 @@ type ClientHandler struct {
 	ready    chan struct{}
 
 	synced        atomic.Bool
+	syncMu        sync.Mutex
 	tmpStore      []interface{}     // Event-buff
 	tmpStateStore map[string][]byte // State-buff: key → last value
 	tmpMu         sync.Mutex
@@ -470,17 +472,35 @@ func (mb *MessageBroker) PublishAgentActivated(packet interface{}) {
 }
 
 func (mb *MessageBroker) Register(client *ClientHandler) {
-	select {
-	case mb.register <- client:
-	case <-mb.shutdown:
+	mb.mu.Lock()
+	// multi-session: do NOT kick same username; key by connection id
+	if client.id == "" {
+		client.id = client.username
 	}
+	mb.clients[client.id] = client
+	if mb.byUser[client.username] == nil {
+		mb.byUser[client.username] = make(map[string]struct{})
+	}
+	mb.byUser[client.username][client.id] = struct{}{}
+	mb.mu.Unlock()
 }
 
 // Unregister by connection id
 func (mb *MessageBroker) Unregister(connId string) {
-	select {
-	case mb.unregister <- connId:
-	case <-mb.shutdown:
+	mb.mu.Lock()
+	client, ok := mb.clients[connId]
+	if ok {
+		delete(mb.clients, connId)
+		if set, ok2 := mb.byUser[client.username]; ok2 {
+			delete(set, connId)
+			if len(set) == 0 {
+				delete(mb.byUser, client.username)
+			}
+		}
+	}
+	mb.mu.Unlock()
+	if ok && client != nil {
+		client.Close()
 	}
 }
 
@@ -567,9 +587,12 @@ func serializePacket(packet interface{}) []byte {
 	return result
 }
 
+var clientConnSeq atomic.Uint64
+
 func NewClientHandler(username string, socket *websocket.Conn, versionSupport bool, broker *MessageBroker, clientType uint8, consoleTeamMode bool) *ClientHandler {
 	// unique connection id so same username can hold multiple Web/Qt sessions
-	connId := username + "#" + time.Now().UTC().Format("150405.000000000")
+	// (append monotonic seq so sub-ms Windows timer granularity cannot collide)
+	connId := username + "#" + time.Now().UTC().Format("150405.000000000") + "#" + strconv.FormatUint(clientConnSeq.Add(1), 10)
 	ch := &ClientHandler{
 		id:              connId,
 		username:        username,
@@ -700,7 +723,15 @@ func (ch *ClientHandler) SendSync(data []byte) {
 
 func (ch *ClientHandler) BufferForSync(data interface{}, msgType int, stateKey string) {
 	ch.tmpMu.Lock()
-	defer ch.tmpMu.Unlock()
+	// Re-check under tmpMu to close the race between DrainBufferOrMarkSynced
+	// setting synced=true and an in-flight dispatch seeing synced==false.
+	if ch.synced.Load() {
+		ch.tmpMu.Unlock()
+		if dataBytes, ok := data.([]byte); ok {
+			ch.Send(dataBytes, PriorityNormal)
+		}
+		return
+	}
 
 	if msgType == MsgTypeState && stateKey != "" {
 		if dataBytes, ok := data.([]byte); ok {
@@ -713,11 +744,29 @@ func (ch *ClientHandler) BufferForSync(data interface{}, msgType int, stateKey s
 		// buffer proves the client is stuck, disconnect it — the browser will
 		// reconnect and re-sync.
 		if len(ch.tmpStore) >= maxPreSyncEvents {
+			ch.tmpMu.Unlock()
 			ch.Close()
 			return
 		}
 		ch.tmpStore = append(ch.tmpStore, data)
 	}
+	ch.tmpMu.Unlock()
+}
+
+func (ch *ClientHandler) DrainBufferOrMarkSynced() ([]interface{}, map[string][]byte, bool) {
+	ch.tmpMu.Lock()
+	defer ch.tmpMu.Unlock()
+
+	if len(ch.tmpStore) == 0 && len(ch.tmpStateStore) == 0 {
+		ch.synced.Store(true)
+		return nil, nil, true
+	}
+
+	buf := ch.tmpStore
+	ch.tmpStore = make([]interface{}, 0)
+	stateBuf := ch.tmpStateStore
+	ch.tmpStateStore = make(map[string][]byte)
+	return buf, stateBuf, false
 }
 
 func (ch *ClientHandler) GetAndClearBuffer() []interface{} {

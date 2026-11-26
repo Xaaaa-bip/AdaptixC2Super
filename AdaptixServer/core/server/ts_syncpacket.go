@@ -107,8 +107,9 @@ func CreateSpSyncStart(count int, addrs []string) SyncPackerStart {
 	return SyncPackerStart{
 		SpType: TYPE_SYNC_START,
 
-		Count:     count,
-		Addresses: addrs,
+		Count:      count,
+		Addresses:  addrs,
+		ServerTime: time.Now().Unix(),
 	}
 }
 
@@ -263,7 +264,8 @@ func CreateSpAgentTick(agents []string) SyncPackerAgentTick {
 	return SyncPackerAgentTick{
 		SpType: TYPE_AGENT_TICK,
 
-		Id: agents,
+		Id:       agents,
+		LastTick: time.Now().Unix(),
 	}
 }
 

@@ -89,7 +89,6 @@ func (ts *Teamserver) TsAgentCreate(agentCrc string, agentId string, beat []byte
 		RunningJobs:       safe.NewMap(),
 		PivotParent:       nil,
 		PivotChilds:       safe.NewSlice(),
-		Tick:              false,
 		Active:            true,
 	}
 	agent.SetData(agentData)
@@ -885,7 +884,7 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 			})
 			_ = ts.DBMS.DbAgentTick(agent.GetData())
 		}
-		agent.Tick = true
+		agent.Tick.Store(true)
 	} else {
 		// Non-async agents (gopher/linux persistent connections) never
 		// ticked before: LastTick froze, so the Web/Qt UI health check
@@ -898,7 +897,7 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 				d.Listener = listenerName
 			}
 		})
-		agent.Tick = true
+		agent.Tick.Store(true)
 		_ = ts.DBMS.DbAgentTick(agent.GetData())
 		if listenerChanged {
 			updatedAgentData := agent.GetData()
@@ -920,9 +919,8 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 			if !ok {
 				return true
 			}
-			agentData := agent.GetData()
-			if agent.Tick {
-				agent.Tick = false
+			if agent.Tick.Swap(false) {
+				agentData := agent.GetData()
 				agentSlice = append(agentSlice, agentData.Id)
 			}
 			return true
@@ -930,7 +928,10 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 
 		if len(agentSlice) > 0 {
 			packetTick := CreateSpAgentTick(agentSlice)
-			ts.TsSyncStateWithCategory(packetTick, "tick", SyncCategoryAgents)
+			// Do not coalesce all tick batches under a single stateKey "tick":
+			// during client initial sync a later 800ms batch would overwrite an
+			// earlier batch containing different agents.
+			ts.TsSyncAllClientsWithCategory(packetTick, SyncCategoryAgents)
 		}
 
 		time.Sleep(800 * time.Millisecond)

@@ -318,9 +318,16 @@ export default function App() {
     }
   }, [])
 
+  const [statusTick, setStatusTick] = useState(() => Date.now())
+  useEffect(() => {
+    if (!connected) return
+    const id = window.setInterval(() => setStatusTick(Date.now()), 5000)
+    return () => clearInterval(id)
+  }, [connected])
+
   const agentCount = Object.keys(agents || {}).length
   const listenerCount = Object.keys(listeners || {}).length
-  const onlineCount = Object.values(agents || {}).filter((a: any) => isAgentOnline(a)).length
+  const onlineCount = Object.values(agents || {}).filter((a: any) => isAgentOnline(a, { now: statusTick })).length
 
   useEffect(() => {
     saveDensity(density)

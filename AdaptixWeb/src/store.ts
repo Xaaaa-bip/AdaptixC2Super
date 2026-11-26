@@ -6,7 +6,7 @@ import {
   Agent, AppLog, ChatMessage, ConsoleLine, DEFAULT_SUBSCRIPTIONS, DownloadItem,
   Listener, P, Packet, Pivot, Task,
 } from './api/types'
-import { clearSession, isAgentOnline, isLinuxAgent, loadSession, saveLoginPrefs, saveSession } from './utils'
+import { clearSession, getServerNowMs, isAgentOnline, isLinuxAgent, loadSession, saveLoginPrefs, saveSession, syncServerClock } from './utils'
 import { emptySnapshot, GraphBoard, GraphSnapshot, isSnapshot, normSnapshot } from './graphBoard'
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36) }
@@ -296,6 +296,29 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
     // ⇒ 服务端报「找不到」⇒ 整个请求 ok:false（见 removeAgents 的注释）。
     checkedIds: new Set([...s.checkedIds].filter((x) => !ids.has(x))),
   }
+}
+
+let connectEpoch = 0
+let refreshRestSeq = 0
+let syncStartSeenForEpoch = 0
+let syncWatchdogTimer: ReturnType<typeof setTimeout> | null = null
+let restoreInFlight: Promise<boolean> | null = null
+let cancelConnectWait: (() => void) | null = null
+
+function clearSyncWatchdog() {
+  if (syncWatchdogTimer !== null) {
+    clearTimeout(syncWatchdogTimer)
+    syncWatchdogTimer = null
+  }
+}
+
+function maxTick(a?: number, b?: number): number | undefined {
+  const na = Number(a) || 0
+  const nb = Number(b) || 0
+  if (na <= 0 && nb <= 0) return a ?? b
+  const ma = na > 0 && na < 1e12 ? na * 1000 : na
+  const mb = nb > 0 && nb < 1e12 ? nb * 1000 : nb
+  return ma >= mb ? a : b
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -723,35 +746,53 @@ export const useStore = create<State>((set, get) => ({
   },
 
   tryRestoreSession: async () => {
-    const snap = loadSession()
-    if (!snap) return false
-    const api = new ApiClient(snap.baseUrl || '')
-    api.setTokens(snap.accessToken, snap.refreshToken)
-    api.onTokensChange = (access, refresh) => {
-      saveSession({
-        accessToken: access,
-        refreshToken: refresh,
-        username: snap.username,
-        baseUrl: snap.baseUrl || '',
-      })
-    }
-    get().pushLog('info', `恢复会话 ${snap.username}…`, false)
-    // 校验 token：listAgents 内部自带一次 401→refresh 重试；
-    // 失败即清会话，不再二次 refresh（避免打爆登录限流）
+    if (restoreInFlight) return restoreInFlight
+    const run = (async () => {
+      const snap = loadSession()
+      if (!snap) return false
+      const api = new ApiClient(snap.baseUrl || '')
+      api.setTokens(snap.accessToken, snap.refreshToken)
+      api.onTokensChange = (access, refresh) => {
+        saveSession({
+          accessToken: access,
+          refreshToken: refresh,
+          username: snap.username,
+          baseUrl: snap.baseUrl || '',
+        })
+      }
+      get().pushLog('info', `恢复会话 ${snap.username}…`, false)
+      const epochAtStart = connectEpoch
+      // 校验 token：listAgents 内部自带一次 401→refresh 重试；
+      // 失败即清会话，不再二次 refresh（避免打爆登录限流）
+      try {
+        await api.listAgents()
+      } catch (e: any) {
+        if (epochAtStart !== connectEpoch) return false
+        clearSession()
+        get().pushLog('warn', `会话已失效，请重新登录: ${e?.message || e}`, false)
+        return false
+      }
+      if (epochAtStart !== connectEpoch) return false
+      await get().finishConnect(api, snap.username)
+      get().pushLog('ok', '会话已恢复（F5）', false)
+      return true
+    })()
+    restoreInFlight = run
     try {
-      await api.listAgents()
-    } catch (e: any) {
-      clearSession()
-      get().pushLog('warn', `会话已失效，请重新登录: ${e?.message || e}`, false)
-      return false
+      return await run
+    } finally {
+      if (restoreInFlight === run) restoreInFlight = null
     }
-    await get().finishConnect(api, snap.username)
-    get().pushLog('ok', '会话已恢复（F5）', false)
-    return true
   },
 
   // 登录 / 恢复会话共用：进入主界面 + REST + WS
   finishConnect: async (api: ApiClient, username: string) => {
+    const epoch = ++connectEpoch
+    clearSyncWatchdog()
+    cancelConnectWait?.()
+    cancelConnectWait = null
+    try { get().socket.close() } catch { /* ignore */ }
+
     set({
       api,
       connected: true,
@@ -780,71 +821,126 @@ export const useStore = create<State>((set, get) => ({
 
     try {
       await get().refreshRest()
+      if (epoch !== connectEpoch) return
       get().pushLog('ok', t('REST 数据已加载'), false)
     } catch (e: any) {
+      if (epoch !== connectEpoch) return
       get().pushLog('err', `REST 加载失败: ${e.message || e}`)
     }
 
+    let socket: SyncSocket | null = null
     try {
       const otp = await api.generateOtp('connect', {
         client_type: 2,
         console_team_mode: true,
         subscriptions: DEFAULT_SUBSCRIPTIONS,
       })
+      if (epoch !== connectEpoch) return
       get().pushLog('info', '正在建立实时通道…', false)
       const wsUrl = api.connectWsUrl(otp)
-      const socket = new SyncSocket()
+      socket = new SyncSocket()
+      set({ socket })
       await new Promise<void>((resolve, reject) => {
         let settled = false
+        const finish = (err?: Error) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (cancelConnectWait === abort) cancelConnectWait = null
+          if (err) reject(err)
+          else resolve()
+        }
+        const abort = () => finish()
+        cancelConnectWait = abort
         const timer = setTimeout(() => {
           if (!settled) {
-            settled = true
-            reject(new Error('websocket timeout'))
+            try { socket?.close() } catch { /* ignore */ }
+            finish(new Error('websocket timeout'))
           }
         }, 8000)
-        socket.connect(wsUrl, {
+        socket!.connect(wsUrl, {
           onOpen: async () => {
-            set({ socket, wsConnected: true })
+            if (epoch !== connectEpoch) {
+              try { socket?.close() } catch { /* ignore */ }
+              finish()
+              return
+            }
+            set({ socket: socket!, wsConnected: true })
             get().pushLog('ok', 'WebSocket 已连接', false)
             try {
               await api.sync()
-              get().pushLog('info', 'sync 已启动', false)
+              if (epoch === connectEpoch) {
+                get().pushLog('info', 'sync 已启动', false)
+              }
             } catch (e: any) {
-              get().pushLog('warn', `sync 调用失败: ${e.message || e}`, false)
+              if (epoch === connectEpoch) {
+                get().pushLog('warn', `sync 调用失败: ${e.message || e}`, false)
+              }
             }
-            if (!settled) {
-              settled = true
-              clearTimeout(timer)
-              resolve()
+            // 兜底看门狗：若发出 /api/sync 后 2.5s 仍未收到 SYNC_START，自动重发，
+            // 防止连接竞争或瞬态抖动导致永久停留在「同步 拉取中」并停推心跳。
+            const scheduleSyncRetry = (attempt: number) => {
+              clearSyncWatchdog()
+              syncWatchdogTimer = setTimeout(async () => {
+                syncWatchdogTimer = null
+                if (epoch !== connectEpoch || !get().wsConnected || !get().syncing) return
+                if (syncStartSeenForEpoch === epoch) return
+                if (attempt >= 3) {
+                  set({ syncing: false })
+                  get().refreshRest().catch(() => {})
+                  return
+                }
+                try {
+                  await api.sync()
+                } catch { /* ignore */ }
+                if (epoch === connectEpoch && get().wsConnected && get().syncing && syncStartSeenForEpoch !== epoch) {
+                  scheduleSyncRetry(attempt + 1)
+                }
+              }, 2500)
             }
+            if (epoch === connectEpoch && get().wsConnected && get().syncing && syncStartSeenForEpoch !== epoch) {
+              scheduleSyncRetry(1)
+            }
+            finish()
           },
           onClose: (ev) => {
-            set({ wsConnected: false })
-            get().pushLog('warn', `WebSocket 关闭 code=${ev.code}`, false)
-            if (!settled) {
-              settled = true
-              clearTimeout(timer)
-              reject(new Error(`websocket closed ${ev.code}`))
+            if (epoch === connectEpoch) {
+              clearSyncWatchdog()
+              set({ wsConnected: false, syncing: false })
+              get().pushLog('warn', `WebSocket 关闭 code=${ev.code}`, false)
             }
+            finish(epoch === connectEpoch ? new Error(`websocket closed ${ev.code}`) : undefined)
           },
           onError: () => {
-            get().pushLog('err', 'WebSocket 错误', false)
+            if (epoch === connectEpoch) {
+              get().pushLog('err', 'WebSocket 错误', false)
+            }
           },
-          onPacket: (pkt) => get().handlePacket(pkt),
+          onPacket: (pkt) => {
+            if (epoch === connectEpoch) {
+              get().handlePacket(pkt)
+            }
+          },
         })
       })
     } catch (e: any) {
+      if (epoch !== connectEpoch) return
+      try { socket?.close() } catch { /* ignore */ }
       const msg = e?.message || String(e)
       set({ lastError: `实时通道失败（REST 仍可用）: ${msg}`, syncing: false, wsConnected: false })
       // 降级状态已经显示在底部状态栏；连接失败只写日志，避免登录后弹窗
       // 挡住主机表。操作员需要详情时可打开事件流或系统日志查看原文。
       get().pushLog('warn', `实时通道失败，继续使用 REST: ${msg}`, false)
     } finally {
-      if (get().syncing && !get().wsConnected) set({ syncing: false })
+      if (epoch === connectEpoch && get().syncing && !get().wsConnected) set({ syncing: false })
     }
   },
 
   disconnect: () => {
+    connectEpoch++
+    clearSyncWatchdog()
+    cancelConnectWait?.()
+    cancelConnectWait = null
     try { get().socket.close() } catch { /* ignore */ }
     clearSession()
     set({
@@ -886,9 +982,14 @@ export const useStore = create<State>((set, get) => ({
         // 服务端在同步起始包里带上了自己的网卡地址（SyncPackerStart.interfaces，
         // 与 Qt 侧 ax.interfaces() 同源）。此前这个字段收到就丢。
         // Web 这边只拿它给「回连地址」的缺省值做旁证 —— 见 lib/callbackHost.ts。
+        syncStartSeenForEpoch = connectEpoch
+        clearSyncWatchdog()
+        if (pkt.server_time) syncServerClock(pkt.server_time)
         set({ syncing: true, serverInterfaces: Array.isArray(pkt.interfaces) ? pkt.interfaces : [] })
         break
       case P.SYNC_FINISH:
+        syncStartSeenForEpoch = connectEpoch
+        clearSyncWatchdog()
         set({ syncing: false })
         get().pushLog('ok', '实时同步完成')
         // re-hydrate REST after sync to ensure lists filled
@@ -945,6 +1046,9 @@ export const useStore = create<State>((set, get) => ({
           // a_x → x 的别名表（那张表在 a_external_ip→external、
           // a_os_desc→os、a_oemcp→oem_cp 这几处并不规则，通用规则一定写错）。
           const next = old && pkt.type === P.AGENT_UPDATE ? normAgent({ ...old, ...pkt }) : { ...old, ...a }
+          // 单调保留较新的心跳时间，避免预同步 AGENT_NEW 覆盖刚到达的实时 AGENT_TICK
+          const bestTick = maxTick(old?.a_last_tick, next.a_last_tick)
+          if (bestTick !== undefined) next.a_last_tick = bestTick
           return { agents: { ...s.agents, [a.a_id]: next } }
         })
         break
@@ -952,10 +1056,15 @@ export const useStore = create<State>((set, get) => ({
       case P.AGENT_TICK: {
         // 服务端 SyncPackerAgentTick 把 id 列表序列化为数组放在 a_id（json:"a_id"）
         const ids: string[] = Array.isArray(pkt.a_id) ? pkt.a_id : (pkt.a_id ? [pkt.a_id] : [])
-        const tick = pkt.a_last_tick || Math.floor(Date.now() / 1000)
+        if (pkt.a_last_tick) syncServerClock(pkt.a_last_tick)
+        const tick = pkt.a_last_tick || Math.floor(getServerNowMs() / 1000)
         set((s) => {
           const agents = { ...s.agents }
-          for (const id of ids) if (agents[id]) agents[id] = { ...agents[id], a_last_tick: tick }
+          for (const id of ids) {
+            if (agents[id]) {
+              agents[id] = { ...agents[id], a_last_tick: maxTick(agents[id].a_last_tick, tick) }
+            }
+          }
           return { agents }
         })
         break
@@ -1179,47 +1288,78 @@ export const useStore = create<State>((set, get) => ({
   },
 
   refreshRest: async () => {
+    const epoch = connectEpoch
+    const seq = ++refreshRestSeq
     const { api } = get()
-    const [agents, listeners, downloads] = await Promise.all([
-      api.listAgents().catch(() => []),
-      api.listListeners().catch(() => []),
-      api.listDownloads().catch(() => []),
+    const [agentsRes, listenersRes, downloadsRes] = await Promise.allSettled([
+      api.listAgents(),
+      api.listListeners(),
+      api.listDownloads(),
     ])
-    // tasks API needs agent_id — pull for known agents (cap concurrent)
-    const agentArr = Array.isArray(agents) ? agents : []
-    const agentIds = agentArr.map((a: any) => a.a_id || a.id).filter(Boolean).slice(0, 30)
-    // also include currently known agents not in REST response
-    for (const id of Object.keys(get().agents)) if (!agentIds.includes(id)) agentIds.push(id)
-    const taskLists = await Promise.all(
-      agentIds.slice(0, 20).map((id) => api.listTasks(id).catch(() => [])),
-    )
-    const tasks = taskLists.flat().filter(Boolean)
+    if (epoch !== connectEpoch || seq !== refreshRestSeq) return
 
+    const agentsOk = agentsRes.status === 'fulfilled' && Array.isArray(agentsRes.value)
+    const listenersOk = listenersRes.status === 'fulfilled' && Array.isArray(listenersRes.value)
+    const downloadsOk = downloadsRes.status === 'fulfilled' && Array.isArray(downloadsRes.value)
+
+    const agentArr = agentsOk ? agentsRes.value : []
     const agentMap: Record<string, Agent> = {}
     for (const a of agentArr) {
       const n = normAgent(a)
       if (n.a_id) agentMap[n.a_id] = n
     }
     const listenerMap: Record<string, Listener> = {}
-    for (const l of (Array.isArray(listeners) ? listeners : [])) {
-      const n = normListener(l)
-      if (n.l_name) listenerMap[n.l_name] = n
+    if (listenersOk) {
+      for (const l of listenersRes.value) {
+        const n = normListener(l)
+        if (n.l_name) listenerMap[n.l_name] = n
+      }
     }
     const dlMap: Record<string, DownloadItem> = {}
-    for (const d of (Array.isArray(downloads) ? downloads : [])) {
-      const n = normDl(d)
-      if (n.d_file_id) dlMap[n.d_file_id] = n
+    if (downloadsOk) {
+      for (const d of downloadsRes.value) {
+        const n = normDl(d)
+        if (n.d_file_id) dlMap[n.d_file_id] = n
+      }
     }
-    set((s) => ({
-      // REST is source of truth for agents/listeners lists
-      agents: agentMap,
-      listeners: listenerMap,
+
+    // 立即落盘 agents/listeners/downloads：不等后面最多 20 次 listTasks，
+    // 失败时不清空已有列表，且单调保留较新的 WS a_last_tick 防止回滚成离线。
+    set((s) => {
+      const patch: Partial<State> = {}
+      if (agentsOk) {
+        const merged: Record<string, Agent> = {}
+        for (const [id, n] of Object.entries(agentMap)) {
+          const old = s.agents[id]
+          if (old) {
+            const bestTick = maxTick(old.a_last_tick, n.a_last_tick)
+            merged[id] = bestTick !== undefined ? { ...n, a_last_tick: bestTick } : n
+          } else {
+            merged[id] = n
+          }
+        }
+        patch.agents = merged
+        // 勾选集合跟 REST 名单求交：批量条上显示的必须是**真的还在**的主机数。
+        // 少了一台没剪掉，操作员看到的「已选 50 台」里就有一台是幽灵。
+        patch.checkedIds = new Set([...s.checkedIds].filter((id) => !!merged[id]))
+      }
+      if (listenersOk) patch.listeners = listenerMap
+      if (downloadsOk) patch.downloads = dlMap
+      return patch
+    })
+
+    // tasks API needs agent_id — pull for known agents (cap concurrent)
+    const agentIds = agentArr.map((a: any) => a.a_id || a.id).filter(Boolean).slice(0, 30)
+    // also include currently known agents not in REST response
+    for (const id of Object.keys(get().agents)) if (!agentIds.includes(id)) agentIds.push(id)
+    const taskLists = await Promise.all(
+      agentIds.slice(0, 20).map((id) => api.listTasks(id).catch(() => [])),
+    )
+    if (epoch !== connectEpoch || seq !== refreshRestSeq) return
+    const tasks = taskLists.flat().filter(Boolean)
+    set({
       tasks: (Array.isArray(tasks) ? tasks : []).map(normTask).slice(0, 500),
-      downloads: dlMap,
-      // 勾选集合跟 REST 名单求交：批量条上显示的必须是**真的还在**的主机数。
-      // 少了一台没剪掉，操作员看到的「已选 50 台」里就有一台是幽灵。
-      checkedIds: new Set([...s.checkedIds].filter((id) => !!agentMap[id])),
-    }))
+    })
   },
 
   sendCommand: async (cmdline) => {

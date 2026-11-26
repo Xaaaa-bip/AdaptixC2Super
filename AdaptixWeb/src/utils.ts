@@ -36,6 +36,25 @@ export function fmtSize(n?: number | string) {
 }
 
 /**
+ * 服务端时钟偏移校准（serverNowMs - localNowMs）。
+ * 解决浏览器本地时钟与服务端时钟存在偏差时，刷新后用服务端 a_last_tick
+ * 与浏览器 Date.now() 直接相减导致整张主机列表误判离线的问题。
+ */
+let serverClockOffsetMs = 0
+
+export function syncServerClock(serverTimeSecOrMs?: number | null) {
+  if (serverTimeSecOrMs == null) return
+  let srvMs = Number(serverTimeSecOrMs)
+  if (!Number.isFinite(srvMs) || srvMs <= 0) return
+  if (srvMs < 1e12) srvMs *= 1000
+  serverClockOffsetMs = srvMs - Date.now()
+}
+
+export function getServerNowMs(localNowMs = Date.now()): number {
+  return localNowMs + serverClockOffsetMs
+}
+
+/**
  * 与 Qt LastTickWorker 对齐：
  *   offline if mark ∈ Terminated/Inactive/Unlink/Disconnect/dead/exit
  *   else age > sleep*HealthCoaf + HealthOffset  → offline（默认 Coaf=2, Offset=40s）
@@ -54,7 +73,7 @@ export function isAgentOnline(
   if (!Number.isFinite(tickMs) || tickMs <= 0) return false
   if (tickMs < 1e12) tickMs *= 1000
 
-  const now = opts?.now ?? Date.now()
+  const now = getServerNowMs(opts?.now)
   const ageSec = (now - tickMs) / 1000
   // tolerate small clock skew (future ticks)
   if (ageSec < -60) return true
@@ -140,7 +159,7 @@ export function fmtRelative(ts?: number | string, fallback = '-') {
   let n = typeof ts === 'string' ? Number(ts) : ts
   if (!n || Number.isNaN(n)) return fallback
   if (n < 1e12) n *= 1000
-  const diff = Date.now() - n
+  const diff = getServerNowMs() - n
   if (diff < -60_000) return '刚刚'
   const sec = Math.floor(diff / 1000)
   if (sec < 15) return '刚刚'
@@ -184,7 +203,7 @@ export function formatHeartbeat(
   let tickMs = Number(a.a_last_tick)
   if (!Number.isFinite(tickMs) || tickMs <= 0) return { text: '-', live: false }
   if (tickMs < 1e12) tickMs *= 1000
-  const now = opts?.now ?? Date.now()
+  const now = getServerNowMs(opts?.now)
   const ageSec = Math.max(0, Math.floor((now - tickMs) / 1000))
   let sleepSec = Number(a.a_sleep)
   if (!Number.isFinite(sleepSec) || sleepSec < 0) sleepSec = 5

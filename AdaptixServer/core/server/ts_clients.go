@@ -110,32 +110,34 @@ func (ts *Teamserver) TsClientSync(username string) {
 	}
 
 	for _, client := range clients {
-		if client.IsSynced() {
-			continue
-		}
-		categories := client.GetSubscriptions()
-		ts.TsSyncCategories(client, categories)
+		func(c *ClientHandler) {
+			c.syncMu.Lock()
+			defer c.syncMu.Unlock()
 
-		for {
-			buffered := client.GetAndClearBuffer()
-			stateBuffered := client.GetAndClearStateBuffer()
+			if c.IsSynced() || c.IsClosed() {
+				return
+			}
+			categories := c.GetSubscriptions()
+			ts.TsSyncCategories(c, categories)
 
-			hasData := len(buffered) > 0 || len(stateBuffered) > 0
-
-			if hasData {
+			for {
+				if c.IsClosed() {
+					return
+				}
+				buffered, stateBuffered, done := c.DrainBufferOrMarkSynced()
+				if done {
+					return
+				}
 				for _, v := range buffered {
 					if data, ok := v.([]byte); ok {
-						client.SendSync(data)
+						c.SendSync(data)
 					}
 				}
 				for _, data := range stateBuffered {
-					client.SendSync(data)
+					c.SendSync(data)
 				}
-			} else {
-				client.SetSynced(true)
-				break
 			}
-		}
+		}(client)
 	}
 
 	ts.TsNotifyClient(true, username)
@@ -148,42 +150,50 @@ func (ts *Teamserver) TsClientSubscribe(username string, categories []string, co
 	}
 
 	for _, client := range clients {
-		if consoleTeamMode != nil {
-			client.SetConsoleTeamMode(*consoleTeamMode)
-		}
+		func(c *ClientHandler) {
+			c.syncMu.Lock()
+			defer c.syncMu.Unlock()
 
-		seen := make(map[string]struct{}, len(categories))
-		var newCategories []string
-		for _, raw := range categories {
-			category := strings.TrimSpace(raw)
-			if category == "" {
-				continue
+			if c.IsClosed() {
+				return
 			}
-			if _, exists := seen[category]; exists {
-				continue
+			if consoleTeamMode != nil {
+				c.SetConsoleTeamMode(*consoleTeamMode)
 			}
-			seen[category] = struct{}{}
 
-			if !client.IsSubscribed(category) {
-				client.Subscribe(category)
-				switch category {
-				case SyncCategoryTasksManager,
-					SyncCategoryTasksOnlyJobs,
-					SyncCategoryChatRealtime,
-					SyncCategoryDownloadsRealtime,
-					SyncCategoryScreenshotRealtime,
-					SyncCategoryCredentialsRealtime,
-					SyncCategoryTargetsRealtime:
-				default:
-					newCategories = append(newCategories, category)
+			seen := make(map[string]struct{}, len(categories))
+			var newCategories []string
+			for _, raw := range categories {
+				category := strings.TrimSpace(raw)
+				if category == "" {
+					continue
+				}
+				if _, exists := seen[category]; exists {
+					continue
+				}
+				seen[category] = struct{}{}
+
+				if !c.IsSubscribed(category) {
+					c.Subscribe(category)
+					switch category {
+					case SyncCategoryTasksManager,
+						SyncCategoryTasksOnlyJobs,
+						SyncCategoryChatRealtime,
+						SyncCategoryDownloadsRealtime,
+						SyncCategoryScreenshotRealtime,
+						SyncCategoryCredentialsRealtime,
+						SyncCategoryTargetsRealtime:
+					default:
+						newCategories = append(newCategories, category)
+					}
 				}
 			}
-		}
 
-		if len(newCategories) > 0 {
-			ts.TsSyncCategories(client, newCategories)
-		} else {
-			ts.sendSyncPackets(client, nil)
-		}
+			if len(newCategories) > 0 {
+				ts.TsSyncCategories(c, newCategories)
+			} else {
+				ts.sendSyncPackets(c, nil)
+			}
+		}(client)
 	}
 }

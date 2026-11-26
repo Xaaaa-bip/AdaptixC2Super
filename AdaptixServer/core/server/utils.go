@@ -70,7 +70,7 @@ type Agent struct {
 	mu       sync.RWMutex
 	data     adaptix.AgentData
 	Extender adaptix.ExtenderAgent
-	Tick     bool
+	Tick     atomic.Bool
 	Active   bool
 
 	HostedTasks       *safe.Queue // taskData TaskData
@@ -147,8 +147,9 @@ type TunnelChannel struct {
 	channelId int
 	protocol  string
 
-	wsconn *websocket.Conn
-	conn   net.Conn
+	wsconn    *websocket.Conn
+	wsWriteMu sync.Mutex
+	conn      net.Conn
 
 	pwSrv *io.PipeWriter
 	prSrv *io.PipeReader
@@ -157,8 +158,30 @@ type TunnelChannel struct {
 	prTun *io.PipeReader
 
 	ingressChan chan []byte
+	closedCh    chan struct{}
+	closeOnce   sync.Once
+	chanClosed  atomic.Bool
+	resumed     atomic.Bool
 	paused      atomic.Bool
 	flowPaused  atomic.Bool
+}
+
+func (tc *TunnelChannel) markClosed() {
+	tc.chanClosed.Store(true)
+	tc.closeOnce.Do(func() {
+		if tc.closedCh != nil {
+			close(tc.closedCh)
+		}
+	})
+}
+
+func (tc *TunnelChannel) WriteWSMessage(msgType int, data []byte) error {
+	tc.wsWriteMu.Lock()
+	defer tc.wsWriteMu.Unlock()
+	if tc.wsconn == nil {
+		return io.ErrClosedPipe
+	}
+	return tc.wsconn.WriteMessage(msgType, data)
 }
 
 type Tunnel struct {
@@ -182,7 +205,9 @@ type Terminal struct {
 	mu     sync.Mutex
 	closed bool
 
-	wsconn *websocket.Conn
+	wsconn    *websocket.Conn
+	wsWriteMu sync.Mutex
+	resumed   atomic.Bool
 
 	pwSrv *io.PipeWriter
 	prSrv *io.PipeReader
@@ -211,8 +236,9 @@ type AgentBuilder struct {
 type SyncPackerStart struct {
 	SpType int `json:"type"`
 
-	Count     int      `json:"count"`
-	Addresses []string `json:"interfaces"`
+	Count      int      `json:"count"`
+	Addresses  []string `json:"interfaces"`
+	ServerTime int64    `json:"server_time,omitempty"`
 }
 
 type SyncPackerFinish struct {
@@ -365,7 +391,8 @@ type SyncPackerAgentUpdate struct {
 type SyncPackerAgentTick struct {
 	SpType int `json:"type"`
 
-	Id []string `json:"a_id"`
+	Id       []string `json:"a_id"`
+	LastTick int64    `json:"a_last_tick,omitempty"`
 }
 
 type SyncPackerAgentTaskRemove struct {

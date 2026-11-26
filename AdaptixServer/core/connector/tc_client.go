@@ -4,9 +4,11 @@ import (
 	"AdaptixServer/core/utils/krypt"
 	"AdaptixServer/core/utils/logs"
 	"AdaptixServer/core/utils/token"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -76,9 +78,56 @@ func (tc *TsConnector) tcLogin(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"access_token": accessToken, "refresh_token": refreshToken})
 }
 
-func (tc *TsConnector) tcWebsocketConnect(username string, version string, wsConn *websocket.Conn, clientType uint8, consoleTeamMode bool, subscriptions []string) {
-	// multi-session: each WS has its own connId; same username no longer kicks the other
-	connId := tc.teamserver.TsClientConnect(username, version, wsConn, clientType, consoleTeamMode, subscriptions)
+func (tc *TsConnector) beginPendingConnect(username string) {
+	tc.pendingConnectMu.Lock()
+	if tc.pendingConnect == nil {
+		tc.pendingConnect = make(map[string]*pendingConnectEntry)
+	}
+	if entry, ok := tc.pendingConnect[username]; ok {
+		entry.count++
+	} else {
+		tc.pendingConnect[username] = &pendingConnectEntry{
+			count: 1,
+			done:  make(chan struct{}),
+		}
+	}
+	tc.pendingConnectMu.Unlock()
+}
+
+func (tc *TsConnector) endPendingConnect(username string) {
+	tc.pendingConnectMu.Lock()
+	if entry, ok := tc.pendingConnect[username]; ok {
+		entry.count--
+		if entry.count <= 0 {
+			close(entry.done)
+			delete(tc.pendingConnect, username)
+		}
+	}
+	tc.pendingConnectMu.Unlock()
+}
+
+func (tc *TsConnector) waitPendingConnect(ctx context.Context, username string) {
+	tc.pendingConnectMu.Lock()
+	entry, ok := tc.pendingConnect[username]
+	var done chan struct{}
+	if ok {
+		done = entry.done
+	}
+	tc.pendingConnectMu.Unlock()
+	if !ok {
+		return
+	}
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+}
+
+func (tc *TsConnector) tcWebsocketReadLoop(connId string, username string, wsConn *websocket.Conn) {
 	for {
 		_, _, err := wsConn.ReadMessage()
 		if err == nil {
@@ -106,6 +155,7 @@ func (tc *TsConnector) tcSync(ctx *gin.Context) {
 		return
 	}
 
+	tc.waitPendingConnect(ctx.Request.Context(), username)
 	go tc.teamserver.TsClientSync(username)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "sync started", "ok": true})
@@ -134,6 +184,7 @@ func (tc *TsConnector) tcSubscribe(ctx *gin.Context) {
 		return
 	}
 
+	tc.waitPendingConnect(ctx.Request.Context(), username)
 	go tc.teamserver.TsClientSubscribe(username, req.Categories, req.ConsoleTeamMode)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "subscribe started", "ok": true})
@@ -163,6 +214,18 @@ func (tc *TsConnector) tcConnectOTP(ctx *gin.Context) {
 		clientType = ClientTypeUI
 	}
 
+	// Mark connect in-flight BEFORE Upgrade sends 101 so an immediate /api/sync
+	// or /api/channel triggered by client onopen cannot race ahead of Broker.Register.
+	tc.beginPendingConnect(wsData.Username)
+	released := false
+	releasePending := func() {
+		if !released {
+			released = true
+			tc.endPendingConnect(wsData.Username)
+		}
+	}
+	defer releasePending()
+
 	var wsUpgrader websocket.Upgrader
 	wsUpgrader.CheckOrigin = func(r *http.Request) bool {
 		return true
@@ -178,7 +241,16 @@ func (tc *TsConnector) tcConnectOTP(ctx *gin.Context) {
 		return
 	}
 
-	go tc.tcWebsocketConnect(wsData.Username, wsData.Version, wsConn, clientType, wsData.ConsoleTeamMode, wsData.Subscriptions)
+	// Register synchronously before spawning the read loop so the session is visible
+	// in Broker immediately once the pending barrier is released.
+	connId := tc.teamserver.TsClientConnect(wsData.Username, wsData.Version, wsConn, clientType, wsData.ConsoleTeamMode, wsData.Subscriptions)
+	releasePending()
+	if connId == "" {
+		_ = wsConn.Close()
+		return
+	}
+
+	go tc.tcWebsocketReadLoop(connId, wsData.Username, wsConn)
 }
 
 func (tc *TsConnector) tcChannelOTP(ctx *gin.Context) {
@@ -196,6 +268,7 @@ func (tc *TsConnector) tcChannelOTP(ctx *gin.Context) {
 		return
 	}
 
+	tc.waitPendingConnect(ctx.Request.Context(), wsData.Username)
 	exists := tc.teamserver.TsClientExists(wsData.Username)
 	if !exists {
 		ctx.JSON(http.StatusNetworkAuthenticationRequired, gin.H{"message": "Server error: client not connected", "ok": false})

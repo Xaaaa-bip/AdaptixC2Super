@@ -50,6 +50,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
   const cmdRef = useRef<HTMLInputElement>(null)
   const termIdRef = useRef('')
   const disposed = useRef(false)
+  const startSeqRef = useRef(0)
   const dataDispRef = useRef<any>(null)
   const activeRef = useRef(active)
 
@@ -175,6 +176,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
     })()
     return () => {
       disposed.current = true
+      startSeqRef.current++
       ro?.disconnect()
       try { dataDispRef.current?.dispose?.() } catch { /* ignore */ }
       dataDispRef.current = null
@@ -205,9 +207,11 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
       return
     }
     stop(false)
+    const seq = ++startSeqRef.current
     setStatus('connecting')
     setErr('')
     try { await acquireInteractBoost(agentId) } catch { /* */ }
+    if (disposed.current || seq !== startSeqRef.current) return
     safeFit()
     const terminalId = randomTerminalId()
     termIdRef.current = terminalId
@@ -228,7 +232,10 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
         size_w,
         oem_cp: oemCp,
       })
-      if (disposed.current) { ws.close(); return }
+      if (disposed.current || seq !== startSeqRef.current) {
+        try { ws.close() } catch { /* ignore */ }
+        return
+      }
       wsRef.current = ws
       setStatus('running')
       term.writeln('\x1b[32m[+] WebSocket 已建立，已下发 SHELL_START\x1b[0m')
@@ -246,13 +253,23 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
           termRef.current?.writeln('\r\n\x1b[90m# session closed\x1b[0m')
         }
       }
-      ws.onerror = () => setErr('WebSocket 错误')
+      ws.onerror = () => {
+        if (wsRef.current === ws) setErr('WebSocket 错误')
+      }
+      if (ws.readyState !== WebSocket.OPEN) {
+        if (wsRef.current === ws) {
+          wsRef.current = null
+          setStatus('stopped')
+        }
+        return
+      }
 
       if (!dataDispRef.current) {
         dataDispRef.current = term.onData((data: string) => sendPty(data))
       }
       window.setTimeout(() => focusCmd(), 50)
     } catch (e: any) {
+      if (disposed.current || seq !== startSeqRef.current) return
       const msg = e?.message || String(e)
       setErr(msg)
       setStatus('error')
@@ -262,6 +279,7 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
   }
 
   function stop(notify = true) {
+    startSeqRef.current++
     const ws = wsRef.current
     wsRef.current = null
     if (ws) {

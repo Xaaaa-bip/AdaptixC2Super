@@ -643,6 +643,9 @@ func (ts *Teamserver) TsTunnelConnectionResume(AgentId string, channelId int, io
 
 	tunnel := entry.Tunnel
 	tunChannel := entry.Channel
+	if !tunChannel.resumed.CompareAndSwap(false, true) {
+		return
+	}
 
 	if tunnel.Data.Client == "" {
 		if tunChannel.conn != nil {
@@ -657,11 +660,13 @@ func (ts *Teamserver) TsTunnelConnectionResume(AgentId string, channelId int, io
 		}
 	} else {
 		if tunChannel.wsconn != nil {
+			tunChannel.wsWriteMu.Lock()
 			if tunnel.Type == adaptix.TUNNEL_TYPE_SOCKS5 || tunnel.Type == adaptix.TUNNEL_TYPE_SOCKS5_AUTH {
 				proxy.ReplySocks5StatusWs(tunChannel.wsconn, adaptix.SOCKS5_SUCCESS)
 			} else if tunnel.Type == adaptix.TUNNEL_TYPE_SOCKS4 {
 				proxy.ReplySocks4StatusWs(tunChannel.wsconn, true)
 			}
+			tunChannel.wsWriteMu.Unlock()
 			relayWebsocketToTunnel(ts.TunnelManager, agent, tunnel, tunChannel, ioDirect)
 		} else {
 			logs.Debug("", "[ERROR] tunChannel.wsconn is nil in relayWebsocketToTunnel")
@@ -703,6 +708,7 @@ func (ts *Teamserver) TsTunnelConnectionHalt(channelId int, errorCode byte) {
 		}
 	} else {
 		if tunChannel.wsconn != nil {
+			tunChannel.wsWriteMu.Lock()
 			if tunnel.Type == adaptix.TUNNEL_TYPE_SOCKS5 || tunnel.Type == adaptix.TUNNEL_TYPE_SOCKS5_AUTH {
 				if errorCode < 1 || errorCode > 8 {
 					errorCode = adaptix.SOCKS5_CONNECTION_REFUSED
@@ -711,6 +717,7 @@ func (ts *Teamserver) TsTunnelConnectionHalt(channelId int, errorCode byte) {
 			} else if tunnel.Type == adaptix.TUNNEL_TYPE_SOCKS4 {
 				proxy.ReplySocks4StatusWs(tunChannel.wsconn, false)
 			}
+			tunChannel.wsWriteMu.Unlock()
 		}
 	}
 	ts.TunnelManager.CloseChannelByIdOnly(channelId, false)
@@ -831,9 +838,10 @@ func handleTunChannelCreate(tm *TunnelManager, agent *Agent, tunnel *Tunnel, con
 		return
 	}
 
-	tunnelManageTask(agent, taskData)
-
+	// Register before dispatching task so a fast agent reply cannot miss the channel lookup.
 	tm.RegisterChannel(tunnel.Data.TunnelId, tunnel, tunChannel)
+
+	tunnelManageTask(agent, taskData)
 }
 
 func handleTunChannelCreateClient(tm *TunnelManager, agent *Agent, tunnel *Tunnel, wsconn *websocket.Conn, channelId int, targetAddress string, targetPort int, protocol string) {
@@ -873,9 +881,10 @@ func handleTunChannelCreateClient(tm *TunnelManager, agent *Agent, tunnel *Tunne
 		return
 	}
 
-	tunnelManageTask(agent, taskData)
-
+	// Register before dispatching task so a fast agent reply cannot miss the channel lookup.
 	tm.RegisterChannel(tunnel.Data.TunnelId, tunnel, tunChannel)
+
+	tunnelManageTask(agent, taskData)
 }
 
 func handlerReverseAccept(tm *TunnelManager, agent *Agent, tunnel *Tunnel, channelId int, ioDirect bool) {
