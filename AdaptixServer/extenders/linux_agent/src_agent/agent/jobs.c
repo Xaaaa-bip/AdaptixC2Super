@@ -223,15 +223,25 @@ void jobs_remove(job_context_t *ctx, int idx) {
     jobs_mutex_unlock(&ctx->jobs_mutex);
 }
 
+/// tunnels_find —— **会自己加锁**。只能在「当前线程尚未持有 tunnels_mutex」时调用。
+/// ★ 若调用方已经持锁，必须改用 tunnels_find_locked()，否则会重入自旋锁死锁
+///   （静态构建下 jobs_mutex_lock 就是 `while(atomic_swap)` 自旋，没有可重入性）。
 int tunnels_find(job_context_t *ctx, int channel_id) {
     jobs_mutex_lock(&ctx->tunnels_mutex);
+    int idx = tunnels_find_locked(ctx, channel_id);
+    jobs_mutex_unlock(&ctx->tunnels_mutex);
+    return idx;
+}
+
+/// tunnels_find_locked —— **不加锁**的版本，要求调用方已持有 tunnels_mutex。
+/// proxy_close / proxy_write_tcp / proxy_pause / proxy_resume 都是「先 lock
+/// 再查找」的写法，必须用这个版本，否则同一个线程二次 lock 会永久自旋。
+int tunnels_find_locked(job_context_t *ctx, int channel_id) {
     for (int i = 0; i < MAX_TUNNELS; i++) {
         if (ctx->tunnels[i].active && ctx->tunnels[i].channel_id == channel_id) {
-            jobs_mutex_unlock(&ctx->tunnels_mutex);
             return i;
         }
     }
-    jobs_mutex_unlock(&ctx->tunnels_mutex);
     return -1;
 }
 

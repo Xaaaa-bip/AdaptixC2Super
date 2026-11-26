@@ -74,6 +74,15 @@ static void pf_fd_zero(pf_fd_set *s) {
 }
 
 static void pf_fd_set_bit(int fd, pf_fd_set *s) {
+    // ★ fd < 0 必须**直接忽略**。C 的整数除法是向零截断：fd=-1 时
+    //   -1/64 == 0、-1%64 == -1，于是这句会变成
+    //   fds_bits[0] |= (1UL << -1) —— 对负数移位是**未定义行为**，
+    //   gcc 实际按 63 位处理，等于把 bit63 置起来；fd_set 被污染后
+    //   select 的返回与真实可读集合完全对不上，外层循环会一直「有事可做」
+    //   ⇒ 死循环卡死（实测：agent 不再心跳、tickAge 一路涨到 492s，
+    //   CPU 100% 但打点文件 5 秒零增长 —— 循环根本没前进）。
+    //   凡是可能拿到 -1 的地方（连接失败/EOF 已 close）都会走到这里。
+    if (fd < 0 || fd >= 1024) return;
     s->fds_bits[fd / (8 * sizeof(unsigned long))] |= (1UL << (fd % (8 * sizeof(unsigned long))));
 }
 
@@ -282,7 +291,7 @@ void proxy_write_tcp(int channel_id, const uint8_t *data, uint32_t len) {
     job_context_t *ctx = &g_job_ctx;
 
     jobs_mutex_lock(&ctx->tunnels_mutex);
-    int idx = tunnels_find(ctx, channel_id);
+    int idx = tunnels_find_locked(ctx, channel_id);
     if (idx < 0) {
         jobs_mutex_unlock(&ctx->tunnels_mutex);
         return;
@@ -316,7 +325,7 @@ void proxy_write_tcp(int channel_id, const uint8_t *data, uint32_t len) {
 void proxy_pause(int channel_id) {
     job_context_t *ctx = &g_job_ctx;
     jobs_mutex_lock(&ctx->tunnels_mutex);
-    int idx = tunnels_find(ctx, channel_id);
+    int idx = tunnels_find_locked(ctx, channel_id);
     if (idx >= 0) ctx->tunnels[idx].paused = 1;
     jobs_mutex_unlock(&ctx->tunnels_mutex);
 }
@@ -324,7 +333,7 @@ void proxy_pause(int channel_id) {
 void proxy_resume(int channel_id) {
     job_context_t *ctx = &g_job_ctx;
     jobs_mutex_lock(&ctx->tunnels_mutex);
-    int idx = tunnels_find(ctx, channel_id);
+    int idx = tunnels_find_locked(ctx, channel_id);
     if (idx >= 0) ctx->tunnels[idx].paused = 0;
     jobs_mutex_unlock(&ctx->tunnels_mutex);
 }
@@ -332,7 +341,7 @@ void proxy_resume(int channel_id) {
 void proxy_close(int channel_id) {
     job_context_t *ctx = &g_job_ctx;
     jobs_mutex_lock(&ctx->tunnels_mutex);
-    int idx = tunnels_find(ctx, channel_id);
+    int idx = tunnels_find_locked(ctx, channel_id);
     if (idx >= 0) {
         ctx->tunnels[idx].state = TUNNEL_STATE_CLOSED;
     }
@@ -368,6 +377,13 @@ int process_tunnels(mp_writer_t *obj_collector) {
         }
 
         // Poll for writability (connect complete)
+        // client_fd 可能在别处已被 close（EOF/写错误），此时不要拿 -1 去做
+        // select —— 既无意义，也会经过 pf_fd_set_bit 污染 fd_set。
+        if (tun->client_fd < 0) {
+            tun->state = TUNNEL_STATE_CLOSED;
+            continue;
+        }
+
         pf_fd_set wfds;
         pf_fd_zero(&wfds);
         pf_fd_set_bit(tun->client_fd, &wfds);
@@ -403,6 +419,11 @@ int process_tunnels(mp_writer_t *obj_collector) {
 
         tunnel_entry_t *tun = &ctx->tunnels[i];
 
+        if (tun->client_fd < 0) {
+            tun->state = TUNNEL_STATE_CLOSED;
+            continue;
+        }
+
         // Non-blocking write
         long n = PF_write(tun->client_fd, tun->write_buf, tun->write_len);
         if (n > 0) {
@@ -431,7 +452,11 @@ int process_tunnels(mp_writer_t *obj_collector) {
                 appended++;
             }
         } else if (n == 0 || (n < 0 && n != -11 /*EAGAIN*/)) {
-            // Write error or EOF → close
+            // Write error or EOF → close（就地回收 fd，理由见 Stage3 EOF 分支）
+            if (tun->client_fd >= 0) {
+                PF_close(tun->client_fd);
+                tun->client_fd = -1;
+            }
             tun->state = TUNNEL_STATE_CLOSED;
         }
 
@@ -469,6 +494,11 @@ int process_tunnels(mp_writer_t *obj_collector) {
 
         tunnel_entry_t *tun = &ctx->tunnels[i];
 
+        if (tun->client_fd < 0) {
+            tun->state = TUNNEL_STATE_CLOSED;
+            continue;
+        }
+
         // Non-blocking read check
         pf_fd_set rfds;
         pf_fd_zero(&rfds);
@@ -484,10 +514,23 @@ int process_tunnels(mp_writer_t *obj_collector) {
                                  recv_buf, (uint32_t)n);
                 appended++;
             } else if (n == 0) {
-                // EOF — target closed the connection
+                // EOF — target closed the connection.
+                // ★ 立即 close(fd)：只置 state=CLOSED 要等下一轮 Stage4 才回收，
+                //   而这中间套接字处于 CLOSE_WAIT（对端已 FIN、本端未 close）。
+                //   实测后果有两个：(a) fd 与 entry 泄漏，(b) 该 fd 在 select 里
+                //   持续「可读」（EOF 永远可读），如果恰好轮询到就会反复 n==0。
+                //   这里就地关闭并把 fd 置 -1，Stage4 只做收尾。
+                if (tun->client_fd >= 0) {
+                    PF_close(tun->client_fd);
+                    tun->client_fd = -1;
+                }
                 tun->state = TUNNEL_STATE_CLOSED;
             } else if (n != -11 /*EAGAIN*/) {
-                // Read error
+                // Read error — 同上，立即回收 fd
+                if (tun->client_fd >= 0) {
+                    PF_close(tun->client_fd);
+                    tun->client_fd = -1;
+                }
                 tun->state = TUNNEL_STATE_CLOSED;
             }
         }

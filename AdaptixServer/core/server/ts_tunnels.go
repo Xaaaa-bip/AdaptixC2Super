@@ -772,7 +772,15 @@ func (ts *Teamserver) tunnelConnectionAccept(tunnelId int, channelId int, ioDire
 func handleTunChannelCreate(tm *TunnelManager, agent *Agent, tunnel *Tunnel, conn net.Conn) {
 	channelId := 0
 	for i := 0; i < 32; i++ {
-		cid := int(rand.Uint32())
+		// ★ channelId 必须落在**正 int32** 范围内（1 .. 0x7FFFFFFF）。
+		//   为什么：这个值要经 Callbacks.ConnectTCP(channelId int) → extender 的
+		//   msgpack "channel_id" → agent 侧 `int` 一路传下去，而 agent 是 32 位
+		//   C，`channel_id < 0` 会被 task_tunnel_start 当成非法参数**直接丢弃**
+		//   （tasks_net.c:203）。Go 在 64 位平台上 int 是 64 位，`int(rand.Uint32())`
+		//   有一半概率 > 0x7FFFFFFF，落到 agent 就变负数 ⇒ 约 50% 的隧道连接
+		//   建不起来，表现为 SOCKS CONNECT 随机超时（实测「有时通、大多不通」）。
+		//   0x7FFFFFFF 上限同时也符合 Qt/Web 与 agent 各层的 int32 约定。
+		cid := int(rand.Uint32() & 0x7FFFFFFF)
 		if cid == 0 {
 			continue
 		}

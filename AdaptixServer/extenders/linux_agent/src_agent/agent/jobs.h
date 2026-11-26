@@ -138,6 +138,10 @@ void jobs_remove(job_context_t *ctx, int idx);
 
 /// Find tunnel by channel_id
 int tunnels_find(job_context_t *ctx, int channel_id);
+/// 不加锁版本 —— 调用方必须已持有 ctx->tunnels_mutex（否则用 tunnels_find）。
+/// ★ 存在理由：jobs_mutex_lock 在静态构建下是自旋锁（无重入），
+///   「先 lock 再查找」的写法若调用会自己加锁的 tunnels_find 就会永久死锁。
+int tunnels_find_locked(job_context_t *ctx, int channel_id);
 
 /// Find terminal by term_id
 int terminals_find(job_context_t *ctx, int term_id);

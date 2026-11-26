@@ -1072,9 +1072,17 @@ static int https_command_loop(ws_connector_t* ws, const uint8_t* session_key, si
         //   没发过 ⇒ 原有的 150ms 空闲档。
         //   两档都 sleep，空转被彻底消除；sleep 粒度见 timing.c 的实现
         //   （<=100ms 切片，shutdown/rotation 仍然响应及时）。
+        // ★ 三种情况都**必须**睡，一个都不能漏 —— 原写法是
+        //   `if (sent) {...} else if (!beacon_due) {...}`，漏掉了
+        //   「beacon_due 且本轮没发批量」这一支：此时两个分支都不进 ⇒ 不睡
+        //   ⇒ 立刻下一轮 ⇒ 又 beacon_due ⇒ 死循环空转。
+        //   实测：该分支每轮都成立时 utime 12 秒涨 1000+（100% CPU），
+        //   且心跳停摆。现改为三支全覆盖（beacon 那支用交互档，因为马上要发心跳）。
         if (resp_count_sent) {
             ax_drifted_sleep_ms(AX_TUNNEL_ACTIVE_POLL_MS);
-        } else if (!beacon_due) {
+        } else if (beacon_due) {
+            ax_drifted_sleep_ms(AX_TUNNEL_ACTIVE_POLL_MS);
+        } else {
             ax_drifted_sleep_ms(150);
         }
     }

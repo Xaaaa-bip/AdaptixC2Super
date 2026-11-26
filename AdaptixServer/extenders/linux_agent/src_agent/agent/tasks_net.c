@@ -207,6 +207,8 @@ int task_tunnel_start(const uint8_t *data, uint32_t data_len, mp_writer_t *w) {
 
     job_context_t *ctx = &g_job_ctx;
 
+    // 诊断打点：AX_TEST_LOG 未设置时零开销（ax_env_get 立即返回）。
+
     // Allocate tunnel slot
     jobs_mutex_lock(&ctx->tunnels_mutex);
     int idx = -1;
@@ -225,8 +227,15 @@ int task_tunnel_start(const uint8_t *data, uint32_t data_len, mp_writer_t *w) {
     if (idx < 0) { write_error(w, "max tunnels reached"); return 0; }
 
     // Start async connect (non-blocking, polled by process_tunnels)
-    if (proxy_connect_tcp(idx, address) != 0) {
-        // Immediate failure — status will be sent by process_tunnels (CloseProxy stage)
+    {
+        int prc = proxy_connect_tcp(idx, address);
+        if (prc != 0) {
+            // 立即失败：置 CLOSED，让 process_tunnels 的 CloseProxy 阶段回收
+            // 槽位并回一条 close 通知。**不能**留成「active 但 fd=-1」的空壳 ——
+            // 那种槽位状态是 CONNECTING/READY 都不成立、CLOSED 也不成立，
+            // 既不会被回收也永远不会产生输出，属于泄漏。
+            ctx->tunnels[idx].state = TUNNEL_STATE_CLOSED;
+        }
     }
 
     mp_write_map(w, 1);
