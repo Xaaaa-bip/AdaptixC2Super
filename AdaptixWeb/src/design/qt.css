@@ -911,6 +911,7 @@ html[data-qt-mode="light"] .qt-ico-mono {
   min-height: 0;
   overflow: auto;
   background: var(--qt-bg3);
+  contain: layout style paint;
 }
 .qt-table {
   width: 100%;
@@ -1063,6 +1064,7 @@ html[data-qt-mode="light"] .qt-ico-mono {
   border: 1px solid var(--qt-border-disabled);
   border-radius: var(--qt-radius);
   overflow: hidden;
+  contain: layout style paint;
 }
 .qt-console-bg-img {
   position: absolute;
@@ -2250,6 +2252,7 @@ html[data-qt-console-bg="off"] .qt-console-bg-dim {
   overflow: auto;
   padding: 3px 0;
   background: var(--qt-bg3);
+  contain: layout style paint;
 }
 .qt-tree-row {
   height: 23px;

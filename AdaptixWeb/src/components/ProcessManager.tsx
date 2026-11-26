@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { browserKillProc, browserListProcs } from '../api/browser'
@@ -52,16 +52,14 @@ function isPrivContext(ctx?: string): boolean {
  *  - Own agent PID highlighted in ChiliPepper red (#E96B72)
  *  - Live Ctrl+F filtering, scope pills, full right-click QMenu
  */
-export function ProcessManager({ agentId }: { agentId: string }) {
+export const ProcessManager = memo(function ProcessManager({ agentId }: { agentId: string }) {
   const api = useStore((s) => s.api)
-  const agents = useStore((s) => s.agents) || {}
+  const agent = useStore((s) => s.agents[agentId])
   const pushToast = useStore((s) => s.pushToast)
   const pushLog = useStore((s) => s.pushLog)
   const openConsole = useStore((s) => s.openConsole)
-  const interactBoost = useStore((s) => s.interactBoost)
+  const boosted = useStore((s) => !!s.interactBoost[agentId]?.ref)
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
-  const agent = agents[agentId]
-  const boosted = !!interactBoost[agentId]?.ref
   const linux = isLinuxAgent(agent)
   const selfPid = Number(agent?.a_pid || 0)
 
@@ -602,4 +600,4 @@ export function ProcessManager({ agentId }: { agentId: string }) {
       )}
     </div>
   )
-}
+})

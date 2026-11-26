@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Login } from './components/Login'
 import { Dashboard } from './components/Dashboard'
 import { Hosts } from './components/Hosts'
@@ -132,15 +132,160 @@ const STATIC_LABELS: Record<string, string> = {
   terminal: 'Console',
 }
 
+let appClock5s = Date.now()
+const appClock5sListeners = new Set<() => void>()
+let appClock5sTimer: number | null = null
+function subscribeAppClock5s(cb: () => void) {
+  appClock5sListeners.add(cb)
+  if (appClock5sTimer === null) {
+    appClock5sTimer = window.setInterval(() => {
+      appClock5s = Date.now()
+      for (const fn of appClock5sListeners) fn()
+    }, 5000)
+  }
+  return () => {
+    appClock5sListeners.delete(cb)
+    if (appClock5sListeners.size === 0 && appClock5sTimer !== null) {
+      window.clearInterval(appClock5sTimer)
+      appClock5sTimer = null
+    }
+  }
+}
+function getAppClock5s() { return appClock5s }
+
+function computeOnlineCount(agents: Record<string, any>, ticks: Record<string, number>, now: number): number {
+  let n = 0
+  for (const a of Object.values(agents)) {
+    if (isAgentOnline(a, { now, lastTick: ticks[a.a_id] })) n++
+  }
+  return n
+}
+
+const ListenersToolbarBtn = memo(function ListenersToolbarBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const listenerCount = useStore((s) => Object.keys(s.listeners || {}).length)
+  return (
+    <button
+      type="button"
+      className={`qt-tb-btn ${active ? 'active' : ''}`}
+      title="Listeners & Sites (G L)"
+      onClick={onClick}
+    >
+      {ICO.listeners}
+      <span className="qt-tb-lbl">{LANG === 'en' ? 'Listeners' : '监听器'}</span>
+      {listenerCount > 0 ? <span className="qt-tb-badge">{listenerCount}</span> : null}
+    </button>
+  )
+})
+
+const SessionsToolbarBtn = memo(function SessionsToolbarBtn({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const agentCount = useStore((s) => Object.keys(s.agents || {}).length)
+  const tickOnline = useStore((s) => computeOnlineCount(s.agents || {}, s.agentTicks || {}, Date.now()))
+  const clockOnline = useSyncExternalStore(
+    subscribeAppClock5s,
+    () => {
+      const st = useStore.getState()
+      return computeOnlineCount(st.agents || {}, st.agentTicks || {}, getAppClock5s())
+    },
+  )
+  void tickOnline
+  void clockOnline
+  const st = useStore.getState()
+  const onlineCount = computeOnlineCount(st.agents || {}, st.agentTicks || {}, Date.now())
+  return (
+    <button
+      type="button"
+      className={`qt-tb-btn ${active ? 'active' : ''}`}
+      title={`Sessions table (${onlineCount}/${agentCount}) — G H`}
+      onClick={onClick}
+    >
+      {ICO.sessions}
+      <span className="qt-tb-lbl">{LANG === 'en' ? 'Sessions' : '主机'}</span>
+      <span className={`qt-tb-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
+    </button>
+  )
+})
+
+const DockAgentDot = memo(function DockAgentDot({ agentId }: { agentId: string }) {
+  const liveByTick = useStore((s) => {
+    const a = s.agents?.[agentId]
+    return a ? isAgentOnline(a, { lastTick: s.agentTicks?.[agentId] }) : false
+  })
+  const liveByClock = useSyncExternalStore(
+    subscribeAppClock5s,
+    () => {
+      const a = useStore.getState().agents?.[agentId]
+      return a ? isAgentOnline(a, { now: getAppClock5s() }) : false
+    },
+  )
+  void liveByTick
+  void liveByClock
+  const a = useStore.getState().agents?.[agentId]
+  const live = a ? isAgentOnline(a) : false
+  return <span className={`qt-tab-dot ${live ? 'on' : 'off'}`} />
+})
+
+const DockTabText = memo(function DockTabText({ id }: { id: TabId }) {
+  const aid = tabAgentId(id)
+  const host = useStore((s) => (aid ? (s.agents?.[aid]?.a_computer || aid) : ''))
+  if (STATIC_LABELS[id]) return <>{LANG === 'en' ? STATIC_LABELS[id] : t(STATIC_LABELS[id])}</>
+  const h = host || '?'
+  if (isConsoleTab(id)) return <>{`Console [${h}]`}</>
+  if (isFilesTab(id)) return <>{`Files [${h}]`}</>
+  if (isProcsTab(id)) return <>{`Processes [${h}]`}</>
+  if (isPtyTab(id)) return <>{`Terminal [${h}]`}</>
+  if (isCmdTab(id)) return <>{`Cmd [${h}]`}</>
+  if (isVncTab(id)) return <>{`VNC [${h}]`}</>
+  return <>{id}</>
+})
+
+const SouthStatusCounts = memo(function SouthStatusCounts() {
+  const agentCount = useStore((s) => Object.keys(s.agents || {}).length)
+  const listenerCount = useStore((s) => Object.keys(s.listeners || {}).length)
+  const taskCount = useStore((s) => (s.tasks || []).length)
+  const tickOnline = useStore((s) => computeOnlineCount(s.agents || {}, s.agentTicks || {}, Date.now()))
+  const clockOnline = useSyncExternalStore(
+    subscribeAppClock5s,
+    () => {
+      const st = useStore.getState()
+      return computeOnlineCount(st.agents || {}, st.agentTicks || {}, getAppClock5s())
+    },
+  )
+  void tickOnline
+  void clockOnline
+  const st = useStore.getState()
+  const onlineCount = computeOnlineCount(st.agents || {}, st.agentTicks || {}, Date.now())
+  return (
+    <div className="qt-south-stat">
+      <span><b>{onlineCount}</b> / {agentCount} {t('在线')}</span>
+      <span>{listenerCount} {t('监听')}</span>
+      <span>{taskCount} {t('任务')}</span>
+    </div>
+  )
+})
+
+const DashboardConnected = memo(function DashboardConnected() {
+  const agentCount = useStore((s) => Object.keys(s.agents || {}).length)
+  const listenerCount = useStore((s) => Object.keys(s.listeners || {}).length)
+  const tickOnline = useStore((s) => computeOnlineCount(s.agents || {}, s.agentTicks || {}, Date.now()))
+  const clockOnline = useSyncExternalStore(
+    subscribeAppClock5s,
+    () => {
+      const st = useStore.getState()
+      return computeOnlineCount(st.agents || {}, st.agentTicks || {}, getAppClock5s())
+    },
+  )
+  void tickOnline
+  void clockOnline
+  const st = useStore.getState()
+  return <Dashboard online={computeOnlineCount(st.agents || {}, st.agentTicks || {}, Date.now())} total={agentCount} listeners={listenerCount} />
+})
+
 export default function App() {
   const api = useStore((s) => s.api)
   const connected = useStore((s) => s.connected)
   const wsConnected = useStore((s) => s.wsConnected)
   const syncing = useStore((s) => s.syncing)
   const username = useStore((s) => s.username)
-  const agents = useStore((s) => s.agents) || {}
-  const listeners = useStore((s) => s.listeners) || {}
-  const tasks = useStore((s) => s.tasks) || []
   const selected = useStore((s) => s.selectedAgentId)
   const disconnect = useStore((s) => s.disconnect)
   const finishConnect = useStore((s) => s.finishConnect)
@@ -188,13 +333,6 @@ export default function App() {
     const el = bottomTabsRef.current?.querySelector('.qt-tab.active') as HTMLElement | null
     el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
   }, [activeBottomTab, bottomTabs.length])
-
-  const [statusTick, setStatusTick] = useState(() => Date.now())
-  useEffect(() => {
-    if (!connected) return
-    const id = window.setInterval(() => setStatusTick(Date.now()), 5000)
-    return () => clearInterval(id)
-  }, [connected])
 
   useEffect(() => {
     const onExtSettings = (e: Event) => {
@@ -359,15 +497,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, paletteOpen, helpOpen, settingsOpen, openMenu, extPopupOpen, selected, chord])
 
-  const agentCount = Object.keys(agents).length
-  const listenerCount = Object.keys(listeners).length
-  const onlineCount = Object.values(agents).filter((a) => isAgentOnline(a, { now: statusTick })).length
-  const taskCount = tasks.length
-
   function tabLabel(id: TabId): string {
     if (STATIC_LABELS[id]) return LANG === 'en' ? STATIC_LABELS[id] : t(STATIC_LABELS[id])
     const aid = tabAgentId(id)
-    const a = aid ? agents[aid] : null
+    const a = aid ? useStore.getState().agents?.[aid] : null
     const host = a?.a_computer || aid || '?'
     if (isConsoleTab(id)) return `Console [${host}]`
     if (isFilesTab(id)) return `Files [${host}]`
@@ -384,7 +517,7 @@ export default function App() {
     if (id === 'tasks') return <Tasks />
     if (id === 'logs') return <div className="qt-ev-wrap"><EventsDock /></div>
     if (id === 'listeners') return <Listeners />
-    if (id === 'dashboard') return <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />
+    if (id === 'dashboard') return <DashboardConnected />
     if (id === 'generate') return <Generate />
     if (id === 'delivery') return <WebDelivery />
     if (id === 'downloads') return <Downloads />
@@ -451,7 +584,7 @@ export default function App() {
 
   function handleReconnect() {
     if (!api || !username) return
-    void finishConnect(api, username, Object.values(agents))
+    void finishConnect(api, username, Object.values(useStore.getState().agents || {}))
   }
 
   return (
@@ -585,16 +718,7 @@ export default function App() {
           {ICO.logs}
           <span className="qt-tb-lbl">{LANG === 'en' ? 'Logs' : '日志'}</span>
         </button>
-        <button
-          type="button"
-          className={`qt-tb-btn ${isBottomActive('listeners') ? 'active' : ''}`}
-          title="Listeners & Sites (G L)"
-          onClick={() => go('listeners')}
-        >
-          {ICO.listeners}
-          <span className="qt-tb-lbl">{LANG === 'en' ? 'Listeners' : '监听器'}</span>
-          {listenerCount > 0 ? <span className="qt-tb-badge">{listenerCount}</span> : null}
-        </button>
+        <ListenersToolbarBtn active={isBottomActive('listeners')} onClick={() => go('listeners')} />
         <div className="qt-ext-wrap">
           <button
             type="button"
@@ -623,16 +747,7 @@ export default function App() {
         <span className="qt-tb-vline" />
 
         {/* Group 2 (dockTop): Sessions · Graph · Tasks */}
-        <button
-          type="button"
-          className={`qt-tb-btn ${isTopActive('sessions') ? 'active' : ''}`}
-          title={`Sessions table (${onlineCount}/${agentCount}) — G H`}
-          onClick={() => go('sessions')}
-        >
-          {ICO.sessions}
-          <span className="qt-tb-lbl">{LANG === 'en' ? 'Sessions' : '主机'}</span>
-          <span className={`qt-tb-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
-        </button>
+        <SessionsToolbarBtn active={isTopActive('sessions')} onClick={() => go('sessions')} />
         <button
           type="button"
           className={`qt-tb-btn ${isTopActive('graph') ? 'active' : ''}`}
@@ -833,8 +948,6 @@ export default function App() {
               >
                 {bottomTabs.map((id) => {
                   const aid = tabAgentId(id)
-                  const ag = aid ? agents[aid] : null
-                  const agLive = ag ? isAgentOnline(ag, { now: statusTick }) : false
                   return (
                     <button
                       key={id}
@@ -845,9 +958,9 @@ export default function App() {
                       title={tabLabel(id)}
                     >
                       {aid
-                        ? <span className={`qt-tab-dot ${agLive ? 'on' : 'off'}`} />
+                        ? <DockAgentDot agentId={aid} />
                         : <img className="qt-ico qt-ico-mono qt-tab-ico" src={qtAsset(`icons/${tabIconFile(id)}`)} alt="" />}
-                      <span>{tabLabel(id)}</span>
+                      <span><DockTabText id={id} /></span>
                       <span
                         className="qt-tab-x"
                         onClick={(e) => { e.stopPropagation(); closeUiTab(id) }}
@@ -968,11 +1081,7 @@ export default function App() {
         <ConnStatus connected={connected} wsConnected={wsConnected} syncing={syncing} />
 
         <span className="qt-south-sep" />
-        <div className="qt-south-stat">
-          <span><b>{onlineCount}</b> / {agentCount} {t('在线')}</span>
-          <span>{listenerCount} {t('监听')}</span>
-          <span>{taskCount} {t('任务')}</span>
-        </div>
+        <SouthStatusCounts />
 
         <div className="qt-south-spacer" />
 

@@ -5,6 +5,7 @@ export type WsHandlers = {
   onClose?: (ev: CloseEvent) => void
   onError?: (ev: Event) => void
   onPacket?: (pkt: Packet) => void
+  onPackets?: (pkts: Packet[]) => void
 }
 
 export class SyncSocket {
@@ -35,9 +36,14 @@ export class SyncSocket {
         if (typeof ev.data === 'string') text = ev.data
         else if (ev.data instanceof ArrayBuffer) text = new TextDecoder().decode(ev.data)
         else return
+        const batch: Packet[] = []
         for (const c of text.split('\n').map((s) => s.trim()).filter(Boolean)) {
           if (this.ws !== ws) return
-          handlers.onPacket?.(JSON.parse(c) as Packet)
+          batch.push(JSON.parse(c) as Packet)
+        }
+        if (batch.length) {
+          if (handlers.onPackets) handlers.onPackets(batch)
+          else for (const p of batch) handlers.onPacket?.(p)
         }
       } catch (e) {
         console.warn('ws parse error', e)

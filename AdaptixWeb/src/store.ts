@@ -6,7 +6,7 @@ import {
   Agent, AppLog, ChatMessage, ConsoleLine, DEFAULT_SUBSCRIPTIONS, DownloadItem,
   Listener, P, Packet, Pivot, Task,
 } from './api/types'
-import { clearSession, getServerNowMs, isAgentOnline, isLinuxAgent, loadSession, saveLoginPrefs, saveSession, syncServerClock } from './utils'
+import { clearLiveAgentTicks, clearSession, getServerNowMs, isAgentOnline, isLinuxAgent, loadSession, saveLoginPrefs, saveSession, setLiveAgentTick, syncServerClock } from './utils'
 import { emptySnapshot, GraphBoard, GraphSnapshot, isSnapshot, normSnapshot } from './graphBoard'
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36) }
@@ -124,11 +124,15 @@ type State = {
   username: string
   tab: TabId
   agents: Record<string, Agent>
+  /** Decoupled high-frequency heartbeat timestamps (epoch sec) so AGENT_TICK never invalidates s.agents */
+  agentTicks: Record<string, number>
   listeners: Record<string, Listener>
   tasks: Task[]
   downloads: Record<string, DownloadItem>
   selectedAgentId: string | null
   consoleLines: ConsoleLine[]
+  /** Per-agent console buckets so Console tabs only re-render on their own output */
+  consoleByAgent: Record<string, ConsoleLine[]>
   logs: AppLog[]
   toasts: ToastItem[]
   filter: string
@@ -213,6 +217,7 @@ type State = {
   finishConnect: (api: ApiClient, username: string, preloadedAgents?: any[]) => Promise<void>
   disconnect: () => void
   handlePacket: (pkt: Packet) => void
+  handlePackets: (pkts: Packet[]) => void
   refreshRest: (opts?: { includeTasks?: boolean; skipAgents?: boolean }) => Promise<void>
   sendCommand: (cmdline: string) => Promise<void>
   /** 删一批主机的**唯一配方**。removeSelected / removeChecked 都是它的薄包装。 */
@@ -313,12 +318,24 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
     if (!ids.has(parent) && !ids.has(child)) pivots[k] = p
   }
 
+  const agentTicks: Record<string, number> = {}
+  for (const [k, v] of Object.entries(s.agentTicks)) {
+    if (!ids.has(k)) agentTicks[k] = v
+  }
+  clearLiveAgentTicks(ids)
+  const consoleByAgent: Record<string, ConsoleLine[]> = {}
+  for (const [k, v] of Object.entries(s.consoleByAgent)) {
+    if (!ids.has(k)) consoleByAgent[k] = v
+  }
+
   return {
     agents,
+    agentTicks,
     browserFiles,
     browserProcs,
     interactBoost,
     consoleLines: s.consoleLines.filter((l) => !ids.has(l.agentId)),
+    consoleByAgent,
     openConsoleTabs,
     activeConsoleTab,
     uiTabs,
@@ -343,6 +360,64 @@ let syncStartSeenForEpoch = 0
 let syncWatchdogTimer: ReturnType<typeof setTimeout> | null = null
 let syncFinishTimer: ReturnType<typeof setTimeout> | null = null
 let restoreInFlight: Promise<boolean> | null = null
+let pendingWsQueue: Packet[] = []
+let pendingWsTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearPendingWsQueue() {
+  pendingWsQueue = []
+  if (pendingWsTimer) { clearTimeout(pendingWsTimer); pendingWsTimer = null }
+}
+
+function agentMetaEqual(a: Agent, b: Agent): boolean {
+  return (
+    a.a_id === b.a_id &&
+    a.a_name === b.a_name &&
+    a.a_listener === b.a_listener &&
+    a.a_os === b.a_os &&
+    a.a_os_desc === b.a_os_desc &&
+    a.a_arch === b.a_arch &&
+    a.a_computer === b.a_computer &&
+    a.a_username === b.a_username &&
+    a.a_domain === b.a_domain &&
+    a.a_process === b.a_process &&
+    a.a_pid === b.a_pid &&
+    a.a_tid === b.a_tid &&
+    a.a_internal_ip === b.a_internal_ip &&
+    a.a_external_ip === b.a_external_ip &&
+    a.a_tags === b.a_tags &&
+    a.a_mark === b.a_mark &&
+    a.a_elevated === b.a_elevated &&
+    a.a_sleep === b.a_sleep &&
+    a.a_jitter === b.a_jitter &&
+    a.a_create_time === b.a_create_time
+  )
+}
+
+function flattenPackets(pkts: Packet[], out: Packet[] = []): Packet[] {
+  for (const pkt of pkts) {
+    const type = pkt.type ?? pkt.Type
+    if ((type === P.SYNC_CATEGORY_BATCH || type === P.SYNC_BATCH) && Array.isArray(pkt.packets)) {
+      flattenPackets(pkt.packets, out)
+    } else {
+      out.push(pkt)
+    }
+  }
+  return out
+}
+
+function isUrgentPacket(pkt: Packet): boolean {
+  const type = pkt.type ?? pkt.Type
+  return (
+    type === P.SYNC_START ||
+    type === P.SYNC_FINISH ||
+    type === P.BROWSER_DISKS ||
+    type === P.BROWSER_FILES ||
+    type === P.BROWSER_FILES_STATUS ||
+    type === P.BROWSER_PROCESS ||
+    type === P.SYNC_BATCH ||
+    type === P.SYNC_CATEGORY_BATCH
+  )
+}
 let cancelConnectWait: (() => void) | null = null
 
 function clearSyncWatchdog() {
@@ -356,13 +431,22 @@ function clearSyncWatchdog() {
   }
 }
 
-function maxTick(a?: number, b?: number): number | undefined {
-  const na = Number(a) || 0
-  const nb = Number(b) || 0
-  if (na <= 0 && nb <= 0) return a ?? b
-  const ma = na > 0 && na < 1e12 ? na * 1000 : na
-  const mb = nb > 0 && nb < 1e12 ? nb * 1000 : nb
-  return ma >= mb ? a : b
+function maxTick(...vals: Array<number | undefined>): number | undefined {
+  let bestVal: number | undefined
+  let bestMs = 0
+  for (const v of vals) {
+    const n = Number(v) || 0
+    if (n <= 0) {
+      if (bestVal === undefined && v !== undefined) bestVal = v
+      continue
+    }
+    const ms = n < 1e12 ? n * 1000 : n
+    if (ms >= bestMs) {
+      bestMs = ms
+      bestVal = v
+    }
+  }
+  return bestVal
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -376,11 +460,13 @@ export const useStore = create<State>((set, get) => ({
   username: '',
   tab: 'sessions',
   agents: {},
+  agentTicks: {},
   listeners: {},
   tasks: [],
   downloads: {},
   selectedAgentId: null,
   consoleLines: [],
+  consoleByAgent: {},
   logs: [],
   filter: '',
   onlyActive: false,
@@ -520,6 +606,8 @@ export const useStore = create<State>((set, get) => ({
     const active = s.activeConsoleTab === id ? (tabs[tabs.length - 1] || null) : s.activeConsoleTab
     // 关闭终端页签时清掉该主机的控制台输出，避免下次点开仍残留历史
     const consoleLines = s.consoleLines.filter((l) => l.agentId !== id)
+    const consoleByAgent = { ...s.consoleByAgent }
+    delete consoleByAgent[id]
     const bottomTabs = s.bottomTabs.filter((t) => t !== ctab)
     const nextBottomTabs: TabId[] = bottomTabs.length ? bottomTabs : ['logs']
     const activeBottomTab = s.activeBottomTab === ctab
@@ -532,6 +620,7 @@ export const useStore = create<State>((set, get) => ({
       openConsoleTabs: tabs,
       activeConsoleTab: active,
       consoleLines,
+      consoleByAgent,
       bottomTabs: nextBottomTabs,
       activeBottomTab,
       uiTabs: nextUiTabs,
@@ -851,13 +940,25 @@ export const useStore = create<State>((set, get) => ({
     const t = String(text || '')
     // 唯一的过滤：空行不携带信息。**不按内容/拼写判断**——见本文件顶部那段说明。
     if (!t.trim()) return
-    set((s) => ({
-      consoleLines: [...s.consoleLines, { id: uid(), agentId, kind, text: t, ts: now() }].slice(-2000),
-    }))
+    const item: ConsoleLine = { id: uid(), agentId, kind, text: t, ts: now() }
+    set((s) => {
+      const prev = s.consoleByAgent[agentId] || []
+      const nextBucket = prev.length >= 600 ? [...prev.slice(-599), item] : [...prev, item]
+      return {
+        consoleLines: [...s.consoleLines, item].slice(-2000),
+        consoleByAgent: { ...s.consoleByAgent, [agentId]: nextBucket },
+      }
+    })
   },
-  clearConsole: (agentId) => set((s) => ({
-    consoleLines: agentId ? s.consoleLines.filter((l) => l.agentId !== agentId) : [],
-  })),
+  clearConsole: (agentId) => set((s) => {
+    if (!agentId) return { consoleLines: [], consoleByAgent: {} }
+    const consoleByAgent = { ...s.consoleByAgent }
+    delete consoleByAgent[agentId]
+    return {
+      consoleLines: s.consoleLines.filter((l) => l.agentId !== agentId),
+      consoleByAgent,
+    }
+  }),
   pushChat: (m) => set((s) => {
     const next: ChatMessage = {
       id: m.id || uid(),
@@ -998,16 +1099,26 @@ export const useStore = create<State>((set, get) => ({
   finishConnect: async (api: ApiClient, username: string, preloadedAgents?: any[]) => {
     const epoch = ++connectEpoch
     clearSyncWatchdog()
+    clearPendingWsQueue()
+    clearLiveAgentTicks()
     cancelConnectWait?.()
     cancelConnectWait = null
     try { get().socket.close() } catch { /* ignore */ }
 
     const initAgentMap: Record<string, Agent> = {}
+    const initTicks: Record<string, number> = {}
     const hasPreloaded = Array.isArray(preloadedAgents)
     if (hasPreloaded) {
       for (const a of preloadedAgents!) {
         const n = normAgent(a)
-        if (n.a_id) initAgentMap[n.a_id] = n
+        if (n.a_id) {
+          initAgentMap[n.a_id] = n
+          if (n.a_last_tick) {
+            const tickVal = Number(n.a_last_tick)
+            initTicks[n.a_id] = tickVal
+            setLiveAgentTick(n.a_id, tickVal)
+          }
+        }
       }
     }
 
@@ -1022,6 +1133,8 @@ export const useStore = create<State>((set, get) => ({
       browserFiles: {},
       browserProcs: {},
       agents: initAgentMap,
+      agentTicks: initTicks,
+      consoleByAgent: {},
       listeners: {},
       tasks: [],
       downloads: {},
@@ -1130,6 +1243,7 @@ export const useStore = create<State>((set, get) => ({
           onClose: (ev) => {
             if (epoch === connectEpoch) {
               clearSyncWatchdog()
+              clearPendingWsQueue()
               set({ wsConnected: false, syncing: false })
               get().pushLog('warn', `WebSocket 关闭 code=${ev.code}`, false)
             }
@@ -1144,7 +1258,32 @@ export const useStore = create<State>((set, get) => ({
             if (epoch === connectEpoch) {
               const ts = Date.now()
               if (ts - get().lastWsPacketAt > 2000) set({ lastWsPacketAt: ts })
-              get().handlePacket(pkt)
+              get().handlePackets([pkt])
+            }
+          },
+          onPackets: (pkts) => {
+            if (epoch !== connectEpoch || !pkts.length) return
+            const ts = Date.now()
+            if (ts - get().lastWsPacketAt > 2000) set({ lastWsPacketAt: ts })
+            pendingWsQueue.push(...pkts)
+            if (pkts.some(isUrgentPacket) || pendingWsQueue.length >= 64) {
+              if (pendingWsTimer) { clearTimeout(pendingWsTimer); pendingWsTimer = null }
+              const batch = pendingWsQueue
+              pendingWsQueue = []
+              get().handlePackets(batch)
+              return
+            }
+            if (!pendingWsTimer) {
+              pendingWsTimer = setTimeout(() => {
+                pendingWsTimer = null
+                if (epoch !== connectEpoch || !pendingWsQueue.length) {
+                  pendingWsQueue = []
+                  return
+                }
+                const batch = pendingWsQueue
+                pendingWsQueue = []
+                get().handlePackets(batch)
+              }, 32)
             }
           },
         })
@@ -1165,6 +1304,8 @@ export const useStore = create<State>((set, get) => ({
   disconnect: () => {
     connectEpoch++
     clearSyncWatchdog()
+    clearPendingWsQueue()
+    clearLiveAgentTicks()
     cancelConnectWait?.()
     cancelConnectWait = null
     try { get().socket.close() } catch { /* ignore */ }
@@ -1177,6 +1318,8 @@ export const useStore = create<State>((set, get) => ({
       serverInterfaces: [],
       username: '',
       agents: {},
+      agentTicks: {},
+      consoleByAgent: {},
       listeners: {},
       tasks: [],
       downloads: {},
@@ -1202,11 +1345,214 @@ export const useStore = create<State>((set, get) => ({
     })
   },
 
+  handlePackets: (pkts) => {
+    const flat = flattenPackets(pkts)
+    if (!flat.length) return
+    if (flat.length === 1) {
+      get().handlePacket(flat[0])
+      return
+    }
+
+    let pendingTicks: Record<string, number> | null = null
+    let pendingAgents: Record<string, { pkt: Packet; norm: Agent }> | null = null
+    let pendingTasks: Task[] | null = null
+    let pendingConsole: Array<{ agentId: string; kind: ConsoleLine['kind']; text: string }> | null = null
+
+    const flushAccumulated = () => {
+      if (!pendingTicks && !pendingAgents && !pendingTasks && !pendingConsole) return
+      const ticksBatch = pendingTicks
+      const agentsBatch = pendingAgents
+      const tasksBatch = pendingTasks
+      const consoleBatch = pendingConsole
+      pendingTicks = null
+      pendingAgents = null
+      pendingTasks = null
+      pendingConsole = null
+
+      set((s) => {
+        const patch: Partial<State> = {}
+        let nextAgents: Record<string, Agent> | null = null
+        let nextTicks: Record<string, number> | null = null
+
+        if (agentsBatch) {
+          for (const [id, { pkt, norm }] of Object.entries(agentsBatch)) {
+            const old = (nextAgents ?? s.agents)[id]
+            const next = old && (pkt.type ?? pkt.Type) === P.AGENT_UPDATE ? normAgent({ ...old, ...pkt }) : { ...old, ...norm }
+            const curTick = (nextTicks ?? s.agentTicks)[id]
+            const bestTick = maxTick(curTick, old?.a_last_tick, next.a_last_tick)
+            if (bestTick !== undefined) {
+              next.a_last_tick = bestTick
+              setLiveAgentTick(id, bestTick)
+              if (bestTick !== curTick) {
+                if (!nextTicks) nextTicks = { ...s.agentTicks }
+                nextTicks[id] = bestTick
+              }
+            }
+            if (!old || !agentMetaEqual(old, next)) {
+              if (!nextAgents) nextAgents = { ...s.agents }
+              nextAgents[id] = next
+            }
+          }
+        }
+
+        if (ticksBatch) {
+          const activeAgents = nextAgents ?? s.agents
+          for (const [id, tick] of Object.entries(ticksBatch)) {
+            if (!activeAgents[id]) continue
+            const curTick = (nextTicks ?? s.agentTicks)[id]
+            const best = maxTick(curTick, activeAgents[id]?.a_last_tick, tick)
+            if (best !== undefined) {
+              setLiveAgentTick(id, best)
+              if (best !== curTick) {
+                if (!nextTicks) nextTicks = { ...s.agentTicks }
+                nextTicks[id] = best
+              }
+            }
+          }
+        }
+
+        if (nextAgents) patch.agents = nextAgents
+        if (nextTicks) patch.agentTicks = nextTicks
+
+        if (tasksBatch && tasksBatch.length) {
+          const byId = new Map<string, Task>()
+          for (const existing of s.tasks) {
+            if (existing.a_task_id) byId.set(existing.a_task_id, existing)
+          }
+          const touchedOrder: string[] = []
+          for (const t of tasksBatch) {
+            if (!t.a_task_id) continue
+            const prev = byId.get(t.a_task_id)
+            byId.set(t.a_task_id, prev ? mergeTask(prev, t) : t)
+            touchedOrder.push(t.a_task_id)
+          }
+          const touchedSet = new Set(touchedOrder)
+          const head: Task[] = []
+          const seen = new Set<string>()
+          for (let i = touchedOrder.length - 1; i >= 0; i--) {
+            const tid = touchedOrder[i]
+            if (seen.has(tid)) continue
+            seen.add(tid)
+            const item = byId.get(tid)
+            if (item) head.push(item)
+          }
+          const tail = s.tasks.filter((x) => !x.a_task_id || !touchedSet.has(x.a_task_id))
+          patch.tasks = [...head, ...tail].slice(0, 500)
+        }
+
+        if (consoleBatch && consoleBatch.length) {
+          const now = Date.now()
+          const addedAll: ConsoleLine[] = []
+          const byAgent = { ...s.consoleByAgent }
+          for (let i = 0; i < consoleBatch.length; i++) {
+            const c = consoleBatch[i]
+            const line: ConsoleLine = { id: uid(), ts: now + i, agentId: c.agentId, kind: c.kind, text: c.text }
+            addedAll.push(line)
+            if (c.agentId) {
+              const prev = byAgent[c.agentId] || []
+              byAgent[c.agentId] = [...prev, line].slice(-600)
+            }
+          }
+          patch.consoleLines = [...s.consoleLines, ...addedAll].slice(-1200)
+          patch.consoleByAgent = byAgent
+        }
+
+        return Object.keys(patch).length ? patch : s
+      })
+    }
+
+    for (const pkt of flat) {
+      const type = pkt.type ?? pkt.Type
+      switch (type) {
+        case P.AGENT_TICK: {
+          const ids: string[] = Array.isArray(pkt.a_id) ? pkt.a_id : (pkt.a_id ? [pkt.a_id] : [])
+          if (pkt.a_last_tick) syncServerClock(pkt.a_last_tick)
+          const tick = pkt.a_last_tick || Math.floor(getServerNowMs() / 1000)
+          if (ids.length) {
+            if (!pendingTicks) pendingTicks = {}
+            for (const id of ids) {
+              const best = maxTick(pendingTicks[id], tick)
+              if (best !== undefined) pendingTicks[id] = best
+            }
+          }
+          break
+        }
+        case P.AGENT_NEW:
+        case P.AGENT_UPDATE: {
+          const a = normAgent(pkt)
+          if (!a.a_id) break
+          if (!pendingAgents) pendingAgents = {}
+          const prev = pendingAgents[a.a_id]
+          if (prev && type === P.AGENT_UPDATE) {
+            const mergedPkt = { ...prev.pkt, ...pkt }
+            pendingAgents[a.a_id] = { pkt: mergedPkt, norm: normAgent(mergedPkt) }
+          } else {
+            pendingAgents[a.a_id] = { pkt, norm: a }
+          }
+          break
+        }
+        case P.AGENT_TASK_SYNC:
+        case P.AGENT_TASK_UPDATE:
+        case P.AGENT_TASK_SEND: {
+          if (pkt.a_task_id) {
+            if (!pendingTasks) pendingTasks = []
+            pendingTasks.push(normTask(pkt))
+          }
+          break
+        }
+        case P.CONSOLE_LOCAL: {
+          const aid = String(pkt.a_id || '')
+          const text = String(pkt.a_text || '')
+          const message = String(pkt.a_message || '')
+          const cmdline = String(pkt.a_cmdline || '')
+          const body = (text || message).trim()
+          if (body) {
+            if (!pendingConsole) pendingConsole = []
+            pendingConsole.push({ agentId: aid, kind: 'ok', text: body })
+          } else if (cmdline) {
+            if (!pendingConsole) pendingConsole = []
+            pendingConsole.push({ agentId: aid, kind: 'local', text: cmdline.startsWith('>') ? cmdline : `> ${cmdline}` })
+          }
+          break
+        }
+        case P.CONSOLE_ERROR: {
+          if (!pendingConsole) pendingConsole = []
+          pendingConsole.push({ agentId: pkt.a_id || '', kind: 'err', text: String(pkt.a_message || pkt.a_text || '') })
+          break
+        }
+        case P.CONSOLE_OUT:
+        case P.CONSOLE_TASK_SYNC:
+        case P.CONSOLE_TASK_UPD: {
+          const message = String(pkt.a_message || pkt.message || '')
+          const text = String(pkt.a_text || pkt.text || '')
+          const msg = [message, text].filter(Boolean).join('\n')
+          const kind: ConsoleLine['kind'] = pkt.a_completed === false ? 'task' : 'ok'
+          const aid = pkt.a_id || ''
+          if (msg && aid) {
+            if (!pendingConsole) pendingConsole = []
+            pendingConsole.push({ agentId: aid, kind, text: msg })
+          }
+          if (pkt.a_task_id) {
+            if (!pendingTasks) pendingTasks = []
+            pendingTasks.push(normTask(pkt))
+          }
+          break
+        }
+        default: {
+          flushAccumulated()
+          get().handlePacket(pkt)
+          break
+        }
+      }
+    }
+    flushAccumulated()
+  },
+
   handlePacket: (pkt) => {
     const type = pkt.type ?? pkt.Type
     const { pushLog, pushConsole } = get()
     if ((type === P.SYNC_CATEGORY_BATCH || type === P.SYNC_BATCH) && Array.isArray(pkt.packets)) {
-      for (const p of pkt.packets) get().handlePacket(p)
+      get().handlePackets(pkt.packets)
       return
     }
     switch (type) {
@@ -1291,9 +1637,19 @@ export const useStore = create<State>((set, get) => ({
           // a_os_desc→os、a_oemcp→oem_cp 这几处并不规则，通用规则一定写错）。
           const next = old && pkt.type === P.AGENT_UPDATE ? normAgent({ ...old, ...pkt }) : { ...old, ...a }
           // 单调保留较新的心跳时间，避免预同步 AGENT_NEW 覆盖刚到达的实时 AGENT_TICK
-          const bestTick = maxTick(old?.a_last_tick, next.a_last_tick)
-          if (bestTick !== undefined) next.a_last_tick = bestTick
-          return { agents: { ...s.agents, [a.a_id]: next } }
+          const bestTick = maxTick(s.agentTicks[a.a_id], old?.a_last_tick, next.a_last_tick)
+          if (bestTick !== undefined) {
+            next.a_last_tick = bestTick
+            setLiveAgentTick(a.a_id, bestTick)
+          }
+          const patch: Partial<State> = {}
+          if (bestTick !== undefined && bestTick !== s.agentTicks[a.a_id]) {
+            patch.agentTicks = { ...s.agentTicks, [a.a_id]: bestTick }
+          }
+          if (!old || !agentMetaEqual(old, next)) {
+            patch.agents = { ...s.agents, [a.a_id]: next }
+          }
+          return Object.keys(patch).length ? patch : s
         })
         break
       }
@@ -1302,14 +1658,22 @@ export const useStore = create<State>((set, get) => ({
         const ids: string[] = Array.isArray(pkt.a_id) ? pkt.a_id : (pkt.a_id ? [pkt.a_id] : [])
         if (pkt.a_last_tick) syncServerClock(pkt.a_last_tick)
         const tick = pkt.a_last_tick || Math.floor(getServerNowMs() / 1000)
+        if (!ids.length) break
         set((s) => {
-          const agents = { ...s.agents }
+          let nextTicks: Record<string, number> | null = null
           for (const id of ids) {
-            if (agents[id]) {
-              agents[id] = { ...agents[id], a_last_tick: maxTick(agents[id].a_last_tick, tick) }
+            if (!s.agents[id]) continue
+            const cur = s.agentTicks[id]
+            const best = maxTick(cur, s.agents[id]?.a_last_tick, tick)
+            if (best !== undefined) {
+              setLiveAgentTick(id, best)
+              if (best !== cur) {
+                if (!nextTicks) nextTicks = { ...s.agentTicks }
+                nextTicks[id] = best
+              }
             }
           }
-          return { agents }
+          return nextTicks ? { agentTicks: nextTicks } : s
         })
         break
       }
@@ -1574,23 +1938,50 @@ export const useStore = create<State>((set, get) => ({
       const patch: Partial<State> = {}
       if (agentsOk) {
         const merged: Record<string, Agent> = {}
-        for (const [id, n] of Object.entries(agentMap)) {
+        let nextTicks: Record<string, number> | null = null
+        const prevKeys = Object.keys(s.agents)
+        const nextEntries = Object.entries(agentMap)
+        let agentsChanged = prevKeys.length !== nextEntries.length
+        for (const [id, n] of nextEntries) {
           const old = s.agents[id]
-          if (old) {
-            const bestTick = maxTick(old.a_last_tick, n.a_last_tick)
-            merged[id] = bestTick !== undefined ? { ...n, a_last_tick: bestTick } : n
+          const bestTick = maxTick(s.agentTicks[id], old?.a_last_tick, n.a_last_tick)
+          if (bestTick !== undefined) {
+            setLiveAgentTick(id, bestTick)
+            if (bestTick !== s.agentTicks[id]) {
+              if (!nextTicks) nextTicks = { ...s.agentTicks }
+              nextTicks[id] = bestTick
+            }
+          }
+          if (old && agentMetaEqual(old, n)) {
+            merged[id] = old
           } else {
-            merged[id] = n
+            agentsChanged = true
+            merged[id] = bestTick !== undefined ? { ...n, a_last_tick: bestTick } : n
           }
         }
-        patch.agents = merged
-        // 勾选集合跟 REST 名单求交：批量条上显示的必须是**真的还在**的主机数。
-        // 少了一台没剪掉，操作员看到的「已选 50 台」里就有一台是幽灵。
-        patch.checkedIds = new Set([...s.checkedIds].filter((id) => !!merged[id]))
+        // 同步清理已不存在的 agentTicks 键
+        const staleIds: string[] = []
+        for (const id of Object.keys(s.agentTicks)) {
+          if (!merged[id]) {
+            if (!nextTicks) nextTicks = { ...s.agentTicks }
+            delete nextTicks[id]
+            staleIds.push(id)
+          }
+        }
+        if (staleIds.length) clearLiveAgentTicks(staleIds)
+        if (nextTicks) patch.agentTicks = nextTicks
+        if (agentsChanged) {
+          patch.agents = merged
+          // 勾选集合跟 REST 名单求交：批量条上显示的必须是**真的还在**的主机数。
+          const filteredChecked = [...s.checkedIds].filter((id) => !!merged[id])
+          if (filteredChecked.length !== s.checkedIds.size) {
+            patch.checkedIds = new Set(filteredChecked)
+          }
+        }
       }
       if (listenersOk) patch.listeners = listenerMap
       if (downloadsOk) patch.downloads = dlMap
-      return patch
+      return Object.keys(patch).length ? patch : s
     })
 
     if (!includeTasks) return

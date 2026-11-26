@@ -60,16 +60,44 @@ export function getServerNowMs(localNowMs = Date.now()): number {
  *   else age > sleep*HealthCoaf + HealthOffset  → offline（默认 Coaf=2, Offset=40s）
  * 旧实现固定 5 分钟窗口：短 sleep 主机死后仍显示「在线但不可用」。
  */
+const liveAgentTicks = new Map<string, number>()
+
+export function setLiveAgentTick(id: string, tick: number) {
+  if (!id || !Number.isFinite(tick) || tick <= 0) return
+  const prev = liveAgentTicks.get(id)
+  if (prev === undefined || tick > prev) liveAgentTicks.set(id, tick)
+}
+
+export function clearLiveAgentTicks(ids?: Iterable<string>) {
+  if (!ids) { liveAgentTicks.clear(); return }
+  for (const id of ids) liveAgentTicks.delete(id)
+}
+
+export function getLiveAgentTick(id?: string): number | undefined {
+  return id ? liveAgentTicks.get(id) : undefined
+}
+
+function resolveAgentTick(a: { a_id?: string; a_last_tick?: number }, explicit?: number): number | undefined {
+  const candidates = [explicit, a.a_id ? liveAgentTicks.get(a.a_id) : undefined, a.a_last_tick]
+  let best = 0
+  for (const c of candidates) {
+    const n = Number(c)
+    if (Number.isFinite(n) && n > best) best = n
+  }
+  return best > 0 ? best : undefined
+}
+
 export function isAgentOnline(
-  a: { a_mark?: string; a_last_tick?: number; a_sleep?: number; a_jitter?: number },
-  opts?: { coaf?: number; offsetSec?: number; now?: number },
+  a: { a_id?: string; a_mark?: string; a_last_tick?: number; a_sleep?: number; a_jitter?: number },
+  opts?: { coaf?: number; offsetSec?: number; now?: number; lastTick?: number },
 ) {
   const mark = String(a.a_mark || '').trim()
   if (mark && /inactive|dead|exit|terminated|unlink|disconnect|no\s*response|no\s*worktime/i.test(mark)) {
     return false
   }
-  if (!a.a_last_tick) return false
-  let tickMs = Number(a.a_last_tick)
+  const rawTick = resolveAgentTick(a, opts?.lastTick)
+  if (!rawTick) return false
+  let tickMs = Number(rawTick)
   if (!Number.isFinite(tickMs) || tickMs <= 0) return false
   if (tickMs < 1e12) tickMs *= 1000
 
@@ -194,13 +222,14 @@ export function formatSecToStr(seconds: number) {
  * - 离线：相对时间
  */
 export function formatHeartbeat(
-  a: { a_last_tick?: number; a_sleep?: number; a_jitter?: number; a_mark?: string },
-  opts?: { now?: number },
+  a: { a_id?: string; a_last_tick?: number; a_sleep?: number; a_jitter?: number; a_mark?: string },
+  opts?: { now?: number; lastTick?: number },
   isLinux = false,
 ): { text: string; sub?: string; live: boolean } {
   const live = isAgentOnline(a, opts)
-  if (!a.a_last_tick) return { text: '-', live: false }
-  let tickMs = Number(a.a_last_tick)
+  const rawTick = resolveAgentTick(a, opts?.lastTick)
+  if (!rawTick) return { text: '-', live: false }
+  let tickMs = Number(rawTick)
   if (!Number.isFinite(tickMs) || tickMs <= 0) return { text: '-', live: false }
   if (tickMs < 1e12) tickMs *= 1000
   const now = getServerNowMs(opts?.now)
@@ -210,7 +239,7 @@ export function formatHeartbeat(
   const jitter = Math.max(0, Math.min(100, Number(a.a_jitter) || 0))
 
   if (!live) {
-    return { text: fmtRelative(a.a_last_tick), sub: sleepSec === 0 ? 'sleep 0' : `sleep ${sleepSec}s`, live: false }
+    return { text: fmtRelative(rawTick), sub: sleepSec === 0 ? 'sleep 0' : `sleep ${sleepSec}s`, live: false }
   }
   // Linux beacon：无 sleep 配置（a_sleep === 0），节拍由编译期决定（≈20~45s）
   if (isLinux && sleepSec === 0) {

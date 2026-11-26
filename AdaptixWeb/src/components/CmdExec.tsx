@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { ConsoleLine } from '../api/types'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { copyText, fmtRelative, isAgentOnline, isLinuxAgent } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
+
+const EMPTY_CMD_LINES: ConsoleLine[] = []
 
 /**
  * 「命令执行」—— 一台主机的**全屏终端式**命令台（`cmd:<agentId>[#n]`）。
@@ -23,18 +26,32 @@ import { CmdSuggest } from './CmdSuggest'
  *      （跟 shell / 跟日志 / 另一个窗口各一个），每个自己开关；
  *   ④ 终端配色：深色底 + 等宽字，与「命令终端」「交互 PTY」同一套观感。
  */
-export function CmdExec({ agentId }: { agentId: string }) {
-  const agents = useStore((s) => s.agents)
-  const lines = useStore((s) => s.consoleLines) || []
+export const CmdExec = memo(function CmdExec({ agentId }: { agentId: string }) {
+  const agent = useStore((s) => s.agents[agentId])
+  const agentTick = useStore((s) => s.agentTicks[agentId])
+  const mine = useStore((s) => s.consoleByAgent[agentId]) ?? EMPTY_CMD_LINES
   const sendCommand = useStore((s) => s.sendCommand)
   const selectAgent = useStore((s) => s.selectAgent)
   const clearConsole = useStore((s) => s.clearConsole)
   const pushToast = useStore((s) => s.pushToast)
-  const tasks = useStore((s) => s.tasks) || []
+  const myTaskCount = useStore((s) => {
+    let n = 0
+    for (const x of s.tasks) {
+      if (x.a_id === agentId) n++
+    }
+    return n
+  })
+  const runningTasks = useStore((s) => {
+    let n = 0
+    for (const x of s.tasks) {
+      if (x.a_id === agentId && !x.a_completed) n++
+    }
+    return n
+  })
+  const latestTask = useStore((s) => s.tasks.find((x) => x.a_id === agentId))
   const openUiTab = useStore((s) => s.openUiTab)
 
-  const agent = agents[agentId]
-  const online = isAgentOnline(agent)
+  const online = agent ? isAgentOnline(agent, { lastTick: agentTick }) : false
   const linux = isLinuxAgent(agent)
 
   const [cmd, setCmd] = useState('')
@@ -63,13 +80,6 @@ export function CmdExec({ agentId }: { agentId: string }) {
     fallbackBofs: FALLBACK_BOFS,
   })
 
-  const mine = useMemo(() => lines.filter((l) => l.agentId === agentId), [lines, agentId])
-  const mineTasks = useMemo(
-    () => tasks.filter((t) => t.a_id === agentId).slice(0, 10),
-    [tasks, agentId],
-  )
-  const runningTasks = mineTasks.filter((t) => !t.a_completed).length
-  const latestTask = mineTasks[0]
   const quick = useMemo(() => {
     const preferred = linux
       ? ['getuid', 'pwd', 'ls', 'ps', 'netstat', 'help', 'shell']
@@ -154,7 +164,7 @@ export function CmdExec({ agentId }: { agentId: string }) {
         <span className="dim" style={{ fontSize: 12 }}>{online ? t('在线') : '离线（命令可排队）'}</span>
         <span className="cmd-exec-host-meta mono">{agent?.a_name || 'agent'} · {agent?.a_internal_ip || agent?.a_external_ip || '无地址'}</span>
         <span style={{ flex: 1 }} />
-        <button className="ghost" onClick={() => openUiTab('tasks')} title={t('查看这台主机的任务')}>任务 {mineTasks.length}</button>
+        <button className="ghost" onClick={() => openUiTab('tasks')} title={t('查看这台主机的任务')}>任务 {myTaskCount}</button>
         <button className="ghost" onClick={() => void copyAll()} disabled={!mine.length}>{t('复制回显')}</button>
         <button className="ghost" onClick={() => clearConsole(agentId)} disabled={!mine.length}>{t('清空回显')}</button>
       </div>
@@ -245,4 +255,4 @@ export function CmdExec({ agentId }: { agentId: string }) {
       </div>
     </div>
   )
-}
+})

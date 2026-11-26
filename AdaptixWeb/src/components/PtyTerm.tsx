@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { isAgentOnline } from '../utils'
@@ -24,15 +24,15 @@ const PRESETS_NIX = [
   { label: 'sh', path: '/bin/sh' },
 ]
 
-export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; tabId?: string; active?: boolean }) {
+export const PtyTerm = memo(function PtyTerm({ agentId, tabId, active = true }: { agentId: string; tabId?: string; active?: boolean }) {
   const api = useStore((s) => s.api)
-  const agents = useStore((s) => s.agents) || {}
+  const agent = useStore((s) => s.agents[agentId])
+  const agentTick = useStore((s) => s.agentTicks[agentId])
   const closeUiTab = useStore((s) => s.closeUiTab)
   const pushToast = useStore((s) => s.pushToast)
   const pushLog = useStore((s) => s.pushLog)
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
-  const agent = agents[agentId]
-  const live = !!(agent && isAgentOnline(agent))
+  const live = !!(agent && isAgentOnline(agent, { lastTick: agentTick }))
   const isWin = !isNixAgent(agent)
   // Windows interactive shell text is usually OEM code page; prefer oem then acp
   const oemCp = Number(agent?.a_oemcp || agent?.OemCP || agent?.a_acp || agent?.ACP || (isWin ? 936 : 0)) || 0
@@ -376,4 +376,4 @@ export function PtyTerm({ agentId, tabId, active = true }: { agentId: string; ta
       </div>
     </div>
   )
-}
+})

@@ -913,9 +913,12 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 /// Sync
 
 func (ts *Teamserver) TsAgentTickUpdate() {
+	pendingPersist := make(map[string]adaptix.AgentData)
+	lastFlush := time.Now()
+	const persistInterval = 5 * time.Second
+
 	for {
 		var agentSlice []string
-		var tickedData []adaptix.AgentData
 		ts.Agents.ForEach(func(key string, value interface{}) bool {
 			agent, ok := value.(*Agent)
 			if !ok {
@@ -924,7 +927,7 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 			if agent.Tick.Swap(false) {
 				agentData := agent.GetData()
 				agentSlice = append(agentSlice, agentData.Id)
-				tickedData = append(tickedData, agentData)
+				pendingPersist[agentData.Id] = agentData
 			}
 			return true
 		})
@@ -935,12 +938,19 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 			// during client initial sync a later 800ms batch would overwrite an
 			// earlier batch containing different agents.
 			ts.TsSyncAllClientsWithCategory(packetTick, SyncCategoryAgents)
+		}
 
-			// Persist ticks after WS broadcast so SQLite single-conn contention
-			// cannot delay live heartbeats to UI clients.
-			for _, d := range tickedData {
-				_ = ts.DBMS.DbAgentTick(d)
+		// Flush accumulated LastTick updates in a single SQLite transaction every 5s
+		// (or when >=128 agents are queued) so 30-100+ active agents never contend
+		// with task/console inserts on SQLite's single writer connection.
+		if len(pendingPersist) > 0 && (time.Since(lastFlush) >= persistInterval || len(pendingPersist) >= 128) {
+			batch := make([]adaptix.AgentData, 0, len(pendingPersist))
+			for _, d := range pendingPersist {
+				batch = append(batch, d)
 			}
+			_ = ts.DBMS.DbAgentTickBatch(batch)
+			clear(pendingPersist)
+			lastFlush = time.Now()
 		}
 
 		time.Sleep(800 * time.Millisecond)

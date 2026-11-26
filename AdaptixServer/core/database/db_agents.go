@@ -94,6 +94,33 @@ func (dbms *DBMS) DbAgentTick(agentData adaptix.AgentData) error {
 	return err
 }
 
+func (dbms *DBMS) DbAgentTickBatch(list []adaptix.AgentData) error {
+	if len(list) == 0 {
+		return nil
+	}
+	if !dbms.DatabaseExists() {
+		return errors.New("database does not exist")
+	}
+	tx, err := dbms.database.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare(`UPDATE Agents SET LastTick = ? WHERE Id = ?;`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+
+	for _, agentData := range list {
+		if _, err := stmt.Exec(agentData.LastTick, agentData.Id); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (dbms *DBMS) DbAgentAll() []adaptix.AgentData {
 	var agents []adaptix.AgentData
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import {
@@ -86,17 +86,15 @@ function displaySize(it: FileItem) {
   return it.sizeText || '0 B'
 }
 
-export function FileManager({ agentId }: { agentId: string }) {
+export const FileManager = memo(function FileManager({ agentId }: { agentId: string }) {
   const api = useStore((s) => s.api)
-  const agents = useStore((s) => s.agents) || {}
+  const agent = useStore((s) => s.agents[agentId])
   const closeUiTab = useStore((s) => s.closeUiTab)
   const pushToast = useStore((s) => s.pushToast)
   const pushLog = useStore((s) => s.pushLog)
   const openConsole = useStore((s) => s.openConsole)
-  const interactBoost = useStore((s) => s.interactBoost)
+  const boosted = useStore((s) => !!s.interactBoost[agentId]?.ref)
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
-  const agent = agents[agentId]
-  const boosted = !!interactBoost[agentId]?.ref
   // Linux 主机：无盘符 / 反斜杠 / GBK 概念，界面与路径处理走 Unix 分支
   const isLinux = isLinuxAgent(agent)
   const diskLabel = isLinux ? '挂载点' : '磁盘'
@@ -1177,4 +1175,4 @@ export function FileManager({ agentId }: { agentId: string }) {
       )}
     </div>
   )
-}
+})

@@ -952,7 +952,7 @@ export function applyQtSettings(s: QtClientSettings) {
         : "'QtJetBrainsMono', 'Segoe UI', 'Microsoft YaHei UI', monospace",
     '--qt-mono-font': "'QtHack', 'QtJetBrainsMono', 'Consolas', monospace",
     '--qtc-bg': cMeta.bg,
-    '--qt-console-bg-url': `url('${qtAsset('adaptix_background.png')}')`,
+    '--qt-console-bg-url': `url('${qtAsset('adaptix_background.webp')}')`,
     '--qtc-dim': String(Math.min(0.96, Math.max(0.25, cMeta.dimming / 100))),
     '--qtc-text': cMeta.text,
     '--qtc-debug': cMeta.debug,

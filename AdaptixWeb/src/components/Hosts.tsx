@@ -1,13 +1,131 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useStore, cmdTabId } from '../store'
 import { t } from '../i18n'
 import type { Agent } from '../api/types'
-import { copyText, formatHeartbeat, fmtRelative, fmtTime, isAgentOnline, isLinuxAgent } from '../utils'
+import { copyText, formatHeartbeat, fmtTime, getLiveAgentTick, isAgentOnline, isLinuxAgent } from '../utils'
 import { lookupIpGeoSync, preloadIpGeo } from '../utils/ipdb'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
 import { loadQtSettings, qtAsset, type QtClientSettings } from '../design/qt-themes'
+
+let clock1s = Date.now()
+const listeners1s = new Set<() => void>()
+let timer1s: number | null = null
+function subscribeClock1s(cb: () => void) {
+  listeners1s.add(cb)
+  if (timer1s === null) {
+    timer1s = window.setInterval(() => {
+      clock1s = Date.now()
+      for (const fn of listeners1s) fn()
+    }, 1000)
+  }
+  return () => {
+    listeners1s.delete(cb)
+    if (listeners1s.size === 0 && timer1s !== null) {
+      window.clearInterval(timer1s)
+      timer1s = null
+    }
+  }
+}
+function getClock1s() { return clock1s }
+
+let clock5s = Date.now()
+const listeners5s = new Set<() => void>()
+let timer5s: number | null = null
+function subscribeClock5s(cb: () => void) {
+  listeners5s.add(cb)
+  if (timer5s === null) {
+    timer5s = window.setInterval(() => {
+      clock5s = Date.now()
+      for (const fn of listeners5s) fn()
+    }, 5000)
+  }
+  return () => {
+    listeners5s.delete(cb)
+    if (listeners5s.size === 0 && timer5s !== null) {
+      window.clearInterval(timer5s)
+      timer5s = null
+    }
+  }
+}
+function getClock5s() { return clock5s }
+
+const AgentLastCell = memo(function AgentLastCell({ a }: { a: Agent }) {
+  const tick = useStore((s) => s.agentTicks[a.a_id])
+  const now = useSyncExternalStore(subscribeClock1s, getClock1s)
+  const hb = formatHeartbeat(a, { now, lastTick: tick }, isLinuxAgent(a))
+  const effectiveTick = tick ?? getLiveAgentTick(a.a_id) ?? a.a_last_tick
+  return <td className="mono" title={fmtTime(effectiveTick)}>{hb.text}</td>
+})
+
+type SessionRowProps = {
+  a: Agent
+  isSel: boolean
+  geo: string
+  cols: Record<string, boolean>
+  onRowClick: (e: React.MouseEvent, a: Agent) => void
+  onPick: (a: Agent) => void
+  onRowContext: (e: React.MouseEvent, a: Agent) => void
+}
+
+const SessionRow = memo(function SessionRow({
+  a, isSel, geo, cols, onRowClick, onPick, onRowContext,
+}: SessionRowProps) {
+  const liveByTick = useStore((s) => isAgentOnline(a, { lastTick: s.agentTicks[a.a_id] }))
+  const liveByClock = useSyncExternalStore(
+    subscribeClock5s,
+    () => isAgentOnline(a, { now: getClock5s() }),
+  )
+  void liveByTick
+  void liveByClock
+  const live = isAgentOnline(a)
+  const colOn = (k: string) => cols[k] !== false
+  const ext = String(a.a_external_ip || '').trim()
+  const procText = a.a_arch ? `${a.a_process || '-'} (${a.a_arch})` : (a.a_process || '-')
+  return (
+    <tr
+      className={`${isSel ? 'selected' : ''} ${live ? '' : 'is-offline'}`.trim()}
+      onClick={(e) => onRowClick(e, a)}
+      onDoubleClick={() => onPick(a)}
+      onContextMenu={(e) => onRowContext(e, a)}
+    >
+      {colOn('id') && <td className="mono" title={a.a_id}>{a.a_id}</td>}
+      {colOn('type') && <td className="mono">{a.a_name || '-'}</td>}
+      {colOn('external') && <td className="mono">{ext || '-'}</td>}
+      {colOn('listener') && <td className="mono">{a.a_listener || '-'}</td>}
+      {colOn('internal') && <td className="mono">{a.a_internal_ip || '-'}</td>}
+      {colOn('domain') && <td>{a.a_domain || ''}</td>}
+      {colOn('computer') && <td>{a.a_computer || '-'}</td>}
+      {colOn('user') && (
+        <td>
+          {a.a_elevated ? <span className="qt-user-elev">* </span> : null}
+          {a.a_username || '-'}
+        </td>
+      )}
+      {colOn('os') && (
+        <td title={a.a_os_desc || a.a_arch || ''}>
+          <span className="qt-os-cell">
+            <img className="qt-os-icon" src={osIconPath(a, live)} alt="" />
+            <span>{a.a_os_desc || a.a_arch || '-'}</span>
+          </span>
+        </td>
+      )}
+      {colOn('process') && <td className="align-l mono" title={procText}>{procText}</td>}
+      {colOn('pid') && <td className="mono">{a.a_pid || ''}</td>}
+      {colOn('tid') && <td className="mono">{a.a_tid || ''}</td>}
+      {colOn('tags') && (
+        <td className="align-l">
+          {a.a_tags ? <span className="qt-tag-pill">{a.a_tags}</span> : ''}
+        </td>
+      )}
+      {colOn('created') && <td className="mono">{fmtTime(a.a_create_time)}</td>}
+      {colOn('last') && <AgentLastCell a={a} />}
+      {colOn('sleep') && <td className="mono">{formatQtSleep(a)}</td>}
+      {colOn('geo') && <td className="align-l" title={geo}>{geo || ''}</td>}
+    </tr>
+  )
+})
 
 function osIconPath(a: Agent, live: boolean): string {
   const desc = (a.a_os_desc || '').toLowerCase()
@@ -115,7 +233,7 @@ function CmdDlg({
   )
 }
 
-export function Hosts() {
+export const Hosts = memo(function Hosts() {
   const agents = useStore((s) => s.agents) || {}
   const filter = useStore((s) => s.filter)
   const onlyActive = useStore((s) => s.onlyActive)
@@ -164,8 +282,8 @@ export function Hosts() {
   const [sortAsc, setSortAsc] = useState(false)
   const [cols, setCols] = useState<Record<string, boolean>>(() => loadQtSettings().sessionsCols)
   const searchRef = useRef<HTMLInputElement>(null)
-  // 动态心跳：每秒刷新 age 文案（对齐 Qt LastTickWorker 500ms）
-  const [nowTick, setNowTick] = useState(() => Date.now())
+  // 仅当勾选「仅在线」筛选时，每 5 秒刷新一次过滤结果；常规视图下父表 0 定时重渲染
+  const [onlyActiveBucket, setOnlyActiveBucket] = useState(0)
   const [geoVer, setGeoVer] = useState(0)
   // 「执行命令」对话框只带主机 id —— 命令行文本是 CmdDlg 自己的 state，
   // 因为补全 hook 必须在**对话框内部**（它要跟着那台主机过滤候选）。
@@ -191,12 +309,10 @@ export function Hosts() {
     return Array.from(s).sort()
   }, [agents])
 
-  // 仅在线筛选时每 5 秒跟随 nowTick 刷新一次，避免已超时离线的主机滞留在「仅在线」结果中
-  const onlyActiveBucket = onlyActive ? Math.floor(nowTick / 5000) : 0
   const filteredFixed = useMemo(() => {
     void onlyActiveBucket
     let arr = Object.values(agents)
-    if (onlyActive) arr = arr.filter((a) => isAgentOnline(a, { now: nowTick }))
+    if (onlyActive) arr = arr.filter((a) => isAgentOnline(a))
     if (agentType !== 'ALL') arr = arr.filter((a) => a.a_name === agentType)
     if (filter.trim()) {
       const q = filter.trim().toLowerCase()
@@ -204,42 +320,28 @@ export function Hosts() {
         [a.a_id, a.a_name, a.a_computer, a.a_username, a.a_internal_ip, a.a_external_ip, a.a_process, a.a_listener, a.a_tags, a.a_domain]
           .filter(Boolean).some((x) => String(x).toLowerCase().includes(q)))
     }
-    // ★ 排序键是 a_create_time（首次注册时间，恒定），不是 a_last_tick：
-    //   last_tick 每次 WS 心跳推送都变，按它排在线主机每次回连都跳到表格
-    //   顶部，正在点的行被顶走。AGENT_TICK 只改 a_last_tick（store.ts），
-    //   AGENT_UPDATE 包里没有 CreateTime 字段（utils.go SyncPackerAgentUpdate），
-    //   所以按注册时间排完后心跳不再触发重排。缺 create_time 的旧包回退
-    //   a_id 字典序 —— 不能回退 last_tick，否则同样的跳动又回来。
     return arr.sort((a, b) => {
       const ta = a.a_create_time || 0
       const tb = b.a_create_time || 0
-      if (ta !== tb) return tb - ta // 新注册在前，贴近原「最新在顶部」的习惯
+      if (ta !== tb) return tb - ta
       return String(a.a_id).localeCompare(String(b.a_id))
     })
   }, [agents, filter, onlyActive, onlyActiveBucket, agentType])
 
-  const online = filteredFixed.filter((a) => isAgentOnline(a, { now: nowTick }))
-  const offline = filteredFixed.filter((a) => !isAgentOnline(a, { now: nowTick }))
-  const selectedAgent = selected ? agents[selected] : null
-  const selectedOnline = !!(selectedAgent && isAgentOnline(selectedAgent, { now: nowTick }))
   const ctxAgent = ctx ? agents[ctx.id] : null
-  const ctxOnline = !!(ctxAgent && isAgentOnline(ctxAgent, { now: nowTick }))
+  const ctxOnline = !!(ctxAgent && isAgentOnline(ctxAgent))
   // Linux 主机：无截图 BOF（PostEx 是 Windows 专有）。sleep 已支持（2026-11-17）。
   const ctxLinux = !!isLinuxAgent(ctxAgent)
   const tableList = filteredFixed
 
-  // ── 批量选择 ──
-  // 全选的作用域是**当前筛选结果**（tableList），不是全部主机：操作员看到什么
-  // 就勾什么。而勾选集合本身**不随筛选收窄**——勾 30 台后搜索收窄到 3 台，
-  // 那 30 台仍然是勾着的，批量条会说出真实数量并标出其中几台不在当前结果里。
-  // 这是刻意的：静默丢掉勾选，操作员就会以为自己只删 3 台。
-  const tableIds = tableList.map((a) => a.a_id)
-  const checkedVisible = tableIds.filter((id) => checkedIds.has(id)).length
-  const allChecked = tableIds.length > 0 && checkedVisible === tableIds.length
-  const someChecked = checkedVisible > 0 && !allChecked
-  const hiddenChecked = checkedIds.size - checkedVisible
-  const bulkAgents = [...checkedIds].map((id) => agents[id]).filter(Boolean) as Agent[]
-  const bulkOnline = bulkAgents.filter((a) => isAgentOnline(a, { now: nowTick })).length
+  const bulkAgents = useMemo(
+    () => (bulkDlg ? [...checkedIds].map((id) => agents[id]).filter(Boolean) as Agent[] : []),
+    [bulkDlg, checkedIds, agents],
+  )
+  const bulkOnline = useMemo(
+    () => (bulkDlg ? bulkAgents.filter((a) => isAgentOnline(a)).length : 0),
+    [bulkDlg, bulkAgents],
+  )
 
   useEffect(() => {
     const close = () => setCtx(null)
@@ -252,9 +354,10 @@ export function Hosts() {
   }, [])
 
   useEffect(() => {
-    const t = window.setInterval(() => setNowTick(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [])
+    if (!onlyActive) return
+    const id = window.setInterval(() => setOnlyActiveBucket((v) => v + 1), 5000)
+    return () => window.clearInterval(id)
+  }, [onlyActive])
 
   // Ctrl+F toggles collapsible search bar + live column config sync
   useEffect(() => {
@@ -281,22 +384,20 @@ export function Hosts() {
     }
   }, [searchOpen])
 
-  // 归属地：把这一屏主机的**外网 IP** 批量丢给服务端查一次（库在服务端，见 utils/ipdb.ts）。
-  // 表是同步渲染的、查库是异步的，所以拿回新结果后 bump 一次 geoVer 触发重渲染。
-  // 依赖 tableList：新主机进来或筛选变化时自动补查。
-  const extIps = useMemo(
-    () => tableList.map((a) => String(a.a_external_ip || '').trim()).filter(Boolean),
+  // 归属地：按去重后的外网 IP 键触发批量查询，避免列表引用变化时重复发起请求
+  const extIpsKey = useMemo(
+    () => Array.from(new Set(tableList.map((a) => String(a.a_external_ip || '').trim()).filter(Boolean))).sort().join(','),
     [tableList],
   )
   useEffect(() => {
-    if (!api || !extIps.length) return
-    preloadIpGeo(api, extIps).then((changed) => { if (changed) setGeoVer((v) => v + 1) }).catch(() => {})
-  }, [api, extIps])
+    if (!api || !extIpsKey) return
+    preloadIpGeo(api, extIpsKey.split(',')).then((changed) => { if (changed) setGeoVer((v) => v + 1) }).catch(() => {})
+  }, [api, extIpsKey])
 
-  function pick(a: Agent) {
+  const pick = useCallback((a: Agent) => {
     selectAgent(a.a_id)
     openConsole(a.a_id)
-  }
+  }, [selectAgent, openConsole])
 
   function tryFiles(id: string) {
     const a = agents[id]
@@ -351,51 +452,6 @@ export function Hosts() {
     }
   }
 
-  function SideItem({ a }: { a: Agent }) {
-    const live = isAgentOnline(a, { now: nowTick })
-    return (
-      <button
-        type="button"
-        className={`sess-item ${selected === a.a_id ? 'active' : ''}`}
-        onClick={() => pick(a)}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          selectAgent(a.a_id)
-          setCtx({ x: e.clientX, y: e.clientY, id: a.a_id })
-        }}
-      >
-        <span className={`sdot ${live ? 'on' : 'off'}`} title={live ? t('在线') : t('离线')} />
-        <div className="meta">
-          <div className="name">{a.a_computer || a.a_id}</div>
-          <div className="ip mono">{a.a_internal_ip || a.a_external_ip || '-'}</div>
-        </div>
-        <span className="tick mono dim">{fmtRelative(a.a_last_tick)}</span>
-      </button>
-    )
-  }
-
-  // 在线/离线组内按标签分子组（设置标签后主机归入对应标签组）
-  function TaggedGroup({ list }: { list: Agent[] }) {
-    const tagMap: Record<string, Agent[]> = {}
-    const untagged: Agent[] = []
-    for (const a of list) {
-      const t = (a.a_tags || '').trim()
-      if (t) { (tagMap[t] = tagMap[t] || []).push(a) } else { untagged.push(a) }
-    }
-    const tags = Object.keys(tagMap).sort()
-    return (
-      <>
-        {tags.map((t) => (
-          <div key={t}>
-            <div className="sess-tag-g mono"># {t} <span className="n">{tagMap[t].length}</span></div>
-            {tagMap[t].map((a) => <SideItem key={a.a_id} a={a} />)}
-          </div>
-        ))}
-        {untagged.map((a) => <SideItem key={a.a_id} a={a} />)}
-      </>
-    )
-  }
-
   function toggleSort(col: string) {
     if (sortCol === col) setSortAsc((v) => !v)
     else { setSortCol(col); setSortAsc(true) }
@@ -420,7 +476,7 @@ export function Hosts() {
         case 'tid': return Number(a.a_tid) || 0
         case 'tags': return a.a_tags || ''
         case 'created': return a.a_create_time || 0
-        case 'last': return a.a_last_tick || 0
+        case 'last': return getLiveAgentTick(a.a_id) ?? a.a_last_tick ?? 0
         case 'sleep': return a.a_sleep || 0
         case 'geo': return lookupIpGeoSync(String(a.a_external_ip || '').trim()) || ''
         default: return a.a_create_time || 0
@@ -456,15 +512,22 @@ export function Hosts() {
     { key: 'geo', label: 'Geo', alignLeft: true },
   ].filter((h) => colOn(h.key))
 
-  function onRowClick(e: React.MouseEvent, a: Agent) {
+  const onRowClick = useCallback((e: React.MouseEvent, a: Agent) => {
+    const curChecked = useStore.getState().checkedIds
     if (e.ctrlKey || e.metaKey) {
-      toggleChecked(a.a_id, !checkedIds.has(a.a_id))
+      toggleChecked(a.a_id, !curChecked.has(a.a_id))
       selectAgent(a.a_id)
       return
     }
-    if (checkedIds.size > 0) clearChecked()
+    if (curChecked.size > 0) clearChecked()
     selectAgent(a.a_id)
-  }
+  }, [toggleChecked, selectAgent, clearChecked])
+
+  const onRowContext = useCallback((e: React.MouseEvent, a: Agent) => {
+    e.preventDefault()
+    selectAgent(a.a_id)
+    setCtx({ x: e.clientX, y: e.clientY, id: a.a_id })
+  }, [selectAgent])
 
   return (
     <div className="qt-sessions">
@@ -570,59 +633,21 @@ export function Hosts() {
             </thead>
             <tbody>
               {sortedList.map((a) => {
-                const live = isAgentOnline(a, { now: nowTick })
-                const hb = formatHeartbeat(a, { now: nowTick }, isLinuxAgent(a))
                 const ext = String(a.a_external_ip || '').trim()
                 void geoVer
                 const geo = ext ? lookupIpGeoSync(ext) : ''
                 const isSel = selected === a.a_id || checkedIds.has(a.a_id)
-                const procText = a.a_arch ? `${a.a_process || '-'} (${a.a_arch})` : (a.a_process || '-')
                 return (
-                  <tr
+                  <SessionRow
                     key={a.a_id}
-                    className={`${isSel ? 'selected' : ''} ${live ? '' : 'is-offline'}`.trim()}
-                    onClick={(e) => onRowClick(e, a)}
-                    onDoubleClick={() => pick(a)}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      selectAgent(a.a_id)
-                      setCtx({ x: e.clientX, y: e.clientY, id: a.a_id })
-                    }}
-                  >
-                    {colOn('id') && <td className="mono" title={a.a_id}>{a.a_id}</td>}
-                    {colOn('type') && <td className="mono">{a.a_name || '-'}</td>}
-                    {colOn('external') && <td className="mono">{ext || '-'}</td>}
-                    {colOn('listener') && <td className="mono">{a.a_listener || '-'}</td>}
-                    {colOn('internal') && <td className="mono">{a.a_internal_ip || '-'}</td>}
-                    {colOn('domain') && <td>{a.a_domain || ''}</td>}
-                    {colOn('computer') && <td>{a.a_computer || '-'}</td>}
-                    {colOn('user') && (
-                      <td>
-                        {a.a_elevated ? <span className="qt-user-elev">* </span> : null}
-                        {a.a_username || '-'}
-                      </td>
-                    )}
-                    {colOn('os') && (
-                      <td title={a.a_os_desc || a.a_arch || ''}>
-                        <span className="qt-os-cell">
-                          <img className="qt-os-icon" src={osIconPath(a, live)} alt="" />
-                          <span>{a.a_os_desc || a.a_arch || '-'}</span>
-                        </span>
-                      </td>
-                    )}
-                    {colOn('process') && <td className="align-l mono" title={procText}>{procText}</td>}
-                    {colOn('pid') && <td className="mono">{a.a_pid || ''}</td>}
-                    {colOn('tid') && <td className="mono">{a.a_tid || ''}</td>}
-                    {colOn('tags') && (
-                      <td className="align-l">
-                        {a.a_tags ? <span className="qt-tag-pill">{a.a_tags}</span> : ''}
-                      </td>
-                    )}
-                    {colOn('created') && <td className="mono">{fmtTime(a.a_create_time)}</td>}
-                    {colOn('last') && <td className="mono" title={fmtTime(a.a_last_tick)}>{hb.text}</td>}
-                    {colOn('sleep') && <td className="mono">{formatQtSleep(a)}</td>}
-                    {colOn('geo') && <td className="align-l" title={geo}>{geo || ''}</td>}
-                  </tr>
+                    a={a}
+                    isSel={isSel}
+                    geo={geo}
+                    cols={cols}
+                    onRowClick={onRowClick}
+                    onPick={pick}
+                    onRowContext={onRowContext}
+                  />
                 )
               })}
             </tbody>
@@ -840,4 +865,4 @@ export function Hosts() {
       )}
     </div>
   )
-}
+})

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../i18n'
+import type { ConsoleLine } from '../api/types'
 import { cmdTabId, useStore } from '../store'
 import { copyText, isAgentOnline } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
 import { loadQtSettings, saveQtSettings, type QtClientSettings } from '../design/qt-themes'
+
+const EMPTY_CONSOLE_LINES: ConsoleLine[] = []
 
 function fmtClock(ts?: number): string {
   if (!ts) return ''
@@ -28,11 +31,13 @@ function formatLineText(kind: string, text: string): string | null {
  *  - Selectable InfoLabel ([id] user @ host.domain)
  *  - Single-line prompt (name >) + InputLineEdit with CmdSuggest autocomplete & history
  */
-export function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
-  const agents = useStore((s) => s.agents) || {}
-  const lines = useStore((s) => s.consoleLines) || []
+export const Term = memo(function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
+  const activeTab = useStore((s) => (propAgentId ? null : s.activeConsoleTab))
+  const agentId = propAgentId ?? activeTab
+  const agent = useStore((s) => (agentId ? s.agents[agentId] ?? null : null))
+  const agentTick = useStore((s) => (agentId ? s.agentTicks[agentId] : undefined))
+  const lines = useStore((s) => (agentId ? s.consoleByAgent[agentId] : undefined)) ?? EMPTY_CONSOLE_LINES
   const openTabs = useStore((s) => s.openConsoleTabs) || []
-  const activeTab = useStore((s) => s.activeConsoleTab)
   const sendCommand = useStore((s) => s.sendCommand)
   const selectAgent = useStore((s) => s.selectAgent)
   const clearConsole = useStore((s) => s.clearConsole)
@@ -42,7 +47,14 @@ export function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
   const openVnc = useStore((s) => s.openVnc)
   const openUiTab = useStore((s) => s.openUiTab)
   const pushToast = useStore((s) => s.pushToast)
-  const tasks = useStore((s) => s.tasks) || []
+  const runningTasks = useStore((s) => {
+    if (!agentId) return 0
+    let n = 0
+    for (const x of s.tasks) {
+      if (x.a_id === agentId && !x.a_completed) n++
+    }
+    return n
+  })
   const uiTabs = useStore((s) => s.uiTabs) || []
 
   const [settings, setSettings] = useState<QtClientSettings>(() => loadQtSettings())
@@ -59,9 +71,7 @@ export function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
   const inputRef = useRef<HTMLInputElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const agentId = propAgentId ?? activeTab
-  const agent = agentId ? agents[agentId] : null
-  const live = agent ? isAgentOnline(agent) : false
+  const live = agent ? isAgentOnline(agent, { lastTick: agentTick }) : false
   const history = agentId ? (historyByAgent[agentId] || []) : []
 
   const comp = useCompletion({
@@ -71,9 +81,6 @@ export function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
     fallbackCommands: FALLBACK_COMMANDS,
     fallbackBofs: FALLBACK_BOFS,
   })
-
-  const agentTasks = agentId ? tasks.filter((x) => x.a_id === agentId) : []
-  const runningTasks = agentTasks.filter((x) => !x.a_completed).length
 
   useEffect(() => {
     const onSettings = (e: Event) => {
@@ -91,13 +98,12 @@ export function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
 
   const view = useMemo(() => {
     return lines
-      .filter((l) => l.agentId === agentId)
       .map((l) => {
         const text = formatLineText(l.kind, l.text)
         return text ? { ...l, text } : null
       })
       .filter(Boolean) as typeof lines
-  }, [lines, agentId])
+  }, [lines])
 
   const matches = useMemo(() => {
     const s = searchQ.trim().toLowerCase()
@@ -375,4 +381,4 @@ export function Term({ agentId: propAgentId }: { agentId?: string } = {}) {
       )}
     </div>
   )
-}
+})

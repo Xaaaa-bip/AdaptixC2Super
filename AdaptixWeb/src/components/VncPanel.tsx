@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { isAgentOnline, isLinuxAgent } from '../utils'
@@ -16,15 +16,15 @@ type VncSession = {
   tunnel_id?: string
 }
 
-export function VncPanel({ agentId }: { agentId: string }) {
+export const VncPanel = memo(function VncPanel({ agentId }: { agentId: string }) {
   const api = useStore((s) => s.api)
-  const agents = useStore((s) => s.agents) || {}
+  const agent = useStore((s) => s.agents[agentId])
+  const agentTick = useStore((s) => s.agentTicks[agentId])
   const closeUiTab = useStore((s) => s.closeUiTab)
   const pushToast = useStore((s) => s.pushToast)
   const pushLog = useStore((s) => s.pushLog)
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
-  const agent = agents[agentId]
-  const live = !!(agent && isAgentOnline(agent))
+  const live = !!(agent && isAgentOnline(agent, { lastTick: agentTick }))
 
   const [targetPort, setTargetPort] = useState(40484)
   const [localPort, setLocalPort] = useState(41484)
@@ -279,4 +279,4 @@ export function VncPanel({ agentId }: { agentId: string }) {
       )}
     </div>
   )
-}
+})
