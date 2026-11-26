@@ -202,3 +202,32 @@ func TestSyncStartAndAgentTickCarryServerTime(t *testing.T) {
 		t.Fatalf("expected at least one swapped tick")
 	}
 }
+
+func TestMarkSyncedAndDrainNoLivelockOrLoss(t *testing.T) {
+	sc, _, cleanup := newTestWSPair(t)
+	defer cleanup()
+
+	mb := NewMessageBroker()
+	ch := NewClientHandler("carol", sc, true, mb, 2, true)
+	defer ch.Close()
+
+	// Continuously feed events (simulating 800ms agent ticks during sync).
+	const total = 200
+	for i := 0; i < total; i++ {
+		ch.BufferForSync([]byte("tick"), MsgTypeEvent, "")
+	}
+
+	buf, _ := ch.MarkSyncedAndDrain()
+	if !ch.IsSynced() {
+		t.Fatalf("expected IsSynced() == true after MarkSyncedAndDrain")
+	}
+	if len(buf) != total {
+		t.Fatalf("expected %d drained events, got %d", total, len(buf))
+	}
+
+	// Subsequent BufferForSync calls must forward directly to sendChan.
+	ch.BufferForSync([]byte("post-sync"), MsgTypeEvent, "")
+	if len(ch.sendChan) != 1 {
+		t.Fatalf("expected post-sync BufferForSync to forward to sendChan, got len=%d", len(ch.sendChan))
+	}
+}

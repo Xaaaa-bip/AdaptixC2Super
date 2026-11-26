@@ -351,11 +351,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // periodic REST refresh fallback when WS is down
+  // periodic REST refresh fallback when WS is down, stuck syncing, or silent > 20s
   useEffect(() => {
     if (!connected) return
     const tick = () => {
-      if (!useStore.getState().wsConnected) {
+      const st = useStore.getState()
+      const wsSilent = st.lastWsPacketAt === 0 || (Date.now() - st.lastWsPacketAt > 20000)
+      if (!st.wsConnected || st.syncing || wsSilent) {
         refreshRest().catch(() => {})
       }
     }

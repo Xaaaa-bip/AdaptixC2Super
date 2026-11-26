@@ -769,6 +769,20 @@ func (ch *ClientHandler) DrainBufferOrMarkSynced() ([]interface{}, map[string][]
 	return buf, stateBuf, false
 }
 
+// MarkSyncedAndDrain atomically marks synced=true under tmpMu and returns any
+// remaining buffered events so continuous ticks cannot livelock initial sync.
+func (ch *ClientHandler) MarkSyncedAndDrain() ([]interface{}, map[string][]byte) {
+	ch.tmpMu.Lock()
+	defer ch.tmpMu.Unlock()
+
+	ch.synced.Store(true)
+	buf := ch.tmpStore
+	ch.tmpStore = make([]interface{}, 0)
+	stateBuf := ch.tmpStateStore
+	ch.tmpStateStore = make(map[string][]byte)
+	return buf, stateBuf
+}
+
 func (ch *ClientHandler) GetAndClearBuffer() []interface{} {
 	ch.tmpMu.Lock()
 	defer ch.tmpMu.Unlock()

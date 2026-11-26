@@ -129,14 +129,16 @@ export const P = {
   BROWSER_PROCESS: 0x64,
 } as const
 
+// 仅订阅 Web 前端在 handlePacket 里实际消费的实时/轻量类别：
+// screenshot_history（全盘 PNG Base64）、credentials_history、targets_history、tunnels
+// 在 Web 端均走 REST 按需拉取且 handlePacket 不消费；console_history 实时输出由服务端
+// 按 ConsoleTeamMode 直接广播，无需全库预同步；tasks/downloads 历史已由 refreshRest 拉取。
+// 去掉重型无用历史预同步后，F5 同步可在毫秒级完成并立刻进入 AGENT_TICK 实时心跳流。
 export const DEFAULT_SUBSCRIPTIONS = [
   'chat_history', 'chat_realtime',
-  'downloads_history', 'downloads_realtime',
-  'screenshot_history', 'screenshot_realtime',
-  'credentials_history', 'credentials_realtime',
-  'targets_history', 'targets_realtime',
-  'console_history', 'tasks_history', 'tasks_manager',
-  'notifications', 'tunnels', 'agents', 'pivots',
+  'downloads_realtime',
+  'tasks_manager',
+  'notifications', 'agents', 'pivots',
 ]
 
 /* ---- axscript 命令树（POST /api/axscript/commands） ----

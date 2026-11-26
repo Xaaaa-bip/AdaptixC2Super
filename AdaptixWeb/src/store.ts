@@ -107,6 +107,7 @@ type State = {
   connected: boolean
   wsConnected: boolean
   syncing: boolean
+  lastWsPacketAt: number
   /**
    * 服务端自报的非回环网卡地址，来自同步起始包（SyncPackerStart.interfaces，与 Qt 侧
    * ax.interfaces() 同源）。只用于给「回连地址」的缺省值做旁证 —— 见 lib/callbackHost.ts。
@@ -302,6 +303,7 @@ let connectEpoch = 0
 let refreshRestSeq = 0
 let syncStartSeenForEpoch = 0
 let syncWatchdogTimer: ReturnType<typeof setTimeout> | null = null
+let syncFinishTimer: ReturnType<typeof setTimeout> | null = null
 let restoreInFlight: Promise<boolean> | null = null
 let cancelConnectWait: (() => void) | null = null
 
@@ -309,6 +311,10 @@ function clearSyncWatchdog() {
   if (syncWatchdogTimer !== null) {
     clearTimeout(syncWatchdogTimer)
     syncWatchdogTimer = null
+  }
+  if (syncFinishTimer !== null) {
+    clearTimeout(syncFinishTimer)
+    syncFinishTimer = null
   }
 }
 
@@ -327,6 +333,7 @@ export const useStore = create<State>((set, get) => ({
   connected: false,
   wsConnected: false,
   syncing: false,
+  lastWsPacketAt: 0,
   serverInterfaces: [],
   username: '',
   tab: 'sessions',
@@ -798,6 +805,7 @@ export const useStore = create<State>((set, get) => ({
       connected: true,
       wsConnected: false,
       syncing: true,
+      lastWsPacketAt: 0,
       username,
       lastError: '',
       browserFiles: {},
@@ -918,6 +926,8 @@ export const useStore = create<State>((set, get) => ({
           },
           onPacket: (pkt) => {
             if (epoch === connectEpoch) {
+              const ts = Date.now()
+              if (ts - get().lastWsPacketAt > 2000) set({ lastWsPacketAt: ts })
               get().handlePacket(pkt)
             }
           },
@@ -947,6 +957,7 @@ export const useStore = create<State>((set, get) => ({
       connected: false,
       wsConnected: false,
       syncing: false,
+      lastWsPacketAt: 0,
       serverInterfaces: [],
       username: '',
       agents: {},
@@ -984,6 +995,17 @@ export const useStore = create<State>((set, get) => ({
         // Web 这边只拿它给「回连地址」的缺省值做旁证 —— 见 lib/callbackHost.ts。
         syncStartSeenForEpoch = connectEpoch
         clearSyncWatchdog()
+        {
+          const syncEpoch = connectEpoch
+          // 防止 SYNC_START 到达后因大包/代理丢帧导致 SYNC_FINISH 迟迟不到而永久卡死在「同步 拉取中」
+          syncFinishTimer = setTimeout(() => {
+            syncFinishTimer = null
+            if (syncEpoch === connectEpoch && get().syncing) {
+              set({ syncing: false })
+              get().refreshRest().catch(() => {})
+            }
+          }, 10000)
+        }
         if (pkt.server_time) syncServerClock(pkt.server_time)
         set({ syncing: true, serverInterfaces: Array.isArray(pkt.interfaces) ? pkt.interfaces : [] })
         break

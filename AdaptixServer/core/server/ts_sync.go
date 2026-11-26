@@ -236,10 +236,15 @@ func (ts *Teamserver) sendSyncPackets(client *ClientHandler, packets []interface
 	client.SendSync(startData)
 
 	for _, serialized := range serializedPackets {
+		if client.IsClosed() {
+			return
+		}
 		client.SendSync(serialized)
 	}
 
-	client.SendSync(finishData)
+	if !client.IsClosed() {
+		client.SendSync(finishData)
+	}
 }
 
 ///////////////
@@ -382,7 +387,7 @@ func (ts *Teamserver) TsPresyncTasks() []interface{} {
 		if !ok {
 			return true
 		}
-		agentTasks := ts.DBMS.DbTasksAll(key)
+		agentTasks := ts.DBMS.DbTasksLimited(key, MaxTasksPerAgent)
 		sortedTasks = append(sortedTasks, agentTasks...)
 		return true
 	})
@@ -417,7 +422,7 @@ func (ts *Teamserver) TsPresyncConsole(client *ClientHandler) []interface{} {
 				return true
 			}
 		}
-		restoreConsoles := ts.DBMS.DbConsoleAll(key)
+		restoreConsoles := ts.DBMS.DbConsoleLimited(key, MaxConsoleEntriesPerAgent)
 		for _, message := range restoreConsoles {
 			if !consoleTeamMode {
 				var check struct {
@@ -451,7 +456,7 @@ func (ts *Teamserver) TsPresyncConsoleInactive(client *ClientHandler) []interfac
 		if !ts.isAgentInactive(agentData.Mark) {
 			return true
 		}
-		restoreConsoles := ts.DBMS.DbConsoleAll(key)
+		restoreConsoles := ts.DBMS.DbConsoleLimited(key, MaxConsoleEntriesPerAgent)
 		for _, message := range restoreConsoles {
 			if !consoleTeamMode {
 				var check struct {
