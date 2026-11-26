@@ -1,11 +1,7 @@
-/* AdaptixWeb — 客户端壳（AdaptixClient adaptix_dark 为蓝本的三段式 dock 布局） */
-/* Tokens: design/tokens.css · Motion: design/motion.css · 旧壳(页面级样式仍用): ops-hard/hacker/glass · 客户端壳: design/client.css（必须最后） */
+/* AdaptixWeb — Native Qt Desktop Style (Qlementine + KDDockWidgets 1:1) */
 @import "./design/tokens.css";
 @import "./design/motion.css";
-@import "./design/ops-hard.css";
-@import "./design/hacker.css";
-@import "./design/glass.css";
-@import "./design/client.css";
+@import "./design/qt.css";
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }

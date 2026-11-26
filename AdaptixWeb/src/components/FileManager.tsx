@@ -14,6 +14,7 @@ import {
 } from '../utils/textDecode'
 import { copyText, isLinuxAgent } from '../utils'
 import { PageTips } from './PageTips'
+import { qtAsset } from '../design/qt-themes'
 
 type SortKey = 'name' | 'size' | 'date' | 'type'
 type Ctx = { x: number; y: number; item: FileItem } | null
@@ -64,27 +65,25 @@ function extOf(name: string) {
   return name.slice(i + 1).toLowerCase()
 }
 
-function fileIcon(it: FileItem, isDisk = false, linux = false) {
-  // Linux 挂载点用中性文件夹图标，不做盘符判定
-  if (isDisk) return linux ? '📁' : '💾'
-  if (!linux && /^[a-zA-Z]:\\?$/.test(it.name)) return '💾'
-  if (it.isDir) return '📁'
-  const e = extOf(it.name)
-  if (['exe', 'msi', 'bat', 'cmd', 'ps1', 'com', 'scr'].includes(e)) return '⚙️'
-  if (['dll', 'sys', 'ocx'].includes(e)) return '🧩'
-  if (['txt', 'log', 'md', 'ini', 'cfg', 'conf', 'json', 'xml', 'yml', 'yaml'].includes(e)) return '📄'
-  if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'svg'].includes(e)) return '🖼️'
-  if (['zip', 'rar', '7z', 'tar', 'gz', 'cab'].includes(e)) return '📦'
-  if (['pdf'].includes(e)) return '📕'
-  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv'].includes(e)) return '📊'
-  if (['mp3', 'wav', 'flac', 'aac'].includes(e)) return '🎵'
-  if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(e)) return '🎬'
-  return '📃'
+function fileIconSrc(it: FileItem, isDisk = false, linux = false): string {
+  if (isDisk || (!linux && /^[a-zA-Z]:\\?$/.test(it.name))) return qtAsset('icons/filesystem/ssd_64dp.png')
+  if (it.isDir) return qtAsset('icons/filesystem/folder_64dp.png')
+  return qtAsset('icons/filesystem/document_64dp.png')
+}
+
+function fmtBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '—'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 
 function displaySize(it: FileItem) {
-  if (it.isDir) return '—'
-  return it.sizeText || (it.size ? String(it.size) : '—')
+  if (it.isDir) return ''
+  if (it.size && it.size > 0) return fmtBytes(it.size)
+  if (it.sizeText && /^\d+$/.test(it.sizeText.trim())) return fmtBytes(Number(it.sizeText.trim()))
+  return it.sizeText || '0 B'
 }
 
 export function FileManager({ agentId }: { agentId: string }) {
@@ -135,9 +134,31 @@ export function FileManager({ agentId }: { agentId: string }) {
     detected?: TextEncodingId
     busy?: boolean
   } | null>(null)
+  const [treePct, setTreePct] = useState(24)
+  const [draggingSplit, setDraggingSplit] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const seq = useRef(0)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const filterRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!draggingSplit) return
+    const onMove = (e: MouseEvent) => {
+      const box = wrapRef.current?.getBoundingClientRect()
+      if (!box || box.width <= 0) return
+      const pct = Math.max(15, Math.min(48, ((e.clientX - box.left) / box.width) * 100))
+      setTreePct(pct)
+    }
+    const onUp = () => setDraggingSplit(false)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [draggingSplit])
 
   const crumbs = useMemo(() => crumbsOf(mode === 'disks' ? '' : path, isLinux), [path, mode, isLinux])
 
@@ -156,8 +177,8 @@ export function FileManager({ agentId }: { agentId: string }) {
       if (d) return d
       let cmp = 0
       if (sortKey === 'name') cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-      else if (sortKey === 'size') cmp = (a.sizeText || '').localeCompare(b.sizeText || '')
-      else if (sortKey === 'date') cmp = (a.dateText || '').localeCompare(b.dateText || '')
+      else if (sortKey === 'size') cmp = (a.size || 0) - (b.size || 0)
+      else if (sortKey === 'date') cmp = (a.date || 0) - (b.date || 0) || (a.dateText || '').localeCompare(b.dateText || '')
       else cmp = Number(b.isDir) - Number(a.isDir)
       return sortAsc ? cmp : -cmp
     })
@@ -643,18 +664,23 @@ export function FileManager({ agentId }: { agentId: string }) {
     if (!node) return null
     const kids = (node.children || []).filter((c) => c !== nodePath && !seen.has(c))
     const active = (mode === 'disks' && nodePath === '') || (mode === 'list' && path === nodePath)
+    const treeIcon = nodePath === '' || (!isLinux && /^[a-zA-Z]:\\?$/.test(nodePath))
+      ? qtAsset('icons/filesystem/ssd_64dp.png')
+      : (node.open || node.loaded ? qtAsset('icons/filesystem/open_folder_64dp.png') : qtAsset('icons/filesystem/folder_64dp.png'))
+
     return (
       <div key={nodePath || 'root'}>
         <div
-          className={`fm-tree-item ${active ? 'active' : ''}`}
-          style={{ paddingLeft: 8 + depth * 14 }}
+          className={`qt-tree-row ${active ? 'active' : ''}`}
+          style={{ paddingLeft: 6 + depth * 14 }}
           onClick={() => {
             if (nodePath === '') loadDisks()
             else load(nodePath)
           }}
         >
           <button
-            className="fm-tree-caret"
+            type="button"
+            className="qt-tree-caret"
             onClick={(e) => {
               e.stopPropagation()
               setTree((t) => ({
@@ -666,8 +692,8 @@ export function FileManager({ agentId }: { agentId: string }) {
           >
             {kids.length ? (node.open ? '▾' : '▸') : '·'}
           </button>
-          <span className="fm-tree-ico">{nodePath === '' ? '💻' : ((!isLinux && /^[a-zA-Z]:\\?$/.test(nodePath)) ? '💾' : '📁')}</span>
-          <span className="fm-tree-name" title={nodePath || rootLabel}>{nodePath === '' ? rootLabel : node.name}</span>
+          <img className="qt-ico qt-tree-ico" src={treeIcon} alt="" />
+          <span className="qt-tree-lbl" title={nodePath || rootLabel}>{nodePath === '' ? rootLabel : node.name}</span>
         </div>
         {node.open && kids.map((c) => renderTree(c, depth + 1, seen))}
       </div>
@@ -675,370 +701,474 @@ export function FileManager({ agentId }: { agentId: string }) {
   }
 
   const hostTitle = agent?.a_computer || agentId
-  // Linux 根目录 / 挂载点根无上一级（Windows 为盘符根）
   const canUp = mode !== 'disks' && path && path !== '.' && (isLinux ? path !== '/' : !/^[a-zA-Z]:\\?$/.test(path))
+  const dirCount = view.filter((x) => x.isDir).length
+  const fileCount = view.length - dirCount
+  const sortArrow = (k: SortKey) => (sortKey === k ? (sortAsc ? ' ▲' : ' ▼') : '')
+
+  function onWrapKey(e: React.KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      filterRef.current?.focus()
+      filterRef.current?.select()
+    } else if (e.key === 'Backspace' && canUp) {
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault()
+        load(parentOf(path || '.'))
+      }
+    }
+  }
 
   return (
-    <div className="fm">
-      {/* Title bar */}
-      <div className="fm-titlebar">
-        <div className="fm-title">
-          <span className="fm-appico">📁</span>
-          <div>
-            <div className="fm-appname">{t('文件管理')}</div>
-            <div className="fm-appsub mono">{hostTitle}{agent?.a_internal_ip ? ` · ${agent.a_internal_ip}` : ''} · {agentId}</div>
-          </div>
+    <div
+      className="qt-browser"
+      ref={wrapRef}
+      tabIndex={0}
+      onKeyDown={onWrapKey}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => doUpload(e.target.files)}
+      />
+
+      {/* Left Pane: Directory Tree (QTreeWidget) */}
+      <aside className="qt-browser-tree" style={{ width: `${treePct}%` }}>
+        <div className="qt-tree-hd">
+          <span>Directory Tree</span>
+          <span className="qt-tree-hd-actions">
+            <button type="button" className="qt-tree-hd-btn" title={diskLabel} onClick={() => loadDisks()}>
+              {isLinux ? '/' : 'Disks'}
+            </button>
+            <button type="button" className="qt-tree-hd-btn" title={t('当前目录')} onClick={() => load('.')}>
+              .
+            </button>
+          </span>
         </div>
-        <div className="fm-title-actions">
-          {isLinux ? (
-            <span className="fm-boost" title={t('Linux beacon：编译期固定节拍，无 sleep 0 交互加速')}>Linux</span>
-          ) : (
-            <span className={`fm-boost ${boosted || agent?.a_sleep === 0 ? 'on' : ''}`} title="打开本页会自动 sleep 0；关闭页签后恢复">
-              {boosted || agent?.a_sleep === 0 ? t('交互加速 · sleep 0') : `Sleep ${agent?.a_sleep ?? '-'}s`}
-            </span>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(e) => doUpload(e.target.files)}
-          />
+        <div className="qt-tree-bd">
+          {renderTree('')}
+        </div>
+      </aside>
+
+      {/* Draggable Horizontal QSplitter */}
+      <div
+        className={`qt-vsplit ${draggingSplit ? 'dragging' : ''}`}
+        role="separator"
+        aria-orientation="vertical"
+        title={t('拖拽调整目录树宽度，双击还原')}
+        onMouseDown={() => setDraggingSplit(true)}
+        onDoubleClick={() => setTreePct(24)}
+      />
+
+      {/* Right Pane: Qt Toolbar + Breadcrumbs + QTableView + Compact Footer */}
+      <section
+        className="qt-browser-main"
+        onDragOver={(e) => {
+          if (mode === 'disks') return
+          e.preventDefault()
+          if (!dragOver) setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOver(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          if (mode !== 'disks' && e.dataTransfer?.files?.length) {
+            void doUpload(e.dataTransfer.files)
+          }
+        }}
+      >
+        {dragOver && (
+          <div className="qt-drop-overlay">
+            <img className="qt-ico qt-ico-mono" src={qtAsset('icons/upload_file_64dp.png')} alt="" style={{ width: 32, height: 32 }} />
+            <div>{t('释放文件以上传到')} {path || '.'}</div>
+          </div>
+        )}
+
+        {/* Primary Qt Browser Toolbar */}
+        <div className="qt-browser-bar">
+          <button type="button" className="qt-b-ico-btn" disabled={histIdx <= 0 || busy} onClick={goBack} title={t('后退')}>
+            ←
+          </button>
+          <button type="button" className="qt-b-ico-btn" disabled={histIdx >= history.length - 1 || busy} onClick={goForward} title={t('前进')}>
+            →
+          </button>
           <button
-            className="primary"
+            type="button"
+            className="qt-b-ico-btn"
+            disabled={!canUp || busy}
+            onClick={() => load(parentOf(path || '.'))}
+            title="Up folder (Backspace)"
+          >
+            <img className="qt-ico qt-ico-mono" src={qtAsset('icons/arrow_drop_up_64dp.png')} alt="" />
+          </button>
+          <button
+            type="button"
+            className="qt-b-ico-btn"
+            disabled={busy}
+            onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))}
+            title="Reload"
+          >
+            <img className="qt-ico qt-ico-mono" src={qtAsset('icons/autorenew_64dp.png')} alt="" />
+          </button>
+
+          {/* Editable Path Bar (never disabled while loading so Enter focus never drops) */}
+          <div className="qt-b-path-wrap">
+            <input
+              className="qt-b-path"
+              value={pathInput}
+              onChange={(e) => setPathInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const v = pathInput.trim()
+                  if (!v) loadDisks()
+                  else load(v)
+                }
+              }}
+              placeholder={isLinux ? '/etc' : 'C:\\Users'}
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              className="qt-b-ico-btn"
+              disabled={busy}
+              title="Go"
+              onClick={() => {
+                const v = pathInput.trim()
+                if (!v) loadDisks()
+                else load(v)
+              }}
+            >
+              <img className="qt-ico qt-ico-mono" src={qtAsset('icons/arrow_right_alt_64dp.png')} alt="" />
+            </button>
+          </div>
+
+          <span className="qt-tb-vline" />
+
+          <button
+            type="button"
+            className="qt-b-btn primary"
             disabled={busy || uploading || mode === 'disks'}
-            title={mode === 'disks' ? '请先进入目录' : '上传到当前目录'}
+            title={mode === 'disks' ? t('请先进入目录') : t('上传本地文件到当前目录（支持拖拽）')}
             onClick={() => fileInputRef.current?.click()}
           >
-            {uploading ? '上传中…' : t('上传')}
+            <img className="qt-ico" src={qtAsset('icons/upload_file_64dp.png')} alt="" style={{ filter: 'brightness(10)' }} />
+            <span>{uploading ? t('上传中…') : t('上传')}</span>
           </button>
-          <button className="ghost" disabled={busy || uploading} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))}>
-            {busy ? '刷新中…' : t('刷新')}
+          <button
+            type="button"
+            className="qt-b-btn"
+            disabled={busy}
+            title="Disks list"
+            onClick={() => loadDisks()}
+          >
+            <img className="qt-ico qt-ico-mono" src={qtAsset('icons/storage_64dp.png')} alt="" />
+            <span>{diskLabel}</span>
           </button>
-          <button className="ghost" onClick={() => closeUiTab(`files:${agentId}` as any)}>{t('关闭')}</button>
+
+          <input
+            ref={filterRef}
+            className="qt-b-filter"
+            type="search"
+            placeholder={t('过滤当前目录 (Ctrl+F)')}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+
+          <span className="qt-tb-vline" />
+
+          <span className={`qt-b-status ${err ? 'err' : busy || uploading ? 'busy' : 'ok'}`}>
+            {err ? err : busy ? (progress || t('读取中…')) : uploading ? t('上传中…') : (message || 'Status: OK')}
+          </span>
+
           <PageTips id="files">
-            <p>双击目录进入；面包屑/上级按钮导航；右键下载/删除/复制路径。</p>
-            <p><b>{t('Linux 主机显示挂载点')}</b>{t('（无盘符）；预览自动识别编码（UTF-8 优先）。')}</p>
-            <p>{t('多选支持 Ctrl/Shift，可批量下载/删除；「上传」投递本地文件到当前目录。')}</p>
+            <p>{t('左侧为目录树，右侧为文件表；双击目录进入、双击文件预览、支持拖拽本地文件直接上传。')}</p>
+            <p>{t('Ctrl/Shift 多选可批量下载或删除；Backspace 返回上级目录；预览支持 UTF-8 / GBK 编码切换。')}</p>
           </PageTips>
         </div>
-      </div>
 
-      {/* Nav toolbar */}
-      <div className="fm-nav">
-        <button className="ico" disabled={histIdx <= 0 || busy} onClick={goBack} title={t('后退')}>←</button>
-        <button className="ico" disabled={histIdx >= history.length - 1 || busy} onClick={goForward} title={t('前进')}>→</button>
-        <button className="ico" disabled={!canUp || busy} onClick={() => load(parentOf(path || '.'))} title={t('上级')}>↑</button>
-        <button className="ico" disabled={busy} onClick={() => (mode === 'disks' ? loadDisks({ fromHistory: true }) : load(path || '.', { fromHistory: true }))} title={t('刷新')}>↻</button>
-        <div className="sep" />
-        <button disabled={busy} onClick={() => loadDisks()}>{isLinux ? '挂载点' : '此电脑'}</button>
-        {!isLinux && <button disabled={busy} onClick={() => load('C:\\')}>C:\</button>}
-        <button disabled={busy} onClick={() => load('.')}>{t('当前目录')}</button>
-        <div className="sep" />
-        <div className="fm-crumbs">
+        {/* Ultra-compact Breadcrumb + Quick Jump + Sleep Boost strip */}
+        <div className="qt-b-crumbs">
           {crumbs.map((c, i) => (
-            <span key={c.path + i} className="fm-crumb">
-              {i > 0 && <span className="fm-crumb-sep">›</span>}
+            <span key={c.path + i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              {i > 0 && <span className="qt-b-crumb-sep">›</span>}
               <button
-                className="ghost fm-crumb-btn"
+                type="button"
+                className={`qt-b-crumb-btn ${i === crumbs.length - 1 ? 'last' : ''}`}
                 disabled={busy}
                 onClick={() => (c.path === '' ? loadDisks() : load(c.path))}
-                title={c.path || (isLinux ? '挂载点' : '此电脑')}
+                title={c.path || rootLabel}
               >
                 {c.label}
               </button>
             </span>
           ))}
-        </div>
-        {/*
-          ★ 这里**不能**加 disabled={busy}：disabled 的元素浏览器会立刻收回焦点，
-            而 load() 要等主机回显（可能好几秒），表现就是"敲路径回车跳转一次之后，
-            必须再用鼠标点一下输入框才能敲下一个路径"。
-            连按回车不会乱：load() 自己有 `const my = ++seq.current` 的序号防重入，
-            后发的赢、先发的作废（见 load 里的 `if (my !== seq.current) return`）。
-        */}
-        <input
-          className="fm-path"
-          value={pathInput}
-          onChange={(e) => setPathInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const v = pathInput.trim()
-              if (!v) loadDisks()
-              else load(v)
-            }
-          }}
-          placeholder={t('输入路径后回车')}
-        />
-        <button className="primary" disabled={busy} onClick={() => {
-          const v = pathInput.trim()
-          if (!v) loadDisks()
-          else load(v)
-        }}>{t('转到')}</button>
-        <input
-          className="fm-search"
-          type="search"
-          placeholder={t('过滤当前列表')}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-      </div>
-
-      {/* Body: tree + table + detail */}
-      <div className="fm-body">
-        <aside className="fm-tree">
-          <div className="fm-tree-hd">{t('导航')}</div>
-          <div className="fm-tree-bd">
-            {renderTree('')}
-          </div>
-          <div className="fm-tree-ft dim">{t('双击目录进入 · 右键更多操作')}</div>
-        </aside>
-
-        <section className="fm-main">
-          <div className="fm-table-wrap" ref={tableRef}>
-            {busy && (
-              <div className="fm-loading">
-                <div className="fm-spinner" />
-                <div>{t('正在读取主机文件…')}</div>
-                <div className="dim">{progress || '下发命令并轮询任务结果'}</div>
-                <div className="dim">{t('超时约 20s；若 sleep 较长请稍等或把 sleep 调小')}</div>
-              </div>
-            )}
-            {!busy && err && (
-              <div className="fm-empty">
-                <div className="big">!</div>
-                <div className="err">{err}</div>
-                <button className="primary" onClick={() => (mode === 'disks' ? loadDisks() : load(path || '.'))}>{t('重试')}</button>
-              </div>
-            )}
-            {!busy && !err && view.length === 0 && (
-              <div className="fm-empty">
-                <div className="big">📁</div>
-                <div>{t('空目录')}</div>
-                <div className="dim">{mode === 'disks' ? (isLinux ? '未发现挂载点' : '未发现磁盘') : (path || '.')}</div>
-              </div>
-            )}
-            {!busy && !err && view.length > 0 && (
-              <table className="fm-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 34 }}>
-                      <input
-                        type="checkbox"
-                        checked={view.length > 0 && view.every((x) => selectedSet.has(x.name))}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedSet(new Set(view.map((x) => x.name)))
-                          else setSelectedSet(new Set())
-                        }}
-                        title={t('全选当前列表')}
-                      />
-                    </th>
-                    <th style={{ width: 44 }}></th>
-                    <th className="sortable" onClick={() => toggleSort('name')}>
-                      名称 {sortKey === 'name' ? (sortAsc ? '↑' : '↓') : ''}
-                    </th>
-                    <th style={{ width: 110 }} className="sortable" onClick={() => toggleSort('size')}>
-                      大小 {sortKey === 'size' ? (sortAsc ? '↑' : '↓') : ''}
-                    </th>
-                    <th style={{ width: 150 }} className="sortable" onClick={() => toggleSort('date')}>
-                      修改时间 {sortKey === 'date' ? (sortAsc ? '↑' : '↓') : ''}
-                    </th>
-                    <th style={{ width: 90 }}>{t('类型')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.map((it) => {
-                    const active = selectedSet.has(it.name) || selected === it.name
-                    const disk = mode === 'disks'
-                    return (
-                      <tr
-                        key={it.name}
-                        className={active ? 'selected' : ''}
-                        onClick={(e) => onRowClick(it, e)}
-                        onDoubleClick={() => openItem(it)}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          if (!selectedSet.has(it.name)) {
-                            setSelected(it.name)
-                            setSelectedSet(new Set([it.name]))
-                          }
-                          setCtx({ x: e.clientX, y: e.clientY, item: it })
-                        }}
-                      >
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedSet.has(it.name)}
-                            onChange={(e) => {
-                              setSelectedSet((prev) => {
-                                const n = new Set(prev)
-                                if (e.target.checked) n.add(it.name)
-                                else n.delete(it.name)
-                                return n
-                              })
-                              setSelected(it.name)
-                              setLastClicked(it.name)
-                            }}
-                          />
-                        </td>
-                        <td className="fm-ico">{fileIcon(it, disk, isLinux)}</td>
-                        <td>
-                          <div className="fm-name">{it.name}</div>
-                        </td>
-                        <td className="mono dim">{displaySize(it)}</td>
-                        <td className="mono dim">{it.dateText || '—'}</td>
-                        <td className="dim">{disk ? diskLabel : it.isDir ? '文件夹' : (extOf(it.name).toUpperCase() || t('文件'))}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div className="fm-statusbar">
-            <span>{view.length} 个对象{q ? `（已过滤）` : ''}</span>
-            <span className="dim mono">{mode === 'disks' ? (isLinux ? '挂载点' : '此电脑') : (path || '.')}</span>
-            <span className="dim">{message || progress}</span>
-            {selectedSet.size > 1 ? (
-              <span className="mono">已选 {selectedSet.size} 项</span>
-            ) : selectedItem ? (
-              <span className="mono">选中：{selectedItem.name}</span>
-            ) : null}
-            {selectedSet.size > 1 && mode !== 'disks' && (
-              <span className="fm-multi-actions">
-                <button className="ghost" disabled={busy || uploading} onClick={() => doDownloadMulti(multiItems)}>{t('批量下载')}</button>
-                <button className="danger" disabled={busy || uploading} onClick={() => doRmMulti(multiItems)}>{t('批量删除')}</button>
-              </span>
-            )}
-          </div>
-        </section>
-
-        <aside className="fm-detail">
-          <div className="fm-detail-hd">{t('详细信息')}</div>
-          {!selectedItem ? (
-            <div className="fm-detail-empty dim">{t('选择文件或文件夹查看详情')}</div>
-          ) : (
-            <div className="fm-detail-bd">
-              <div className="fm-detail-ico">{fileIcon(selectedItem, mode === 'disks', isLinux)}</div>
-              <div className="fm-detail-name" title={selectedItem.name}>{selectedItem.name}</div>
-              <div className="fm-kv">
-                <div><span>{t('类型')}</span><b>{mode === 'disks' ? diskLabel : selectedItem.isDir ? '文件夹' : (extOf(selectedItem.name) || t('文件'))}</b></div>
-                <div><span>{t('大小')}</span><b>{displaySize(selectedItem)}</b></div>
-                <div><span>{t('修改')}</span><b>{selectedItem.dateText || '—'}</b></div>
-                <div><span>{t('路径')}</span><b className="mono">{itemPath(selectedItem)}</b></div>
-              </div>
-              <div className="fm-detail-actions">
-                {(selectedItem.isDir || mode === 'disks') ? (
-                  <button className="primary" disabled={busy} onClick={() => openItem(selectedItem)}>{t('打开')}</button>
-                ) : (
-                  <>
-                    <button className="primary" disabled={busy} onClick={() => doDownload(selectedItem)}>{t('下载')}</button>
-                    <button disabled={busy} onClick={() => doCat(selectedItem)}>{t('查看')}</button>
-                  </>
-                )}
-                <button disabled={busy} onClick={() => copyPath(selectedItem)}>{t('复制路径')}</button>
-                {mode !== 'disks' && (
-                  <button className="danger" disabled={busy} onClick={() => doRm(selectedItem)}>{t('删除')}</button>
-                )}
-              </div>
-            </div>
+          {!isLinux && (
+            <button type="button" className="qt-b-crumb-btn" style={{ marginLeft: 8 }} onClick={() => load('C:\\')}>
+              [C:\]
+            </button>
           )}
-        </aside>
-      </div>
+          <button type="button" className="qt-b-crumb-btn" onClick={() => openConsole(agentId)}>
+            [Console]
+          </button>
+          <span className={`qt-b-boost ${!isLinux && (boosted || agent?.a_sleep === 0) ? 'on' : ''}`}>
+            {isLinux ? `${hostTitle} · Linux` : `${hostTitle} · ${boosted || agent?.a_sleep === 0 ? 'sleep 0' : `${agent?.a_sleep ?? '-'}s`}`}
+          </span>
+        </div>
 
+        {/* Main QTableView */}
+        <div className="qt-table-wrap" ref={tableRef}>
+          {busy && view.length === 0 ? (
+            <div className="qt-table-empty">
+              <div>{t('正在读取主机文件…')}</div>
+              <div style={{ fontSize: 11 }}>{progress || t('下发命令并等待主机回显')}</div>
+            </div>
+          ) : !busy && err ? (
+            <div className="qt-table-empty">
+              <div style={{ color: 'var(--qt-err)' }}>{err}</div>
+              <button type="button" className="primary" onClick={() => (mode === 'disks' ? loadDisks() : load(path || '.'))}>
+                {t('重试')}
+              </button>
+            </div>
+          ) : !busy && view.length === 0 ? (
+            <div className="qt-table-empty">
+              <img className="qt-ico qt-ico-mono" src={qtAsset('icons/filesystem/folder_64dp.png')} alt="" style={{ width: 32, height: 32, opacity: 0.5 }} />
+              <div>{t('空目录')} ({mode === 'disks' ? rootLabel : (path || '.')})</div>
+            </div>
+          ) : (
+            <table className="qt-table">
+              <thead>
+                <tr>
+                  <th className="align-l" onClick={() => toggleSort('name')}>Name{sortArrow('name')}</th>
+                  {isLinux && mode !== 'disks' && (
+                    <>
+                      <th style={{ width: 100 }}>Mode</th>
+                      <th style={{ width: 88 }}>User</th>
+                      <th style={{ width: 88 }}>Group</th>
+                    </>
+                  )}
+                  <th style={{ width: 108 }} onClick={() => toggleSort('size')}>Size{sortArrow('size')}</th>
+                  <th style={{ width: 165 }} onClick={() => toggleSort('date')}>Last Modified{sortArrow('date')}</th>
+                  {!isLinux && <th style={{ width: 84 }}>{mode === 'disks' ? 'Disk Type' : 'Type'}</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {view.map((it) => {
+                  const active = selectedSet.has(it.name) || selected === it.name
+                  const disk = mode === 'disks'
+                  const ext = !it.isDir && !disk ? extOf(it.name).toUpperCase() : ''
+                  return (
+                    <tr
+                      key={it.name}
+                      className={active ? 'selected' : ''}
+                      onClick={(e) => onRowClick(it, e)}
+                      onDoubleClick={() => openItem(it)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        if (!selectedSet.has(it.name)) {
+                          setSelected(it.name)
+                          setSelectedSet(new Set([it.name]))
+                        }
+                        setCtx({ x: e.clientX, y: e.clientY, item: it })
+                      }}
+                    >
+                      <td className="align-l" title={it.name}>
+                        <span className="qt-file-cell">
+                          <img className="qt-ico qt-file-ico" src={fileIconSrc(it, disk, isLinux)} alt="" />
+                          <span className={it.isDir || disk ? 'qt-file-dir' : ''}>{it.name}</span>
+                        </span>
+                      </td>
+                      {isLinux && mode !== 'disks' && (
+                        <>
+                          <td className="mono" style={{ color: 'var(--qt-text-muted)' }}>{it.mode || ''}</td>
+                          <td>{it.user || ''}</td>
+                          <td>{it.group || ''}</td>
+                        </>
+                      )}
+                      <td className="mono">{displaySize(it)}</td>
+                      <td className="mono" style={{ color: 'var(--qt-text-muted)' }}>{it.dateText || ''}</td>
+                      {!isLinux && (
+                        <td>
+                          {disk
+                            ? (it.diskType || diskLabel)
+                            : it.isDir
+                              ? <span style={{ color: 'var(--qt-text-muted)' }}>DIR</span>
+                              : (ext ? <span className="qt-file-ext">{ext}</span> : '')}
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Compact Qt Footer Status + Inline Selection Actions */}
+        <footer className="qt-browser-foot">
+          <span className="mono">
+            {mode === 'disks' ? `${view.length} ${diskLabel}` : `${view.length} items (${dirCount} dirs, ${fileCount} files)`}
+          </span>
+          <span className="qt-south-sep" />
+          <span className="qt-browser-foot-path" title={selectedItem ? itemPath(selectedItem) : path}>
+            {selectedSet.size > 1
+              ? `${selectedSet.size} selected`
+              : selectedItem
+                ? itemPath(selectedItem)
+                : (mode === 'disks' ? rootLabel : (path || '.'))}
+          </span>
+
+          {selectedSet.size > 1 && mode !== 'disks' ? (
+            <span className="qt-browser-foot-actions">
+              <button type="button" className="primary" disabled={busy || uploading} onClick={() => doDownloadMulti(multiItems)}>
+                {t('批量下载')} ({selectedSet.size})
+              </button>
+              <button type="button" className="danger" disabled={busy || uploading} onClick={() => doRmMulti(multiItems)}>
+                {t('批量删除')} ({selectedSet.size})
+              </button>
+            </span>
+          ) : selectedItem ? (
+            <span className="qt-browser-foot-actions">
+              {(selectedItem.isDir || mode === 'disks') ? (
+                <button type="button" className="primary" disabled={busy} onClick={() => openItem(selectedItem)}>
+                  {t('打开')}
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="primary" disabled={busy} onClick={() => doDownload(selectedItem)}>
+                    {t('下载')}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => doCat(selectedItem)}>
+                    {t('查看')}
+                  </button>
+                </>
+              )}
+              <button type="button" disabled={busy} onClick={() => copyPath(selectedItem)}>
+                {t('复制路径')}
+              </button>
+              {mode !== 'disks' && (
+                <button type="button" className="danger" disabled={busy} onClick={() => doRm(selectedItem)}>
+                  {t('删除')}
+                </button>
+              )}
+            </span>
+          ) : null}
+        </footer>
+      </section>
+
+      {/* Qt Text File Preview Dialog */}
       {preview && (
-        <div className="mask" onMouseDown={(e) => { if (e.target === e.currentTarget && !preview.busy) setPreview(null) }}>
-          <div className="dlg fm-preview-dlg" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="dlg-hd">
-              <div>
-                <h2>查看 · {preview.title}</h2>
-                <div className="dim mono" style={{ fontSize: 12 }}>{preview.path}</div>
-              </div>
-              <div className="fm-preview-tools">
-                <label className="fm-enc-label">
-                  <span>{t('编码')}</span>
-                  <select
-                    className="fm-enc-select"
-                    disabled={!!preview.busy}
-                    value={preview.encoding}
-                    onChange={(e) => setPreviewEncoding(e.target.value as TextEncodingId)}
-                    title={t('切换文本编码以修复乱码')}
-                  >
-                    {TEXT_ENCODING_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.id === 'auto' && preview.detected
-                          ? `自动（检测: ${TEXT_ENCODING_OPTIONS.find((x) => x.id === preview.detected)?.label || preview.detected}）`
-                          : opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button className="ghost" disabled={!!preview.busy} onClick={() => setPreview(null)}>{t('关闭')}</button>
+        <div className="qt-modal-mask" onMouseDown={(e) => { if (e.target === e.currentTarget && !preview.busy) setPreview(null) }}>
+          <div className="qt-dialog qt-preview-dlg" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="qt-dialog-hd">
+              <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {preview.title} — {preview.path}
+              </span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <select
+                  style={{ height: 22, padding: '0 6px', fontSize: 11 }}
+                  disabled={!!preview.busy}
+                  value={preview.encoding}
+                  onChange={(e) => setPreviewEncoding(e.target.value as TextEncodingId)}
+                  title={t('切换文本编码')}
+                >
+                  {TEXT_ENCODING_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.id === 'auto' && preview.detected
+                        ? `Auto (${TEXT_ENCODING_OPTIONS.find((x) => x.id === preview.detected)?.label || preview.detected})`
+                        : opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="qt-dock-btn" disabled={!!preview.busy} onClick={() => setPreview(null)}>×</button>
               </div>
             </div>
-            <div className="fm-preview-body mono">
-              {preview.busy && !preview.raw ? '读取中…' : (preview.text || '(无内容)')}
-            </div>
-            <div className="dlg-foot dim">
-              完整读取文件内容（上限约 16MB，更大请用下载）；乱码时切换上方编码。
+            <pre className="qt-preview-body">
+              {preview.busy && !preview.raw ? t('读取中…') : (preview.text || '(empty)')}
+            </pre>
+            <div className="qt-dialog-foot">
               <button
-                className="ghost"
-                style={{ marginLeft: 8 }}
+                type="button"
                 disabled={!!preview.busy || !preview.text}
                 onClick={async () => {
-                  // copy decoded body only (strip message header if present)
                   const full = preview.text || ''
                   const body = preview.message && full.startsWith(preview.message)
                     ? full.slice(preview.message.length).replace(/^\n+/, '')
                     : full
                   const ok = await copyText(body)
-                  pushToast(ok ? 'ok' : 'err', ok ? '已复制内容' : t('复制失败'))
+                  pushToast(ok ? 'ok' : 'err', ok ? t('已复制内容') : t('复制失败'))
                 }}
               >
-                复制内容
+                {t('复制内容')}
+              </button>
+              <button type="button" className="primary" disabled={!!preview.busy} onClick={() => setPreview(null)}>
+                {t('关闭')}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Right-click Qt Context Menu */}
       {ctx && (
         <div
           className="ctx"
-          style={{ left: Math.min(ctx.x, window.innerWidth - 200), top: Math.min(ctx.y, window.innerHeight - 300) }}
+          style={{ left: Math.max(8, Math.min(ctx.x, window.innerWidth - 225)), top: Math.max(8, Math.min(ctx.y, window.innerHeight - 320)) }}
           onClick={(e) => e.stopPropagation()}
         >
           {selectedSet.size > 1 ? (
             <>
-              <div className="dim" style={{ padding: '4px 10px', fontSize: 11 }}>已选 {selectedSet.size} 项</div>
-              <button onClick={() => { doDownloadMulti(multiItems); setCtx(null) }}>{t('批量下载文件')}</button>
+              <div className="ctx-hd mono">{selectedSet.size} items selected</div>
+              <button type="button" onClick={() => { doDownloadMulti(multiItems); setCtx(null) }}>
+                <span>{t('批量下载文件')}</span>
+              </button>
               {mode !== 'disks' && (
-                <button className="danger" onClick={() => { doRmMulti(multiItems); setCtx(null) }}>{t('批量删除')}</button>
+                <button type="button" className="danger" onClick={() => { doRmMulti(multiItems); setCtx(null) }}>
+                  <span>{t('批量删除')}</span>
+                </button>
               )}
             </>
           ) : (
             <>
+              <div className="ctx-hd mono">{ctx.item.name}</div>
               {(ctx.item.isDir || mode === 'disks') && (
-                <button onClick={() => { openItem(ctx.item); setCtx(null) }}>{t('打开')}</button>
+                <button type="button" onClick={() => { openItem(ctx.item); setCtx(null) }}>
+                  <span>{t('打开')}</span>
+                </button>
               )}
               {!ctx.item.isDir && mode !== 'disks' && (
                 <>
-                  <button onClick={() => { doDownload(ctx.item); setCtx(null) }}>{t('下载')}</button>
-                  <button onClick={() => { doCat(ctx.item); setCtx(null) }}>{t('查看内容')}</button>
+                  <button type="button" onClick={() => { doDownload(ctx.item); setCtx(null) }}>
+                    <span>{t('下载')}</span>
+                  </button>
+                  <button type="button" onClick={() => { doCat(ctx.item); setCtx(null) }}>
+                    <span>{t('查看内容')}</span>
+                  </button>
                 </>
               )}
-              <button onClick={() => { copyPath(ctx.item); setCtx(null) }}>{t('复制路径')}</button>
-              <button onClick={async () => {
+              <button type="button" onClick={() => { copyPath(ctx.item); setCtx(null) }}>
+                <span>{t('复制路径')}</span>
+              </button>
+              <button type="button" onClick={async () => {
                 const ok = await copyText(ctx.item.name)
-                pushToast(ok ? 'ok' : 'err', ok ? '已复制名称' : t('复制失败'))
+                pushToast(ok ? 'ok' : 'err', ok ? t('已复制名称') : t('复制失败'))
                 setCtx(null)
-              }}>{t('复制名称')}</button>
+              }}>
+                <span>{t('复制名称')}</span>
+              </button>
               {mode !== 'disks' && (
                 <>
                   <div className="sep" />
-                  <button disabled={uploading} onClick={() => { fileInputRef.current?.click(); setCtx(null) }}>{t('上传到此目录')}</button>
-                  <button className="danger" onClick={() => { doRm(ctx.item); setCtx(null) }}>{t('删除')}</button>
+                  <button type="button" disabled={uploading} onClick={() => { fileInputRef.current?.click(); setCtx(null) }}>
+                    <span>{t('上传到此目录')}</span>
+                  </button>
+                  <button type="button" className="danger" onClick={() => { doRm(ctx.item); setCtx(null) }}>
+                    <span>{t('删除')}</span>
+                  </button>
                 </>
               )}
             </>

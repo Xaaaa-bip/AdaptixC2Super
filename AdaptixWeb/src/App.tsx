@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Login } from './components/Login'
 import { Dashboard } from './components/Dashboard'
 import { Hosts } from './components/Hosts'
@@ -13,7 +13,6 @@ import { Tunnels } from './components/Tunnels'
 import { Screenshots } from './components/Screenshots'
 import { Credentials } from './components/Credentials'
 import { Targets } from './components/Targets'
-import { Logs } from './components/Logs'
 import { Chat } from './components/Chat'
 import { AICollab } from './components/AICollab'
 import { Graph } from './components/Graph'
@@ -30,293 +29,165 @@ import { ToastHost } from './components/Toast'
 import { ConnStatus } from './components/StatusPill'
 import { CommandPalette } from './components/CommandPalette'
 import { ShortcutHelp } from './components/ui'
-import { useStore, type TabId, isFilesTab, isProcsTab, isPtyTab, isVncTab, isInteractTab, isCmdTab, tabAgentId } from './store'
+import {
+  useStore,
+  type TabId,
+  isConsoleTab,
+  isFilesTab,
+  isProcsTab,
+  isPtyTab,
+  isVncTab,
+  isCmdTab,
+  tabAgentId,
+} from './store'
 import { t, setLang, LANG } from './i18n'
-import { isAgentOnline, loadDensity, loadTheme, saveDensity, saveTheme, type Density } from './utils'
+import { isAgentOnline, loadDensity, saveDensity, type Density } from './utils'
+import {
+  applyQtTheme,
+  DEFAULT_SESSIONS_COLS,
+  loadQtSettings,
+  QT_CONSOLE_THEMES,
+  QT_THEMES,
+  qtAsset,
+  saveQtSettings,
+  SESSIONS_COL_META,
+  type QtClientSettings,
+  type QtConsoleThemeId,
+  type QtFontFamily,
+  type QtThemeId,
+} from './design/qt-themes'
 
-type Menu = { id: TabId; label: string; ico: string; group?: string; shortcut?: string }
-
-/** 统一 stroke 图标 — 显式 currentColor，任何底色上都可见 */
-function Icon({ children }: { children: React.ReactNode }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      focusable="false"
-      style={{ display: 'block', color: 'inherit', flexShrink: 0 }}
-    >
-      {children}
-    </svg>
-  )
+function QtImg({ src, cls = 'qt-ico qt-ico-mono' }: { src: string; cls?: string }) {
+  return <img className={cls} src={qtAsset(`icons/${src}`)} alt="" draggable={false} />
 }
 
-const ICO: Record<string, React.ReactNode> = {
-  dashboard: (
-    <Icon>
-      <path d="M4 11l8-7 8 7" />
-      <path d="M6 10.5V20h4v-5h4v5h4v-9.5" />
-    </Icon>
-  ),
-  sessions: (
-    <Icon>
-      <rect x="3.5" y="4.5" width="17" height="12" rx="1.5" />
-      <path d="M8 20h8M12 16.5V20" />
-    </Icon>
-  ),
-  listeners: (
-    <Icon>
-      <circle cx="12" cy="12" r="2.5" />
-      <path d="M6.2 6.2a8.2 8.2 0 0 1 0 11.6M17.8 6.2a8.2 8.2 0 0 0 0 11.6" />
-    </Icon>
-  ),
-  generate: (
-    <Icon>
-      <path d="M13 3L5 13h6l-1 8 9-12h-6l0-6z" />
-    </Icon>
-  ),
-  delivery: (
-    <Icon>
-      <path d="M4 7h16v10H4z" />
-      <path d="M8 11h8M8 14h5" />
-      <path d="M12 3v4M9 5l3-2 3 2" />
-    </Icon>
-  ),
-  tasks: (
-    <Icon>
-      <path d="M9 6h11M9 12h11M9 18h11" />
-      <circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none" />
-      <circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" />
-      <circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none" />
-    </Icon>
-  ),
-  bofs: (
-    <Icon>
-      <rect x="3.5" y="3.5" width="17" height="17" rx="1.5" />
-      <path d="M8 3.5v17M16 3.5v17M3.5 8h17M3.5 16h17" />
-    </Icon>
-  ),
-  argfuscator: (
-    <Icon>
-      <path d="M3.5 8h4l9 8h4" />
-      <path d="M3.5 16h4l9-8h4" />
-      <path d="M17.5 5 20.5 8l-3 3" />
-      <path d="M17.5 13 20.5 16l-3 3" />
-    </Icon>
-  ),
-  extkit: (
-    <Icon>
-      <path d="M3.5 4.5h17v15h-17z" />
-      <path d="M3.5 9.5h17M3.5 14.5h17" />
-      <path d="M9 4.5v15" />
-    </Icon>
-  ),
-  downloads: (
-    <Icon>
-      <path d="M12 4v11" />
-      <path d="M7.5 11.5 12 16l4.5-4.5" />
-      <path d="M5 20h14" />
-    </Icon>
-  ),
-  tunnels: (
-    <Icon>
-      <rect x="7" y="6.5" width="10" height="4" rx="1" />
-      <rect x="7" y="13.5" width="10" height="4" rx="1" />
-      <path d="M4 8.5H2.5v7H4M20 8.5h1.5v7H20" />
-    </Icon>
-  ),
-  screens: (
-    <Icon>
-      <rect x="3.5" y="5" width="17" height="13" rx="1.5" />
-      <circle cx="12" cy="11.5" r="2.5" />
-    </Icon>
-  ),
-  creds: (
-    <Icon>
-      <rect x="4" y="10" width="16" height="9" rx="1.5" />
-      <path d="M8 10V8a4 4 0 0 1 8 0v2" />
-    </Icon>
-  ),
-  targets: (
-    <Icon>
-      <circle cx="12" cy="12" r="7.5" />
-      <circle cx="12" cy="12" r="2.5" />
-      <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21" />
-    </Icon>
-  ),
-  logs: (
-    <Icon>
-      <path d="M8 6h12M8 12h12M8 18h12" />
-      <path d="M4 6h.01M4 12h.01M4 18h.01" strokeWidth={2.4} />
-    </Icon>
-  ),
-  chat: (
-    <Icon>
-      <path d="M5 6h14v9H8l-3 3V6z" />
-      <path d="M9 10h6M9 13h4" />
-    </Icon>
-  ),
-  ai: (
-    <Icon>
-      <path d="M12 3.5 14.2 9l5.3 1.3-5.3 1.4L12 17l-2.2-5.3-5.3-1.4L9.8 9 12 3.5z" />
-      <path d="M18.5 16.5v4M16.5 18.5h4" />
-    </Icon>
-  ),
-  graph: (
-    <Icon>
-      <circle cx="7" cy="8" r="2.5" />
-      <circle cx="17" cy="7" r="2.5" />
-      <circle cx="12" cy="17" r="2.5" />
-      <path d="M9 9.2 15 8.2M8.2 10.2 10.8 15M15.8 9.2 13.2 15" />
-    </Icon>
-  ),
-  relay: (
-    <Icon>
-      <circle cx="12" cy="12" r="2.6" />
-      <path d="M6.8 6.8a7.4 7.4 0 0 0 0 10.4M17.2 6.8a7.4 7.4 0 0 1 0 10.4" />
-      <path d="M4 4a11.3 11.3 0 0 0 0 16M20 4a11.3 11.3 0 0 1 0 16" />
-    </Icon>
-  ),
-  events: (
-    <Icon>
-      <path d="M4 12h4l2-5 3 10 2-5h5" />
-    </Icon>
-  ),
-  help: (
-    <Icon>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M9.6 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.35-1.1.85-1.1 1.7V14" />
-      <circle cx="12" cy="17" r="0.8" fill="currentColor" stroke="none" />
-    </Icon>
-  ),
+const ICO = {
+  logs: <QtImg src="news_64dp.png" />,
+  listeners: <QtImg src="headphones_64dp.png" />,
+  ext: <QtImg src="extension_64dp.png" />,
+  sessions: <QtImg src="format_list_bulleted_64dp.png" />,
+  graph: <QtImg src="hub_64dp.png" />,
+  tasks: <QtImg src="job_64dp.png" />,
+  chat: <QtImg src="forum_64dp.png" />,
+  tunnels: <QtImg src="vpn_64dp.png" />,
+  downloads: <QtImg src="downloads_64.png" />,
+  targets: <QtImg src="devices_64dp.png" />,
+  creds: <QtImg src="key_64dp.png" />,
+  screens: <QtImg src="picture_64dp.png" />,
+  refresh: <QtImg src="autorenew_64dp.png" />,
+  search: <QtImg src="code_blocks_64dp.png" />,
+  settings: <QtImg src="settings_account_64dp.png" />,
 }
 
-/**
- * 工具条菜单。★ 客户端布局里「主机」不再是中央页面而是**常驻顶部 dock**，
- * 所以 MENUS 里没有 sessions —— go('sessions') 在 go() 里被拦截成开 dock。
- */
-const MENUS: Menu[] = [
-  { id: 'dashboard', label: '概览', ico: 'dashboard', group: '总览', shortcut: 'G D' },
-  { id: 'delivery', label: '投递', ico: 'delivery', group: '作战', shortcut: 'G W' },
-  { id: 'listeners', label: '监听器', ico: 'listeners', group: '作战', shortcut: 'G L' },
-  { id: 'generate', label: '载荷', ico: 'generate', group: '作战', shortcut: 'G P' },
-  { id: 'tasks', label: '任务', ico: 'tasks', group: '作战', shortcut: 'G T' },
-  { id: 'bofs', label: 'BOF 模块', ico: 'bofs', group: '作战', shortcut: 'G B' },
-  { id: 'argfuscator', label: '参数混淆', ico: 'argfuscator', group: '作战', shortcut: 'G A' },
-  { id: 'extkit', label: '扩展命令', ico: 'extkit', group: '作战', shortcut: 'G X' },
-  { id: 'downloads', label: '下载', ico: 'downloads', group: '资产' },
-  { id: 'tunnels', label: '隧道', ico: 'tunnels', group: '资产' },
-  { id: 'screens', label: '截图', ico: 'screens', group: '资产' },
-  { id: 'creds', label: '凭据', ico: 'creds', group: '资产' },
-  { id: 'targets', label: '目标', ico: 'targets', group: '资产' },
-  { id: 'graph', label: '拓扑', ico: 'graph', group: '协作', shortcut: 'G G' },
-  { id: 'chat', label: '聊天', ico: 'chat', group: '协作', shortcut: 'G C' },
-  { id: 'ai', label: 'AI 协作', ico: 'ai', group: '协作', shortcut: 'G I' },
-  { id: 'relay', label: '中转', ico: 'relay', group: '系统', shortcut: 'G R' },
-  { id: 'logs', label: '日志', ico: 'logs', group: '系统', shortcut: 'G O' },
+function tabIconFile(id: TabId): string {
+  if (id === 'sessions') return 'format_list_bulleted_64dp.png'
+  if (id === 'graph') return 'hub_64dp.png'
+  if (id === 'tasks') return 'job_64dp.png'
+  if (id === 'logs') return 'news_64dp.png'
+  if (id === 'listeners') return 'headphones_64dp.png'
+  if (id === 'chat') return 'forum_64dp.png'
+  if (id === 'tunnels') return 'vpn_64dp.png'
+  if (id === 'downloads') return 'downloads_64.png'
+  if (id === 'targets') return 'devices_64dp.png'
+  if (id === 'creds') return 'key_64dp.png'
+  if (id === 'screens') return 'picture_64dp.png'
+  if (isConsoleTab(id) || id === 'terminal' || isPtyTab(id) || isCmdTab(id)) return 'code_blocks_64dp.png'
+  if (isFilesTab(id)) return 'folder_64dp.png'
+  if (isProcsTab(id)) return 'storage_64dp.png'
+  if (isVncTab(id)) return 'devices_64dp.png'
+  return 'extension_64dp.png'
+}
+
+const EXTENSION_DOCKS: { id: TabId; label: string; sc?: string }[] = [
+  { id: 'generate', label: '载荷生成', sc: 'G G' },
+  { id: 'delivery', label: '一键投递', sc: 'G W' },
+  { id: 'relay', label: '中转服务', sc: 'G R' },
+  { id: 'ai', label: 'AI 协作', sc: 'G I' },
+  { id: 'bofs', label: 'BOF 模块', sc: 'G B' },
+  { id: 'argfuscator', label: '参数混淆', sc: 'G A' },
+  { id: 'extkit', label: '扩展命令', sc: 'G X' },
+  { id: 'dashboard', label: '状态概览', sc: 'G O' },
 ]
 
-// ★ 2026-11-09：用户要求「更多里的都放出来」—— 全部 MENUS 上工具条，
-//   按 group 加分隔。窄屏靠 .cl-tools 的 overflow-x 滚动（本来就有）。
-const PRIMARY_MENU_IDS = MENUS.map((m) => m.id)
-
-/** 主机 dock 高度拖动的钳位（与 store 初始校验一致） */
-const HOSTS_H_MIN = 160, HOSTS_H_MAX = 640
-const EVENTS_H_MIN = 100, EVENTS_H_MAX = 480
-
-/** 分隔条键盘调整（ARIA APG 语义：方向键**移动分隔条本身**）。
- *  hosts 条在面板**下沿**：↓=条下移=面板增高，↑=减；
- *  events 条在面板**上沿**：↑=条上移=面板增高，↓=减。Home/End 到边界。 */
-function resizerKeyDown(which: 'hosts' | 'events', e: React.KeyboardEvent) {
-  const s = useStore.getState()
-  const grow = which === 'hosts' ? e.key === 'ArrowDown' : e.key === 'ArrowUp'
-  const shrink = which === 'hosts' ? e.key === 'ArrowUp' : e.key === 'ArrowDown'
-  if (!grow && !shrink && e.key !== 'Home' && e.key !== 'End') return
-  e.preventDefault()
-  if (which === 'hosts') {
-    const h = e.key === 'Home' ? HOSTS_H_MAX : e.key === 'End' ? HOSTS_H_MIN
-      : s.hostsDockH + (grow ? 24 : -24)
-    s.setDockHeights(Math.min(HOSTS_H_MAX, Math.max(HOSTS_H_MIN, h)), s.eventsDockH)
-  } else {
-    const h = e.key === 'Home' ? EVENTS_H_MAX : e.key === 'End' ? EVENTS_H_MIN
-      : s.eventsDockH + (grow ? 24 : -24)
-    s.setDockHeights(s.hostsDockH, Math.min(EVENTS_H_MAX, Math.max(EVENTS_H_MIN, h)))
-  }
+const STATIC_LABELS: Record<string, string> = {
+  sessions: 'Sessions table',
+  graph: 'Sessions graph',
+  tasks: 'Jobs & Tasks',
+  logs: 'Logs',
+  listeners: 'Listeners & Sites',
+  chat: 'Chat',
+  tunnels: 'Tunnels',
+  downloads: 'Downloads',
+  screens: 'Screenshots',
+  creds: 'Credentials',
+  targets: 'Targets',
+  dashboard: '概览',
+  generate: '载荷生成',
+  delivery: '一键投递',
+  relay: '中转',
+  ai: 'AI 协作',
+  bofs: 'BOF 模块',
+  argfuscator: '参数混淆',
+  extkit: '扩展命令',
+  terminal: 'Console',
 }
 
 export default function App() {
-  // ALL hooks must be above any conditional return
+  const api = useStore((s) => s.api)
   const connected = useStore((s) => s.connected)
   const wsConnected = useStore((s) => s.wsConnected)
   const syncing = useStore((s) => s.syncing)
   const username = useStore((s) => s.username)
-  const tab = useStore((s) => s.tab)
-  const setTab = useStore((s) => s.setTab)
   const agents = useStore((s) => s.agents) || {}
   const listeners = useStore((s) => s.listeners) || {}
   const tasks = useStore((s) => s.tasks) || []
   const selected = useStore((s) => s.selectedAgentId)
   const disconnect = useStore((s) => s.disconnect)
+  const finishConnect = useStore((s) => s.finishConnect)
   const refreshRest = useStore((s) => s.refreshRest)
   const tryRestoreSession = useStore((s) => s.tryRestoreSession)
-  const [restoring, setRestoring] = useState(true)
-  const openTabs = useStore((s) => s.uiTabs) || ['sessions']
-  const activeUiTab = useStore((s) => s.activeUiTab)
   const openUiTab = useStore((s) => s.openUiTab)
   const closeUiTab = useStore((s) => s.closeUiTab)
-  const setActiveUiTab = useStore((s) => s.setActiveUiTab)
-  const lastError = useStore((s) => s.lastError)
   const openFilesBrowser = useStore((s) => s.openFilesBrowser)
   const openProcsBrowser = useStore((s) => s.openProcsBrowser)
 
-  // 客户端 dock 状态
-  const eventsDockOpen = useStore((s) => s.eventsDockOpen)
-  const eventsDockH = useStore((s) => s.eventsDockH)
-  const toggleEventsDock = useStore((s) => s.toggleEventsDock)
-  const setDockHeights = useStore((s) => s.setDockHeights)
-  /** 'hosts' | 'events' | null —— 正在拖哪条分隔条 */
-  const [dragging, setDragging] = useState<'hosts' | 'events' | null>(null)
+  const topTabs = useStore((s) => s.topTabs)
+  const activeTopTab = useStore((s) => s.activeTopTab)
+  const bottomTabs = useStore((s) => s.bottomTabs)
+  const activeBottomTab = useStore((s) => s.activeBottomTab)
+  const dockTopPct = useStore((s) => s.dockTopPct)
+  const dockMax = useStore((s) => s.dockMax)
+  const setActiveTopTab = useStore((s) => s.setActiveTopTab)
+  const setActiveBottomTab = useStore((s) => s.setActiveBottomTab)
+  const setDockTopPct = useStore((s) => s.setDockTopPct)
+  const setDockMax = useStore((s) => s.setDockMax)
+  const resetDockLayout = useStore((s) => s.resetDockLayout)
 
-  const [density, setDensity] = useState<Density>(loadDensity)
-  // 客户端主题：默认 Adaptix Dark（暗色）。
-  // ★ 迁移：上一代（山水太极）把用户强制留在浅色；客户端布局以暗色为准，
-  //   没打过 'client-dark' 标记的老用户一次性迁到暗色，之后 ☀/☾ 随意切。
-  const [dark, setDark] = useState(() => {
-    if (localStorage.getItem('adaptix.theme.migrated') !== 'client-dark') {
-      saveTheme('dark')
-      localStorage.setItem('adaptix.theme.migrated', 'client-dark')
-      return true
-    }
-    return loadTheme() === 'dark'
-  })
-  useEffect(() => {
-    saveTheme(dark ? 'dark' : 'light')
-  }, [dark])
+  const [restoring, setRestoring] = useState(true)
+  const [qtSettings, setQtSettings] = useState<QtClientSettings>(() => loadQtSettings())
+  const qtTheme = qtSettings.theme
+  const [density, setDensity] = useState<Density>(() => loadDensity())
+  const [openMenu, setOpenMenu] = useState<'projects' | 'extensions' | 'settings' | null>(null)
+  const [extPopupOpen, setExtPopupOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'main' | 'sessions' | 'console' | 'layout'>('main')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [chord, setChord] = useState<string | null>(null)
+  const [draggingSplit, setDraggingSplit] = useState(false)
+  const workspaceRef = useRef<HTMLDivElement>(null)
+  const topTabsRef = useRef<HTMLDivElement>(null)
+  const bottomTabsRef = useRef<HTMLDivElement>(null)
 
-  // 首页保持干净，主机表和事件流由工具条按需展开。
-  // 迁移一次旧版默认布局，避免已有浏览器把概览夹在两个 dock 中间。
   useEffect(() => {
-    const key = 'adaptix.layout.simple-v1'
-    if (localStorage.getItem(key)) return
-    useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
-    try {
-      localStorage.setItem('adaptix.dock.hosts', '0')
-      localStorage.setItem('adaptix.dock.events', '0')
-      localStorage.setItem(key, '1')
-    } catch {
-      /* localStorage 不可用时保留内存态 */
-    }
-  }, [])
+    const el = topTabsRef.current?.querySelector('.qt-tab.active') as HTMLElement | null
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [activeTopTab, topTabs.length])
+
+  useEffect(() => {
+    const el = bottomTabsRef.current?.querySelector('.qt-tab.active') as HTMLElement | null
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [activeBottomTab, bottomTabs.length])
 
   const [statusTick, setStatusTick] = useState(() => Date.now())
   useEffect(() => {
@@ -325,15 +196,44 @@ export default function App() {
     return () => clearInterval(id)
   }, [connected])
 
-  const agentCount = Object.keys(agents || {}).length
-  const listenerCount = Object.keys(listeners || {}).length
-  const onlineCount = Object.values(agents || {}).filter((a: any) => isAgentOnline(a, { now: statusTick })).length
+  useEffect(() => {
+    const onExtSettings = (e: Event) => {
+      const detail = (e as CustomEvent<QtClientSettings>).detail
+      if (detail) setQtSettings(detail)
+    }
+    window.addEventListener('adaptix-qt-settings', onExtSettings)
+    return () => window.removeEventListener('adaptix-qt-settings', onExtSettings)
+  }, [])
+
+  function setQtTheme(id: QtThemeId) {
+    applyQtTheme(id, true)
+    setQtSettings(loadQtSettings())
+  }
+
+  function updateQtSettings(patch: Partial<QtClientSettings>) {
+    const next: QtClientSettings = { ...qtSettings, ...patch }
+    saveQtSettings(next)
+    setQtSettings(next)
+  }
 
   useEffect(() => {
     saveDensity(density)
   }, [density])
 
-  // F5：从 localStorage 恢复 JWT 会话，避免刷新后必须重新登录
+  // Close menus/popups on outside click
+  useEffect(() => {
+    if (!openMenu && !extPopupOpen) return
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest('.qt-menubar') || target?.closest('.qt-ext-wrap')) return
+      setOpenMenu(null)
+      setExtPopupOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [openMenu, extPopupOpen])
+
+  // F5 session restore
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -342,7 +242,7 @@ export default function App() {
           await tryRestoreSession()
         }
       } catch {
-        /* tryRestoreSession 内部已清会话 */
+        /* tryRestoreSession already cleared session */
       } finally {
         if (!cancelled) setRestoring(false)
       }
@@ -351,7 +251,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // periodic REST refresh fallback when WS is down, stuck syncing, or silent > 20s
+  // Periodic REST fallback when WS is down, stuck syncing, or silent > 20s
   useEffect(() => {
     if (!connected) return
     const tick = () => {
@@ -365,195 +265,157 @@ export default function App() {
     return () => clearInterval(id)
   }, [connected, refreshRest])
 
-  // dock 分隔条拖动：mousemove 全局挂，松手落 localStorage（setDockHeights）
+  // KDDockWidgets horizontal splitter drag
   useEffect(() => {
-    if (!dragging) return
+    if (!draggingSplit) return
     const onMove = (e: MouseEvent) => {
-      const s = useStore.getState()
-      if (dragging === 'hosts') {
-        // hosts dock 在视口顶部（工具条+标签条之下），向下拖增高
-        const top = (document.querySelector('.cl-bar')?.getBoundingClientRect().bottom || 0)
-          + (document.querySelector('.cl-tabs')?.getBoundingClientRect().height || 0)
-        const h = Math.round(Math.min(HOSTS_H_MAX, Math.max(HOSTS_H_MIN, e.clientY - top - 14)))
-        if (h !== s.hostsDockH) useStore.setState({ hostsDockH: h })
-      } else {
-        // events dock 贴底（状态栏之上），向上拖增高
-        const bottom = document.querySelector('.ops-status')?.getBoundingClientRect().top || window.innerHeight
-        const h = Math.round(Math.min(EVENTS_H_MAX, Math.max(EVENTS_H_MIN, bottom - e.clientY - 14)))
-        if (h !== s.eventsDockH) useStore.setState({ eventsDockH: h })
-      }
+      const box = workspaceRef.current?.getBoundingClientRect()
+      if (!box || box.height <= 0) return
+      const pct = ((e.clientY - box.top) / box.height) * 100
+      setDockTopPct(pct)
     }
-    const onUp = () => {
-      const s = useStore.getState()
-      setDockHeights(s.hostsDockH, s.eventsDockH)
-      setDragging(null)
-    }
+    const onUp = () => setDraggingSplit(false)
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [dragging, setDockHeights])
+  }, [draggingSplit, setDockTopPct])
 
-  const taskCount = tasks.length
-
-  function focusHostsSearch() {
-    requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLInputElement>('.sess-search')
-      if (el) { el.focus(); el.select() }
-    })
-  }
-
-  /** 主机是默认工作区；导航后直接聚焦搜索（G H / 命令面板共用此路径） */
   function go(id: TabId) {
-    if (id === 'sessions') {
-      useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
-      setTab('sessions')
-      openUiTab?.('sessions')
-      focusHostsSearch()
-      return
-    }
-    if (id === 'dashboard') {
-      useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
-      try {
-        localStorage.setItem('adaptix.dock.hosts', '0')
-        localStorage.setItem('adaptix.dock.events', '0')
-      } catch { /* ignore */ }
-    }
-    try {
-      setTab(id)
-      openUiTab?.(id)
-    } catch (e) {
-      console.error(e)
-      setTab(id)
-    }
+    setOpenMenu(null)
+    setExtPopupOpen(false)
+    openUiTab(id)
   }
 
-  // Global shortcuts (only when connected shell is mounted)
+  // Global keyboard shortcuts
   useEffect(() => {
     if (!connected) return
-
-    const isTyping = (t: EventTarget | null) => {
-      const el = t as HTMLElement | null
-      if (!el) return false
-      const tag = el.tagName
-      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    const isTyping = (el: EventTarget | null) => {
+      const node = el as HTMLElement | null
+      if (!node) return false
+      const tag = node.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || node.isContentEditable
     }
-
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
-
-      // Ctrl/Cmd+K command palette
       if (mod && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         setPaletteOpen((v) => !v)
         setHelpOpen(false)
+        setSettingsOpen(false)
         setChord(null)
         return
       }
-
-      // ? open shortcut help (when not typing)
       if (!mod && e.key === '?' && !isTyping(e.target)) {
         e.preventDefault()
         setHelpOpen((v) => !v)
         setChord(null)
         return
       }
-
-      // Ctrl/Cmd+Shift+F / P for selected agent tools (online only; store also guards)
       if (mod && e.shiftKey && selected) {
         const a = useStore.getState().agents[selected]
         const live = a ? isAgentOnline(a) : false
         if (e.key === 'F' || e.key === 'f') {
           e.preventDefault()
-          if (!live) return
-          openFilesBrowser(selected)
+          if (live) openFilesBrowser(selected)
           return
         }
         if (e.key === 'P' || e.key === 'p') {
           e.preventDefault()
-          if (!live) return
-          openProcsBrowser(selected)
+          if (live) openProcsBrowser(selected)
           return
         }
       }
-
-      if (paletteOpen) return
-      if (isTyping(e.target)) return
-
-      // Esc close overlays / dynamic tab
       if (e.key === 'Escape') {
-        if (helpOpen) { e.preventDefault(); setHelpOpen(false); return }
-        if (paletteOpen) { e.preventDefault(); setPaletteOpen(false); return }
-        const cur = (useStore.getState().activeUiTab || useStore.getState().tab) as TabId
-        if (isInteractTab(cur)) {
-          e.preventDefault()
-          closeUiTab(cur)
-        }
-        setChord(null)
+        if (settingsOpen) { setSettingsOpen(false); return }
+        if (helpOpen) { setHelpOpen(false); return }
+        if (paletteOpen) { setPaletteOpen(false); return }
+        if (openMenu || extPopupOpen) { setOpenMenu(null); setExtPopupOpen(false); return }
         return
       }
-
-      // G then letter navigation chord
+      if (paletteOpen || settingsOpen || isTyping(e.target)) return
       if (chord === 'g') {
-        e.preventDefault()
+        setChord(null)
         const k = e.key.toLowerCase()
         const map: Record<string, TabId> = {
-          d: 'dashboard',
-          h: 'sessions',
-          l: 'listeners',
-          p: 'generate',
-          w: 'delivery',
-          t: 'tasks',
-          b: 'bofs',
-          a: 'argfuscator',
-          x: 'extkit',
-          o: 'logs',
-          i: 'ai',
-          // ★ 2026-11-09 补：拓扑/聊天/中转在 MENUS 里有、主排按钮没有，
-          //   chord 和命令面板又都漏了 —— 拓扑页一度在整个 UI 上无入口。
-          g: 'graph',
-          c: 'chat',
-          r: 'relay',
+          h: 'sessions', o: 'dashboard', l: 'listeners', g: 'generate',
+          w: 'delivery', t: 'tasks', d: 'downloads', u: 'tunnels',
+          s: 'screens', c: 'creds', k: 'targets', p: 'graph',
+          m: 'chat', i: 'ai', r: 'relay', b: 'bofs', a: 'argfuscator',
+          x: 'extkit', e: 'logs',
         }
-        const dest = map[k]
-        if (dest) go(dest)
-        setChord(null)
+        if (map[k]) { e.preventDefault(); go(map[k]) }
         return
       }
-
-      if (!mod && (e.key === 'g' || e.key === 'G')) {
-        e.preventDefault()
+      if (!mod && !e.altKey && e.key.toLowerCase() === 'g') {
         setChord('g')
         window.setTimeout(() => setChord((c) => (c === 'g' ? null : c)), 1200)
-        return
-      }
-
-      if (!mod && e.key === '/') {
-        // 主机工作区：直接聚焦搜索
-        e.preventDefault()
-        useStore.setState({ hostsDockOpen: false, eventsDockOpen: false })
-        setTab('sessions')
-        openUiTab?.('sessions')
-        focusHostsSearch()
       }
     }
-
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // ★ `chord` 必须在依赖里：onKey 读闭包值，setChord 不会让本 effect 重跑
-  }, [connected, paletteOpen, helpOpen, selected, openFilesBrowser, openProcsBrowser, closeUiTab, chord, openUiTab, setTab])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, paletteOpen, helpOpen, settingsOpen, openMenu, extPopupOpen, selected, chord])
 
-  // early return AFTER all hooks
+  const agentCount = Object.keys(agents).length
+  const listenerCount = Object.keys(listeners).length
+  const onlineCount = Object.values(agents).filter((a) => isAgentOnline(a, { now: statusTick })).length
+  const taskCount = tasks.length
+
+  function tabLabel(id: TabId): string {
+    if (STATIC_LABELS[id]) return LANG === 'en' ? STATIC_LABELS[id] : t(STATIC_LABELS[id])
+    const aid = tabAgentId(id)
+    const a = aid ? agents[aid] : null
+    const host = a?.a_computer || aid || '?'
+    if (isConsoleTab(id)) return `Console [${host}]`
+    if (isFilesTab(id)) return `Files [${host}]`
+    if (isProcsTab(id)) return `Processes [${host}]`
+    if (isPtyTab(id)) return `Terminal [${host}]`
+    if (isCmdTab(id)) return `Cmd [${host}]`
+    if (isVncTab(id)) return `VNC [${host}]`
+    return id
+  }
+
+  function renderDockTabContent(id: TabId) {
+    if (id === 'sessions') return <Hosts />
+    if (id === 'graph') return <Graph />
+    if (id === 'tasks') return <Tasks />
+    if (id === 'logs') return <div className="qt-ev-wrap"><EventsDock /></div>
+    if (id === 'listeners') return <Listeners />
+    if (id === 'dashboard') return <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />
+    if (id === 'generate') return <Generate />
+    if (id === 'delivery') return <WebDelivery />
+    if (id === 'downloads') return <Downloads />
+    if (id === 'tunnels') return <Tunnels />
+    if (id === 'screens') return <Screenshots />
+    if (id === 'creds') return <Credentials />
+    if (id === 'targets') return <Targets />
+    if (id === 'chat') return <Chat />
+    if (id === 'ai') return <AICollab />
+    if (id === 'bofs') return <Bofs />
+    if (id === 'argfuscator') return <ArgFuscator />
+    if (id === 'extkit') return <ExtKit />
+    if (id === 'relay') return <Relay />
+    if (id === 'terminal') return <Term />
+    const aid = tabAgentId(id)
+    if (aid && isFilesTab(id)) return <FileManager agentId={aid} />
+    if (aid && isProcsTab(id)) return <ProcessManager agentId={aid} />
+    return null
+  }
+
   if (restoring) {
     return (
-      <>
-        <div className="lx" style={{ display: 'grid', placeItems: 'center', minHeight: '100dvh' }}>
-          <div className="dim">恢复会话…</div>
+      <div className="qt-login-screen">
+        <div className="qt-splash">
+          <img src={qtAsset('SyncLogo.png')} alt="Adaptix" />
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--qt-text-press)' }}>Adaptix Client</div>
+          <div style={{ fontSize: 11.5, color: 'var(--qt-text-muted)' }}>{t('正在恢复会话…')}</div>
+          <div className="qt-splash-bar"><i /></div>
         </div>
         <ToastHost />
-      </>
+      </div>
     )
   }
 
@@ -566,248 +428,765 @@ export default function App() {
     )
   }
 
-  const current = (activeUiTab || tab || 'sessions') as TabId
-  const tabs = openTabs?.length ? openTabs : [current]
+  // Keep mounted stateful bottom tabs (Console, Files, Processes, PTY, Cmd, VNC) across tab switches
+  const openConsoleDockTabs = bottomTabs.filter(isConsoleTab)
+  const openFilesDockTabs = bottomTabs.filter(isFilesTab)
+  const openProcsDockTabs = bottomTabs.filter(isProcsTab)
+  const openPtyDockTabs = bottomTabs.filter(isPtyTab)
+  const openCmdDockTabs = bottomTabs.filter(isCmdTab)
+  const openVncDockTabs = bottomTabs.filter(isVncTab)
 
-  function tabLabel(id: string) {
-    if (id === 'sessions') return '主机'
-    if (id === 'terminal') return '命令终端'
-    const menu = MENUS.find((m) => m.id === id)
-    if (menu) return t(menu.label)
-    if (isFilesTab(id)) {
-      const aid = tabAgentId(id)
-      const a = aid ? agents[aid] : null
-      return `文件 · ${a?.a_computer || aid || '?'}`
-    }
-    if (isProcsTab(id)) {
-      const aid = tabAgentId(id)
-      const a = aid ? agents[aid] : null
-      return `进程 · ${a?.a_computer || aid || '?'}`
-    }
-    if (isPtyTab(id)) {
-      const aid = tabAgentId(id)
-      const a = aid ? agents[aid] : null
-      return `PTY · ${a?.a_computer || aid || '?'}`
-    }
-    if (isCmdTab(id)) {
-      const aid = tabAgentId(id)
-      const a = aid ? agents[aid] : null
-      return `命令执行 · ${a?.a_computer || aid || '?'}`
-    }
-    if (isVncTab(id)) {
-      const aid = tabAgentId(id)
-      const a = aid ? agents[aid] : null
-      return `VNC · ${a?.a_computer || aid || '?'}`
-    }
-    return id
+  const hasBottom = bottomTabs.length > 0 && dockMax !== 'top'
+  const hasTop = topTabs.length > 0 && dockMax !== 'bottom'
+  const showSplitter = hasTop && hasBottom
+
+  const topFlexStyle: React.CSSProperties = !hasBottom
+    ? { flex: '1 1 100%' }
+    : { flex: `0 0 ${dockTopPct}%` }
+
+  const activeThemeMeta = QT_THEMES.find((x) => x.id === qtTheme) || QT_THEMES[0]
+  const hostLabel = api?.baseUrl ? api.baseUrl.replace(/^https?:\/\//, '') : (window.location.host || 'local')
+  const isBottomActive = (id: TabId) => activeBottomTab === id && hasBottom
+  const isTopActive = (id: TabId) => activeTopTab === id && hasTop
+
+  function handleReconnect() {
+    if (!api || !username) return
+    void finishConnect(api, username, Object.values(agents))
   }
 
-  const filesAgent = isFilesTab(current) ? tabAgentId(current) : null
-  const procsAgent = isProcsTab(current) ? tabAgentId(current) : null
-  // Keep ALL open PTY/VNC sessions mounted so switching tabs does not kill WS
-  const openPtyTabs = tabs.filter((id) => isPtyTab(id))
-  const openVncTabs = tabs.filter((id) => isVncTab(id))
-
   return (
-    <div className="ops" data-theme={dark ? 'dark' : 'light'} data-density={density}>
-      {/* ── 顶部工具条（Qt 客户端 topHLayout 的 Web 形态） ── */}
-      <header className="cl-bar">
-        <button type="button" className="cl-brand" onClick={() => go('dashboard')} title="Console">
-          <span className="cl-mark" aria-hidden>{'>_'}</span>
-          <span className="cl-brand-name">Console</span>
-        </button>
-        <div className="cl-tools">
-          {/* 高频工作区：保持浩劫式的菜单密度，低频功能走命令面板 */}
+    <div className="qt-shell">
+      {/* ── 1. Qt QMenuBar (Projects | Extensions | Settings) ── */}
+      <nav className="qt-menubar" aria-label="Menu bar">
+        <img className="qt-menubar-logo" src={qtAsset('Logo.png')} alt="" draggable={false} />
+        <div className="qt-menu-item">
           <button
             type="button"
-            className={`cl-btn ${current === 'sessions' ? 'active' : ''}`}
-            onClick={() => go('sessions')}
-            title={`${t('主机')} (${onlineCount}/${agentCount}) — G H`}
+            className={`qt-menu-trigger ${openMenu === 'projects' ? 'open' : ''}`}
+            onClick={() => { setOpenMenu(openMenu === 'projects' ? null : 'projects'); setExtPopupOpen(false) }}
+            onMouseEnter={() => { if (openMenu) setOpenMenu('projects') }}
           >
-            {ICO.sessions}
-            <span className="cl-btn-label">{t('主机')}</span>
-            <span className={`cl-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
+            {LANG === 'en' ? 'Projects' : '项目'}
           </button>
-          <span className="cl-sep" />
-          {(() => {
-          // ★ 2026-11-09：BOF 模块 / 参数混淆 / 扩展命令从工具条拿掉（挤），
-          //   入口保留：命令面板 ⌘K + 快捷键 G B / G A / G X。
-          const TOOLBAR_HIDDEN = new Set(['bofs', 'argfuscator', 'extkit'])
-          const visible = MENUS.filter((m) => !TOOLBAR_HIDDEN.has(m.id))
-          return visible.map((m, i) => {
-            // 组间分隔：第一项不插（前面已有主机组的 cl-sep）
-            const prevGroup = i > 0 ? visible[i - 1].group : null
-            return (
-              <span key={m.id} style={{ display: 'contents' }}>
-                {m.group !== prevGroup && <span className="cl-sep" />}
-                <button
-                  type="button"
-                  className={`cl-btn ${current === m.id ? 'active' : ''}`}
-                  onClick={() => go(m.id)}
-                  title={m.shortcut ? `${t(m.label)} (${m.shortcut})` : t(m.label)}
-                >
-                  {ICO[m.ico] || null}
-                  <span className="cl-btn-label">{t(m.label)}</span>
-                </button>
-              </span>
-            )
-          })})()}
-          <span className="cl-sep" />
-          <button
-            type="button"
-            className={`cl-btn ${eventsDockOpen ? 'active' : ''}`}
-            onClick={toggleEventsDock}
-            title="事件日志"
-          >
-            {ICO.events}
-            <span className="cl-btn-label">{t('事件')}</span>
-          </button>
-          {chord === 'g' && <span className="cl-chord">G …</span>}
+          {openMenu === 'projects' && (
+            <div className="qt-menu-dropdown">
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); handleReconnect() }}>
+                <span>{t('重连 WebSocket')}</span>
+              </button>
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); refreshRest({ includeTasks: true }).catch(() => {}) }}>
+                <span>{t('立即刷新数据')}</span>
+              </button>
+              <button type="button" className="qt-menu-action" onClick={() => go('dashboard')}>
+                <span>{t('状态概览')}</span>
+                <span className="qt-menu-sc">G O</span>
+              </button>
+              <div className="qt-menu-sep" />
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); resetDockLayout() }}>
+                <span>{t('重置分屏布局')}</span>
+              </button>
+              <div className="qt-menu-sep" />
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); disconnect() }}>
+                <span>{t('断开 / 切换项目')}</span>
+              </button>
+            </div>
+          )}
         </div>
-        <div className="cl-right">
-          {/* ★ 2026-11-09 瘦身：两个计数 pill（主机按钮 badge 与状态栏已有）
-              和「更多」按钮（⌘K / Ctrl+K 快捷键 + 状态栏提示已有）拿掉 ——
-              它们挤占 ~130px，是工具条按钮放不下的主因。 */}
+
+        <div className="qt-menu-item">
           <button
             type="button"
-            className="cl-ghost"
-            title={LANG === 'zh' ? 'Switch to English' : '切换到中文'}
-            onClick={() => setLang(LANG === 'zh' ? 'en' : 'zh')}
-          >{LANG === 'zh' ? 'EN' : '中'}</button>
-          <button type="button" className="cl-ghost" title={t('刷新')} onClick={() => refreshRest().catch(() => {})}>↻</button>
-          <button type="button" className="cl-ghost" title={dark ? t('浅色') : t('深色')} onClick={() => setDark((v) => !v)}>
-            {dark ? '☀' : '☾'}
-          </button>
-          <button type="button" className="cl-ghost" title={t('密度')} onClick={() => setDensity((d) => d === 'compact' ? 'comfortable' : 'compact')}>
-            {density === 'compact' ? '▣' : '▢'}
-          </button>
-          <button
-            type="button"
-            className="cl-ghost"
-            onClick={() => setPaletteOpen(true)}
-            title={t('命令面板（搜页面 / 主机 / 操作）') + ' ⌘K / Ctrl+K'}
-            style={{ gap: 5 }}
+            className={`qt-menu-trigger ${openMenu === 'extensions' ? 'open' : ''}`}
+            onClick={() => { setOpenMenu(openMenu === 'extensions' ? null : 'extensions'); setExtPopupOpen(false) }}
+            onMouseEnter={() => { if (openMenu) setOpenMenu('extensions') }}
           >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-              <circle cx="10.5" cy="10.5" r="6.5" />
-              <path d="M15.5 15.5 21 21" />
-            </svg>
-            {t('命令面板')}
+            {LANG === 'en' ? 'Extensions' : '扩展'}
           </button>
-          <span className="cl-user" title={username}>{username}</span>
-          <button type="button" className="cl-ghost" onClick={() => disconnect()}>{t('退出')}</button>
+          {openMenu === 'extensions' && (
+            <div className="qt-menu-dropdown">
+              <div className="qt-menu-head">Extension Docks</div>
+              {EXTENSION_DOCKS.map((ext) => (
+                <button key={ext.id} type="button" className="qt-menu-action" onClick={() => go(ext.id)}>
+                  <span>{t(ext.label)}</span>
+                  {ext.sc ? <span className="qt-menu-sc">{ext.sc}</span> : null}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="qt-menu-item">
+          <button
+            type="button"
+            className={`qt-menu-trigger ${openMenu === 'settings' ? 'open' : ''}`}
+            onClick={() => { setOpenMenu(openMenu === 'settings' ? null : 'settings'); setExtPopupOpen(false) }}
+            onMouseEnter={() => { if (openMenu) setOpenMenu('settings') }}
+          >
+            {LANG === 'en' ? 'Settings' : '设置'}
+          </button>
+          {openMenu === 'settings' && (
+            <div className="qt-menu-dropdown">
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); setSettingsOpen(true) }}>
+                <span>{t('打开设置…')}</span>
+              </button>
+              <div className="qt-menu-sep" />
+              <div className="qt-menu-head">Qt Theme</div>
+              {QT_THEMES.map((th) => (
+                <button
+                  key={th.id}
+                  type="button"
+                  className="qt-menu-action"
+                  onClick={() => { setQtTheme(th.id); setOpenMenu(null) }}
+                >
+                  <span>{qtTheme === th.id ? '✓ ' : '   '}{th.name}</span>
+                  <span className="qt-swatches">
+                    <i style={{ background: th.swatches[1] }} />
+                    <i style={{ background: th.swatches[2] }} />
+                  </span>
+                </button>
+              ))}
+              <div className="qt-menu-sep" />
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); setLang(LANG === 'zh' ? 'en' : 'zh') }}>
+                <span>{LANG === 'zh' ? 'Switch to English' : '切换到中文'}</span>
+              </button>
+              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); setHelpOpen(true) }}>
+                <span>{t('快捷键帮助')}</span>
+                <span className="qt-menu-sc">?</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="qt-menubar-spacer" />
+        <div className="qt-menubar-meta">
+          {chord === 'g' ? <span className="qt-menubar-chip" style={{ color: 'var(--qt-primary-hover)' }}>G …</span> : null}
+          <button type="button" className="qt-menubar-chip" onClick={() => setSettingsOpen(true)} title="Qt Theme">
+            {activeThemeMeta.name}
+          </button>
+          <button
+            type="button"
+            className="qt-menubar-chip"
+            onClick={() => setLang(LANG === 'zh' ? 'en' : 'zh')}
+            title={LANG === 'zh' ? 'Switch to English' : '切换到中文'}
+          >
+            {LANG === 'zh' ? 'EN' : '中'}
+          </button>
+        </div>
+      </nav>
+
+      {/* ── 2. Qt topHLayout Icon + Label Toolbar (AdaptixWidget::createUI) ── */}
+      <header className="qt-toolbar">
+        {/* Group 1: Logs · Listeners · Extensions */}
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('logs') ? 'active' : ''}`}
+          title="Notifications / Logs (G E)"
+          onClick={() => go('logs')}
+        >
+          {ICO.logs}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Logs' : '日志'}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('listeners') ? 'active' : ''}`}
+          title="Listeners & Sites (G L)"
+          onClick={() => go('listeners')}
+        >
+          {ICO.listeners}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Listeners' : '监听器'}</span>
+          {listenerCount > 0 ? <span className="qt-tb-badge">{listenerCount}</span> : null}
+        </button>
+        <div className="qt-ext-wrap">
+          <button
+            type="button"
+            className={`qt-tb-btn ${extPopupOpen ? 'active' : ''}`}
+            title="Extensions Docks (载荷 / 投递 / 中转 / AI / BOF)"
+            onClick={() => { setExtPopupOpen((v) => !v); setOpenMenu(null) }}
+          >
+            {ICO.ext}
+            <span className="qt-tb-lbl">{LANG === 'en' ? 'Ext' : '扩展'}</span>
+          </button>
+          {extPopupOpen && (
+            <div className="qt-ext-popup">
+              <div className="qt-ext-title">Extensions Docks</div>
+              <div className="qt-ext-list">
+                {EXTENSION_DOCKS.map((ext) => (
+                  <button key={ext.id} type="button" className="qt-ext-item" onClick={() => go(ext.id)}>
+                    <span>{t(ext.label)}</span>
+                    {ext.sc ? <span className="qt-ext-sub">{ext.sc}</span> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <span className="qt-tb-vline" />
+
+        {/* Group 2 (dockTop): Sessions · Graph · Tasks */}
+        <button
+          type="button"
+          className={`qt-tb-btn ${isTopActive('sessions') ? 'active' : ''}`}
+          title={`Sessions table (${onlineCount}/${agentCount}) — G H`}
+          onClick={() => go('sessions')}
+        >
+          {ICO.sessions}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Sessions' : '主机'}</span>
+          <span className={`qt-tb-badge ${onlineCount === 0 ? 'muted' : ''}`}>{agentCount}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isTopActive('graph') ? 'active' : ''}`}
+          title="Sessions graph (G P)"
+          onClick={() => go('graph')}
+        >
+          {ICO.graph}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Graph' : '拓扑'}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isTopActive('tasks') ? 'active' : ''}`}
+          title="Jobs & Tasks (G T)"
+          onClick={() => go('tasks')}
+        >
+          {ICO.tasks}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Tasks' : '任务'}</span>
+        </button>
+
+        <span className="qt-tb-vline" />
+
+        {/* Group 3: Chat · Tunnels */}
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('chat') ? 'active' : ''}`}
+          title="Chat (G M)"
+          onClick={() => go('chat')}
+        >
+          {ICO.chat}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Chat' : '聊天'}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('tunnels') ? 'active' : ''}`}
+          title="Tunnels table (G U)"
+          onClick={() => go('tunnels')}
+        >
+          {ICO.tunnels}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Tunnels' : '隧道'}</span>
+        </button>
+
+        <span className="qt-tb-vline" />
+
+        {/* Group 4: Downloads · Targets · Credentials · Screenshots */}
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('downloads') ? 'active' : ''}`}
+          title="Downloads (G D)"
+          onClick={() => go('downloads')}
+        >
+          {ICO.downloads}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Downloads' : '下载'}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('targets') ? 'active' : ''}`}
+          title="Targets table (G K)"
+          onClick={() => go('targets')}
+        >
+          {ICO.targets}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Targets' : '目标'}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('creds') ? 'active' : ''}`}
+          title="Credentials (G C)"
+          onClick={() => go('creds')}
+        >
+          {ICO.creds}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Creds' : '凭据'}</span>
+        </button>
+        <button
+          type="button"
+          className={`qt-tb-btn ${isBottomActive('screens') ? 'active' : ''}`}
+          title="Screenshots (G S)"
+          onClick={() => go('screens')}
+        >
+          {ICO.screens}
+          <span className="qt-tb-lbl">{LANG === 'en' ? 'Screens' : '截图'}</span>
+        </button>
+
+        <span className="qt-tb-vline" />
+
+        {/* Group 5: Reconnect Link Button (NeonGreen when live, Yellow syncing, Red offline) */}
+        <button
+          type="button"
+          className="qt-tb-btn"
+          title={syncing ? 'Syncing… (Click to reconnect)' : wsConnected ? 'Connected — Click to reconnect' : 'Disconnected — Click to reconnect'}
+          onClick={handleReconnect}
+        >
+          <QtImg
+            src={wsConnected || syncing ? 'link_64dp.png' : 'link_off_64dp.png'}
+            cls={`qt-ico ${syncing ? 'qt-ico-link-sync' : wsConnected ? 'qt-ico-link-on' : 'qt-ico-link-off'}`}
+          />
+          <span className="qt-tb-lbl">
+            {syncing ? (LANG === 'en' ? 'Sync' : '同步') : wsConnected ? (LANG === 'en' ? 'Online' : '已连') : (LANG === 'en' ? 'Link' : '重连')}
+          </span>
+        </button>
+
+        <div className="qt-tb-spacer" />
+
+        <div className="qt-tb-right">
+          <button
+            type="button"
+            className="qt-tb-pill"
+            title={t('刷新')}
+            onClick={() => refreshRest().catch(() => {})}
+          >
+            {ICO.refresh}
+            <span>{t('刷新')}</span>
+          </button>
+          <button
+            type="button"
+            className="qt-tb-pill"
+            title={t('命令面板') + ' (Ctrl+K)'}
+            onClick={() => setPaletteOpen(true)}
+          >
+            {ICO.search}
+            <span>⌘K</span>
+          </button>
+          <button
+            type="button"
+            className="qt-tb-pill"
+            title={t('设置 / 切换 Qt 主题')}
+            onClick={() => setSettingsOpen(true)}
+          >
+            {ICO.settings}
+          </button>
         </div>
       </header>
 
-      {/* ── 中央工作区：标签条 + 面板 ── */}
-      <div className="cl-main">
-        <div className="cl-tabs">
-          {tabs.map((id) => {
-            const label = tabLabel(id)
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`cl-tab ${current === id ? 'active' : ''}`}
-                onClick={() => { setActiveUiTab?.(id as TabId); setTab(id as TabId) }}
-                title={id}
+      {/* ── 3. KDDockWidgets 2-Zone Split Workspace (dockTop + splitter + dockBottom) ── */}
+      <main className="qt-workspace" ref={workspaceRef}>
+        {hasTop && (
+          <section className="qt-dock" style={topFlexStyle}>
+            <div className="qt-dock-bar">
+              <div
+                className="qt-dock-tabs"
+                ref={topTabsRef}
+                onWheel={(e) => { if (Math.abs(e.deltaY) > 0 && topTabsRef.current) topTabsRef.current.scrollLeft += e.deltaY }}
               >
-                {label}
-                {tabs.length > 1 && (
-                  <span className="x" onClick={(e) => { e.stopPropagation(); closeUiTab?.(id as TabId) }}>×</span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="ops-body content">
-          {current === 'sessions' && <Hosts />}
-          {current === 'terminal' && <Term />}
-          {current === 'dashboard' && <Dashboard online={onlineCount} total={agentCount} listeners={listenerCount} />}
-          {current === 'listeners' && <Listeners />}
-          {current === 'generate' && <Generate />}
-          {current === 'delivery' && <WebDelivery />}
-          {current === 'tasks' && <Tasks />}
-          {current === 'downloads' && <Downloads />}
-          {current === 'tunnels' && <Tunnels />}
-          {current === 'screens' && <Screenshots />}
-          {current === 'creds' && <Credentials />}
-          {current === 'targets' && <Targets />}
-          {current === 'graph' && <Graph />}
-          {current === 'chat' && <Chat />}
-          {current === 'ai' && <AICollab />}
-          {current === 'bofs' && <Bofs />}
-          {current === 'argfuscator' && <ArgFuscator />}
-          {current === 'extkit' && <ExtKit />}
-          {current === 'relay' && <Relay />}
-          {current === 'logs' && <Logs />}
-          {filesAgent && <FileManager agentId={filesAgent} />}
-          {procsAgent && <ProcessManager agentId={procsAgent} />}
-          {openPtyTabs.map((id) => {
-            const aid = tabAgentId(id)
-            if (!aid) return null
-            return <PtyTerm key={id} tabId={id} agentId={aid} active={current === id} />
-          })}
-          {/* 命令执行台：全屏终端式，一台主机可多开（cmd:<id>#n）。
-              与 VNC 一样 keep mounted —— 切走再切回来，草稿和滚动位置都还在。 */}
-          {(openTabs || []).filter(isCmdTab).map((id) => {
-            const aid = tabAgentId(id)
-            if (!aid) return null
-            return (
-              <div key={id} style={{ display: current === id ? 'contents' : 'none', height: '100%', minHeight: 0 }}>
-                <CmdExec agentId={aid} />
+                {topTabs.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`qt-tab ${activeTopTab === id ? 'active' : ''}`}
+                    onClick={() => setActiveTopTab(id)}
+                    onMouseDown={(e) => { if (e.button === 1 && topTabs.length > 1) { e.preventDefault(); closeUiTab(id) } }}
+                    title={tabLabel(id)}
+                  >
+                    <img className="qt-ico qt-ico-mono qt-tab-ico" src={qtAsset(`icons/${tabIconFile(id)}`)} alt="" />
+                    <span>{tabLabel(id)}</span>
+                    {topTabs.length > 1 && (
+                      <span
+                        className="qt-tab-x"
+                        onClick={(e) => { e.stopPropagation(); closeUiTab(id) }}
+                        title={t('关闭')}
+                      >×</span>
+                    )}
+                  </button>
+                ))}
               </div>
-            )
-          })}
-          {openVncTabs.map((id) => {
-            const aid = tabAgentId(id)
-            if (!aid) return null
-            // VNC panel: keep mounted when tab open; hide when inactive
-            return (
-              <div key={id} style={{ display: current === id ? 'contents' : 'none', height: '100%', minHeight: 0 }}>
-                <VncPanel agentId={aid} />
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* ── 事件日志 dock（底部常驻，Qt LogsDock 的 Web 形态） ── */}
-      {eventsDockOpen && (
-        <>
-          <div
-            className={`cl-resizer ${dragging === 'events' ? 'dragging' : ''}`}
-            onMouseDown={() => setDragging('events')}
-            onKeyDown={(e) => resizerKeyDown('events', e)}
-            tabIndex={0}
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="调整事件面板高度（方向键 ±24px）"
-          />
-          <section className="cl-dock events" style={{ height: eventsDockH }}>
-            <div className="cl-dock-hd">
-              <span className="cl-dock-title">事件日志</span>
-              <div className="cl-dock-tools">
-                <button type="button" className="cl-dock-btn" title="收起事件面板" onClick={toggleEventsDock}>▴</button>
+              <div className="qt-dock-ctrl">
+                <button
+                  type="button"
+                  className="qt-dock-btn"
+                  title={dockMax === 'top' ? t('还原分屏') : t('最大化上面板')}
+                  onClick={() => setDockMax(dockMax === 'top' ? 'none' : 'top')}
+                >
+                  {dockMax === 'top' ? '❐' : '□'}
+                </button>
               </div>
             </div>
-            <div className="cl-dock-bd">
-              <EventsDock />
+            <div className="qt-dock-body">
+              {activeTopTab ? renderDockTabContent(activeTopTab) : <div className="qt-dock-empty">Sessions table</div>}
             </div>
           </section>
-        </>
-      )}
+        )}
 
-      {/* ── 状态栏（连接态与计数，客户端底部状态行的 Web 形态） ── */}
-      <footer className="ops-status">
+        {showSplitter && (
+          <div
+            className={`qt-splitter ${draggingSplit ? 'dragging' : ''}`}
+            role="separator"
+            aria-orientation="horizontal"
+            title={t('拖拽调整上下分屏比例，双击还原')}
+            onMouseDown={() => setDraggingSplit(true)}
+            onDoubleClick={() => setDockTopPct(46)}
+          />
+        )}
+
+        {hasBottom && (
+          <section className="qt-dock" style={{ flex: '1 1 auto' }}>
+            <div className="qt-dock-bar">
+              <div
+                className="qt-dock-tabs"
+                ref={bottomTabsRef}
+                onWheel={(e) => { if (Math.abs(e.deltaY) > 0 && bottomTabsRef.current) bottomTabsRef.current.scrollLeft += e.deltaY }}
+              >
+                {bottomTabs.map((id) => {
+                  const aid = tabAgentId(id)
+                  const ag = aid ? agents[aid] : null
+                  const agLive = ag ? isAgentOnline(ag, { now: statusTick }) : false
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`qt-tab ${activeBottomTab === id ? 'active' : ''}`}
+                      onClick={() => setActiveBottomTab(id)}
+                      onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); closeUiTab(id) } }}
+                      title={tabLabel(id)}
+                    >
+                      {aid
+                        ? <span className={`qt-tab-dot ${agLive ? 'on' : 'off'}`} />
+                        : <img className="qt-ico qt-ico-mono qt-tab-ico" src={qtAsset(`icons/${tabIconFile(id)}`)} alt="" />}
+                      <span>{tabLabel(id)}</span>
+                      <span
+                        className="qt-tab-x"
+                        onClick={(e) => { e.stopPropagation(); closeUiTab(id) }}
+                        title={t('关闭')}
+                      >×</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="qt-dock-ctrl">
+                <button
+                  type="button"
+                  className="qt-dock-btn"
+                  title={dockMax === 'bottom' ? t('还原分屏') : t('最大化下面板')}
+                  onClick={() => setDockMax(dockMax === 'bottom' ? 'none' : 'bottom')}
+                >
+                  {dockMax === 'bottom' ? '❐' : '□'}
+                </button>
+                <button
+                  type="button"
+                  className="qt-dock-btn"
+                  title={t('收起下面板')}
+                  onClick={() => setDockMax('top')}
+                >
+                  —
+                </button>
+              </div>
+            </div>
+            <div className="qt-dock-body">
+              {activeBottomTab &&
+                !isConsoleTab(activeBottomTab) &&
+                !isFilesTab(activeBottomTab) &&
+                !isProcsTab(activeBottomTab) &&
+                !isPtyTab(activeBottomTab) &&
+                !isCmdTab(activeBottomTab) &&
+                !isVncTab(activeBottomTab) &&
+                renderDockTabContent(activeBottomTab)}
+
+              {/* Keep interactive tabs mounted while open in dockBottom */}
+              {openConsoleDockTabs.map((id) => {
+                const aid = tabAgentId(id)
+                if (!aid) return null
+                return (
+                  <div
+                    key={id}
+                    style={{ display: activeBottomTab === id ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  >
+                    <Term agentId={aid} />
+                  </div>
+                )
+              })}
+              {openFilesDockTabs.map((id) => {
+                const aid = tabAgentId(id)
+                if (!aid) return null
+                return (
+                  <div
+                    key={id}
+                    style={{ display: activeBottomTab === id ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  >
+                    <FileManager agentId={aid} />
+                  </div>
+                )
+              })}
+              {openProcsDockTabs.map((id) => {
+                const aid = tabAgentId(id)
+                if (!aid) return null
+                return (
+                  <div
+                    key={id}
+                    style={{ display: activeBottomTab === id ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}
+                  >
+                    <ProcessManager agentId={aid} />
+                  </div>
+                )
+              })}
+              {openPtyDockTabs.map((id) => {
+                const aid = tabAgentId(id)
+                if (!aid) return null
+                return <PtyTerm key={id} tabId={id} agentId={aid} active={activeBottomTab === id} />
+              })}
+              {openCmdDockTabs.map((id) => {
+                const aid = tabAgentId(id)
+                if (!aid) return null
+                return (
+                  <div
+                    key={id}
+                    style={{ display: activeBottomTab === id ? 'contents' : 'none', height: '100%', minHeight: 0 }}
+                  >
+                    <CmdExec agentId={aid} />
+                  </div>
+                )
+              })}
+              {openVncDockTabs.map((id) => {
+                const aid = tabAgentId(id)
+                if (!aid) return null
+                return (
+                  <div
+                    key={id}
+                    style={{ display: activeBottomTab === id ? 'contents' : 'none', height: '100%', minHeight: 0 }}
+                  >
+                    <VncPanel agentId={aid} />
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
+      </main>
+
+      {/* ── 4. Qt South Project TabBar + Status Strip (QTabWidget::South) ── */}
+      <footer className="qt-south">
+        <div className="qt-project-tab" title={`${username}@${hostLabel}`}>
+          <img src={qtAsset('Logo.png')} alt="" draggable={false} />
+          <span>{localStorage.getItem('adaptix.qt.project') || 'Adaptix'}</span>
+          <span style={{ color: 'var(--qt-text-muted)', fontWeight: 400 }}>({username || 'operator'}@{hostLabel})</span>
+        </div>
+
         <ConnStatus connected={connected} wsConnected={wsConnected} syncing={syncing} />
-        {lastError && !wsConnected ? <span className="ops-status-note warn">{t('通道降级')}</span> : null}
-        <span className="vsep" />
-        <span className="ops-status-counts">{onlineCount} {t('在线')} · {listenerCount} {t('监听')} · {taskCount} {t('任务')}</span>
-        <span className="spacer" />
-        <span className="dim">⌘K 命令 · G H 主机 · ? 帮助</span>
+
+        <span className="qt-south-sep" />
+        <div className="qt-south-stat">
+          <span><b>{onlineCount}</b> / {agentCount} {t('在线')}</span>
+          <span>{listenerCount} {t('监听')}</span>
+          <span>{taskCount} {t('任务')}</span>
+        </div>
+
+        <div className="qt-south-spacer" />
+
+        {dockMax === 'top' && (
+          <button type="button" className="qt-south-btn" onClick={() => setDockMax('none')}>
+            ▴ {t('展开下面板')} ({bottomTabs.length})
+          </button>
+        )}
+        <button type="button" className="qt-south-btn" onClick={() => setSettingsOpen(true)}>
+          {activeThemeMeta.name}
+        </button>
+        <button type="button" className="qt-south-btn" onClick={() => setHelpOpen(true)}>
+          ?
+        </button>
+        <button type="button" className="qt-south-btn" onClick={() => disconnect()}>
+          {t('退出')}
+        </button>
       </footer>
+
+      {/* ── 5. Adaptix Settings Dialog (1:1 DialogSettings.cpp split sidebar) ── */}
+      {settingsOpen && (
+        <div className="qt-modal-mask" onClick={() => setSettingsOpen(false)}>
+          <div className="qt-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="qt-dialog-hd">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <img src={qtAsset('Logo.png')} alt="" style={{ width: 16, height: 16, borderRadius: 3 }} />
+                <span>Adaptix Settings</span>
+              </span>
+              <button type="button" className="qt-dock-btn" onClick={() => setSettingsOpen(false)}>×</button>
+            </div>
+
+            <div className="qt-settings-split">
+              <aside className="qt-settings-nav">
+                <button type="button" className={`qt-settings-nav-btn ${settingsTab === 'main' ? 'active' : ''}`} onClick={() => setSettingsTab('main')}>
+                  Main Settings
+                </button>
+                <button type="button" className={`qt-settings-nav-btn ${settingsTab === 'sessions' ? 'active' : ''}`} onClick={() => setSettingsTab('sessions')}>
+                  Sessions Table
+                </button>
+                <button type="button" className={`qt-settings-nav-btn ${settingsTab === 'console' ? 'active' : ''}`} onClick={() => setSettingsTab('console')}>
+                  Console
+                </button>
+                <button type="button" className={`qt-settings-nav-btn ${settingsTab === 'layout' ? 'active' : ''}`} onClick={() => setSettingsTab('layout')}>
+                  Layout
+                </button>
+              </aside>
+
+              <div className="qt-settings-pane">
+                {settingsTab === 'main' && (
+                  <>
+                    <div className="qt-set-label">Main theme ({QT_THEMES.length} presets)</div>
+                    <div className="qt-theme-grid">
+                      {QT_THEMES.map((th) => (
+                        <button
+                          key={th.id}
+                          type="button"
+                          className={`qt-theme-card ${qtTheme === th.id ? 'active' : ''}`}
+                          onClick={() => setQtTheme(th.id)}
+                        >
+                          <span>{th.name}</span>
+                          <span className="qt-swatches">
+                            {th.swatches.map((hex, i) => (
+                              <i key={i} style={{ background: hex }} />
+                            ))}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">Font family</span>
+                      <select
+                        value={qtSettings.fontFamily}
+                        onChange={(e) => updateQtSettings({ fontFamily: e.target.value as QtFontFamily })}
+                      >
+                        <option value="JetBrains Mono">JetBrains Mono (Default)</option>
+                        <option value="Hack">Hack</option>
+                        <option value="System">System UI</option>
+                      </select>
+                    </div>
+
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">Font size</span>
+                      <select
+                        value={qtSettings.fontSize}
+                        onChange={(e) => updateQtSettings({ fontSize: Number(e.target.value) })}
+                      >
+                        {[11, 12, 13, 14].map((sz) => (
+                          <option key={sz} value={sz}>{sz} px</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">Language</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" className={LANG === 'zh' ? 'primary' : ''} onClick={() => setLang('zh')}>中文</button>
+                        <button type="button" className={LANG === 'en' ? 'primary' : ''} onClick={() => setLang('en')}>English</button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {settingsTab === 'sessions' && (
+                  <>
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">Visible Columns (Sessions Table)</span>
+                      <button
+                        type="button"
+                        onClick={() => updateQtSettings({ sessionsCols: { ...DEFAULT_SESSIONS_COLS } })}
+                      >
+                        Reset Default
+                      </button>
+                    </div>
+                    <div className="qt-cols-grid">
+                      {SESSIONS_COL_META.map((col) => (
+                        <label key={col.key} className="qt-check-inline">
+                          <input
+                            type="checkbox"
+                            checked={qtSettings.sessionsCols[col.key] !== false}
+                            onChange={(e) =>
+                              updateQtSettings({
+                                sessionsCols: {
+                                  ...qtSettings.sessionsCols,
+                                  [col.key]: e.target.checked,
+                                },
+                              })
+                            }
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {settingsTab === 'console' && (
+                  <>
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">Console theme</span>
+                      <select
+                        value={qtSettings.consoleTheme}
+                        onChange={(e) => updateQtSettings({ consoleTheme: e.target.value as QtConsoleThemeId })}
+                      >
+                        {QT_CONSOLE_THEMES.map((ct) => (
+                          <option key={ct.id} value={ct.id}>{ct.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <label className="qt-check-inline">
+                      <input
+                        type="checkbox"
+                        checked={qtSettings.consoleShowBg}
+                        onChange={(e) => updateQtSettings({ consoleShowBg: e.target.checked })}
+                      />
+                      <span>Show Console Background Image (adaptix_background.png)</span>
+                    </label>
+                    <label className="qt-check-inline">
+                      <input
+                        type="checkbox"
+                        checked={qtSettings.consoleShowTime}
+                        onChange={(e) => updateQtSettings({ consoleShowTime: e.target.checked })}
+                      />
+                      <span>Print timestamp prefix</span>
+                    </label>
+                    <label className="qt-check-inline">
+                      <input
+                        type="checkbox"
+                        checked={qtSettings.consoleAutoScroll}
+                        onChange={(e) => updateQtSettings({ consoleAutoScroll: e.target.checked })}
+                      />
+                      <span>Auto scroll to bottom</span>
+                    </label>
+                    <label className="qt-check-inline">
+                      <input
+                        type="checkbox"
+                        checked={qtSettings.consoleNoWrap}
+                        onChange={(e) => updateQtSettings({ consoleNoWrap: e.target.checked })}
+                      />
+                      <span>Disable line wrapping (NoWrap)</span>
+                    </label>
+                  </>
+                )}
+
+                {settingsTab === 'layout' && (
+                  <>
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">Table row density</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" className={density === 'compact' ? 'primary' : ''} onClick={() => setDensity('compact')}>
+                          Compact (Qt)
+                        </button>
+                        <button type="button" className={density === 'comfortable' ? 'primary' : ''} onClick={() => setDensity('comfortable')}>
+                          Comfortable
+                        </button>
+                      </div>
+                    </div>
+                    <div className="qt-set-row">
+                      <span className="qt-set-label">KDDockWidgets Split</span>
+                      <button type="button" onClick={() => resetDockLayout()}>
+                        Reset Dock Layout
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="qt-dialog-foot">
+              <button type="button" className="primary" onClick={() => setSettingsOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} go={go} />
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />

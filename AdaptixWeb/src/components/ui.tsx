@@ -55,23 +55,20 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null
   const rows: Array<[string, string]> = [
     ['Ctrl / ⌘ + K', t('命令面板（搜页面 / 主机 / 操作）')],
-    ['G 然后 D', t('概览')],
-    ['G 然后 H', t('主机列表')],
-    ['G 然后 L', t('监听器')],
-    ['G 然后 P', t('生成载荷')],
-    ['G 然后 W', t('Web 投递')],
-    ['G 然后 T', t('任务中心')],
+    ['Ctrl + F', t('当前表格 / 控制台 / 日志页内查找')],
+    ['Ctrl + L', t('清空当前终端输出')],
+    ['G 然后 H', t('主机列表 (Sessions table)')],
+    ['G 然后 P', t('会话拓扑 (Sessions graph)')],
+    ['G 然后 T', t('任务中心 (Jobs & Tasks)')],
+    ['G 然后 L', t('监听器 (Listeners)')],
+    ['G 然后 E', t('系统日志 (Logs)')],
+    ['G 然后 G', t('载荷生成 (Generate)')],
+    ['G 然后 W', t('一键投递 (Web Delivery)')],
     ['G 然后 B', t('BOF 模块')],
     ['G 然后 A', t('参数混淆')],
-    ['G 然后 O', t('系统日志')],
-    ['/', '主机页聚焦搜索；其它页打开命令面板'],
-    ['Enter', '主机页聚焦底部命令行（再点已选主机同样进入）'],
-    ['Ctrl+Shift+F', '当前主机 · 文件管理'],
-    ['Ctrl+Shift+P', '当前主机 · 进程管理'],
-    ['主机工具栏 PTY / VNC', '交互伪终端 / 远程桌面会话'],
-    ['Esc', '关闭文件/进程页签或浮层（不关 PTY / VNC）'],
-    ['↑ / ↓ + Enter', '终端命令历史 / 面板选择'],
-    ['Ctrl+L', '清空当前终端输出'],
+    ['G 然后 O', t('状态概览')],
+    ['↑ / ↓ + Enter', t('终端命令历史 / 补全选择')],
+    ['Esc', t('收起查找栏或关闭弹窗')],
   ]
   return (
     <div className="mask" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
@@ -93,7 +90,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           ))}
         </div>
-        <div className="dlg-foot dim">{t('侧栏可切换紧凑密度与主题；状态会保存在本机浏览器。')}</div>
+        <div className="dlg-foot dim">{t('可在顶部「设置」切换 10 套 Qt 主题、字体字号、列显隐与分屏布局。')}</div>
       </div>
     </div>
   )

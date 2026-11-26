@@ -1,0 +1,2615 @@
+/* ============================================================================
+ * AdaptixWeb — Authentic Qlementine + KDDockWidgets Qt Desktop Stylesheet
+ * Ported 1:1 from AdaptixClient (MainUI, AdaptixWidget, DialogConnect,
+ * SessionsTableWidget, ConsoleWidget, LogsWidget, TasksWidget, DialogSettings)
+ * ============================================================================ */
+
+/* Fonts (QtHack / QtJetBrainsMono) are injected via qt-themes.ts using Vite BASE_URL */
+
+/* Default Qlementine Adaptix Dark fallbacks before JS injects exact JSON vars */
+:root {
+  --qt-bg1: #1E1E1E;
+  --qt-bg2: #1A1A1A;
+  --qt-bg3: #181818;
+  --qt-bg4: #151515;
+  --qt-workspace: #121212;
+  --qt-tabbar: #1A1A1A;
+  --qt-border: #3A3A3A;
+  --qt-border-hover: #4A4A4A;
+  --qt-border-press: #2D7A5A;
+  --qt-border-disabled: #2A2A2A;
+  --qt-focus: #2D7A5A99;
+  --qt-neutral: #2A2A2A;
+  --qt-neutral-hover: #343434;
+  --qt-neutral-press: #3E3E3E;
+  --qt-neutral-disabled: #282828;
+  --qt-primary: #3D9E6E;
+  --qt-primary-hover: #4DAE7E;
+  --qt-primary-press: #5DBE8E;
+  --qt-primary-alt: #2D8B5A;
+  --qt-primary-fg: #FFFFFF;
+  --qt-text: #BEBEBE;
+  --qt-text-hover: #D0D0D0;
+  --qt-text-press: #E0E0E0;
+  --qt-text-disabled: #5A5A5A;
+  --qt-text-muted: #909090;
+  --qt-semi-1: rgba(255, 255, 255, 0.03);
+  --qt-semi-2: rgba(255, 255, 255, 0.07);
+  --qt-semi-3: rgba(255, 255, 255, 0.10);
+  --qt-err: #E96B72;
+  --qt-info: #1BA8D5;
+  --qt-ok: #2D7A5A;
+  --qt-warn: #FBC064;
+  --qt-radius: 4px;
+  --qt-font-size: 12px;
+  --qt-ui-font: 'QtJetBrainsMono', 'Segoe UI', 'Microsoft YaHei UI', monospace;
+  --qt-mono-font: 'QtHack', 'QtJetBrainsMono', 'Consolas', monospace;
+  --qtc-bg: #000000;
+  --qtc-dim: 0.85;
+  --qtc-text: #E0E0E0;
+  --qtc-debug: #606060;
+  --qtc-success: #FFFF00;
+  --qtc-error: #E32227;
+  --qtc-info: #89CFF0;
+  --qtc-operator: #808080;
+  --qtc-task: #606060;
+  --qtc-agent: #808080;
+  --qtc-command: #E0E0E0;
+  --qtc-input: #808080;
+  --qtc-log-agent: #39FF14;
+  --qtc-log-listener: #FFA500;
+  --qtc-log-tunnel: #FDFD96;
+  --qtc-log-connect: #E0E0E0;
+  --qtc-log-disconnect: #808080;
+}
+
+/* Base Qt application typography & scrollbars */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--qt-workspace) !important;
+  color: var(--qt-text) !important;
+  font-family: var(--qt-ui-font) !important;
+  font-size: var(--qt-font-size) !important;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono, code, pre {
+  font-family: var(--qt-mono-font) !important;
+}
+
+/* Qlementine thin desktop scrollbars */
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--qt-bg4);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--qt-neutral);
+  border-radius: 4px;
+  border: 2px solid var(--qt-bg4);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--qt-border-hover);
+}
+*::-webkit-scrollbar-corner {
+  background: var(--qt-bg4);
+}
+
+/* Native Qt QPushButton / QLineEdit / QComboBox / QCheckBox primitives */
+button, .btn {
+  font-family: var(--qt-ui-font);
+  font-size: var(--qt-font-size);
+  border-radius: var(--qt-radius);
+  background: var(--qt-neutral);
+  color: var(--qt-text);
+  border: 1px solid var(--qt-border);
+  padding: 4px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background 90ms ease, border-color 90ms ease, color 90ms ease;
+}
+button:hover:not(:disabled), .btn:hover:not(:disabled) {
+  background: var(--qt-neutral-hover);
+  border-color: var(--qt-border-hover);
+  color: var(--qt-text-hover);
+}
+button:active:not(:disabled), .btn:active:not(:disabled) {
+  background: var(--qt-neutral-press);
+  border-color: var(--qt-border-press);
+}
+button:disabled, .btn:disabled {
+  background: var(--qt-neutral-disabled);
+  color: var(--qt-text-disabled);
+  border-color: var(--qt-border-disabled);
+  cursor: not-allowed;
+}
+.qt-shell button.primary,
+.qt-login-screen button.primary,
+.qt-modal-mask button.primary,
+button.primary,
+.btn.primary {
+  background: var(--qt-primary) !important;
+  color: var(--qt-primary-fg) !important;
+  border-color: var(--qt-primary) !important;
+  font-weight: 600;
+}
+.qt-shell button.primary:hover:not(:disabled),
+.qt-login-screen button.primary:hover:not(:disabled),
+.qt-modal-mask button.primary:hover:not(:disabled),
+button.primary:hover:not(:disabled),
+.btn.primary:hover:not(:disabled) {
+  background: var(--qt-primary-hover) !important;
+  border-color: var(--qt-primary-hover) !important;
+  color: var(--qt-primary-fg) !important;
+}
+.qt-shell button.primary:active:not(:disabled),
+.qt-login-screen button.primary:active:not(:disabled),
+.qt-modal-mask button.primary:active:not(:disabled),
+button.primary:active:not(:disabled),
+.btn.primary:active:not(:disabled) {
+  background: var(--qt-primary-press) !important;
+  border-color: var(--qt-primary-press) !important;
+}
+.qt-shell button.primary:disabled,
+.qt-login-screen button.primary:disabled,
+.qt-modal-mask button.primary:disabled {
+  background: color-mix(in srgb, var(--qt-primary) 42%, var(--qt-neutral-disabled)) !important;
+  border-color: var(--qt-border-disabled) !important;
+  color: color-mix(in srgb, var(--qt-primary-fg) 65%, transparent) !important;
+}
+.qt-shell button.danger,
+.qt-login-screen button.danger,
+.qt-modal-mask button.danger,
+button.danger,
+.btn.danger {
+  background: color-mix(in srgb, var(--qt-err) 18%, var(--qt-neutral)) !important;
+  color: var(--qt-err) !important;
+  border-color: color-mix(in srgb, var(--qt-err) 55%, var(--qt-border)) !important;
+}
+.qt-shell button.danger:hover:not(:disabled),
+.qt-modal-mask button.danger:hover:not(:disabled),
+button.danger:hover:not(:disabled),
+.btn.danger:hover:not(:disabled) {
+  background: var(--qt-err) !important;
+  color: #fff !important;
+  border-color: var(--qt-err) !important;
+}
+button.ghost, .btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--qt-text-muted);
+}
+button.ghost:hover:not(:disabled), .btn.ghost:hover:not(:disabled) {
+  background: var(--qt-neutral-hover);
+  border-color: var(--qt-border);
+  color: var(--qt-text);
+}
+
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+input[type="url"],
+input:not([type]),
+select,
+textarea {
+  background: var(--qt-bg4);
+  color: var(--qt-text);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  padding: 4px 8px;
+  font-family: var(--qt-ui-font);
+  font-size: var(--qt-font-size);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--qt-primary) !important;
+  box-shadow: 0 0 0 1px var(--qt-focus) !important;
+  outline: none !important;
+}
+input::placeholder, textarea::placeholder {
+  color: var(--qt-text-disabled);
+}
+select option {
+  background: var(--qt-bg1);
+  color: var(--qt-text);
+}
+
+/* Native Qlementine QCheckBox */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-radius: 3px;
+  border: 1px solid var(--qt-border-hover);
+  background: var(--qt-bg4);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 90ms ease, border-color 90ms ease;
+}
+input[type="checkbox"]:hover {
+  border-color: var(--qt-primary);
+}
+input[type="checkbox"]:checked {
+  background: var(--qt-primary);
+  border-color: var(--qt-primary);
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 7px;
+  height: 4px;
+  border-left: 1.8px solid var(--qt-primary-fg);
+  border-bottom: 1.8px solid var(--qt-primary-fg);
+  transform: rotate(-45deg) translate(0.5px, -0.5px);
+}
+
+/* Real AdaptixClient PNG Icons — auto-adapt monochrome icons for light/dark themes */
+.qt-ico {
+  display: inline-block;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+  flex-shrink: 0;
+  image-rendering: -webkit-optimize-contrast;
+}
+html[data-qt-mode="dark"] .qt-ico-mono {
+  opacity: 0.9;
+}
+html[data-qt-mode="light"] .qt-ico-mono {
+  filter: brightness(0.18) saturate(0);
+  opacity: 0.88;
+}
+/* Reconnect link icon — COLOR_NeonGreen (#39FF14) when connected, red when offline */
+.qt-ico-link-on {
+  filter: brightness(0) saturate(100%) invert(68%) sepia(93%) saturate(1352%) hue-rotate(69deg) brightness(109%) contrast(114%);
+}
+.qt-ico-link-sync {
+  filter: brightness(0) saturate(100%) invert(82%) sepia(43%) saturate(851%) hue-rotate(340deg) brightness(103%) contrast(97%);
+}
+.qt-ico-link-off {
+  filter: brightness(0) saturate(100%) invert(54%) sepia(56%) saturate(1692%) hue-rotate(322deg) brightness(96%) contrast(91%);
+}
+
+/* ============================================================================
+ * 1. MainUI Shell (QMenuBar + AdaptixWidget topHLayout + KDDockWidgets + South TabBar)
+ * ============================================================================ */
+.qt-shell {
+  height: 100dvh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-workspace);
+  color: var(--qt-text);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── QMenuBar (Projects | Extensions | Settings) ── */
+.qt-menubar {
+  height: 26px;
+  flex-shrink: 0;
+  background: var(--qt-bg1);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 2px;
+  position: relative;
+  z-index: 90;
+}
+.qt-menubar-logo {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  margin-right: 4px;
+  object-fit: contain;
+}
+.qt-menu-item {
+  position: relative;
+}
+.qt-menu-trigger {
+  height: 22px;
+  padding: 0 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--qt-text);
+  font-size: 12px;
+  font-weight: 400;
+}
+.qt-menu-trigger:hover,
+.qt-menu-trigger.open {
+  background: var(--qt-neutral);
+  border-color: transparent;
+  color: var(--qt-text-press);
+}
+.qt-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 224px;
+  padding: 4px;
+  background: var(--qt-bg1);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  z-index: 160;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.qt-menu-head {
+  padding: 4px 10px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--qt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.qt-menu-action {
+  width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--qt-text);
+  justify-content: space-between;
+  font-size: 12px;
+  text-align: left;
+}
+.qt-menu-action:hover {
+  background: var(--qt-primary);
+  color: var(--qt-primary-fg);
+}
+.qt-menu-action:hover .qt-menu-sc {
+  color: var(--qt-primary-fg);
+  opacity: 0.85;
+}
+.qt-menu-sc {
+  font-family: var(--qt-mono-font);
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+}
+.qt-menu-sep {
+  height: 1px;
+  background: var(--qt-border);
+  margin: 4px 8px;
+}
+.qt-swatches {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.qt-swatches i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  display: inline-block;
+}
+.qt-menubar-spacer { flex: 1; }
+.qt-menubar-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qt-menubar-chip {
+  height: 20px;
+  padding: 0 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--qt-text-muted);
+  font-size: 11px;
+}
+.qt-menubar-chip:hover {
+  background: var(--qt-neutral);
+  color: var(--qt-text);
+  border-color: var(--qt-border);
+}
+
+/* ── AdaptixWidget::topHLayout (Qt PNG icon + concise label + VLine groups) ── */
+.qt-toolbar {
+  flex-shrink: 0;
+  background: var(--qt-bg1);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  z-index: 70;
+}
+.qt-tb-btn {
+  position: relative;
+  height: 28px;
+  padding: 0 8px;
+  gap: 5px;
+  background: var(--qt-neutral);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  color: var(--qt-text);
+  font-size: 11.5px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.qt-tb-btn img {
+  width: 16px;
+  height: 16px;
+}
+.qt-tb-lbl {
+  line-height: 1;
+}
+.qt-tb-btn:hover {
+  background: var(--qt-neutral-hover);
+  border-color: var(--qt-border-hover);
+  color: var(--qt-text-hover);
+}
+.qt-tb-btn:active {
+  background: var(--qt-neutral-press);
+  border-color: var(--qt-border-press);
+}
+.qt-tb-btn.active {
+  background: color-mix(in srgb, var(--qt-primary) 22%, var(--qt-neutral));
+  border-color: var(--qt-primary);
+  color: var(--qt-text-press);
+  font-weight: 600;
+}
+.qt-tb-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--qt-primary);
+  color: var(--qt-primary-fg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-family: var(--qt-mono-font);
+  pointer-events: none;
+}
+.qt-tb-badge.muted {
+  background: var(--qt-text-disabled);
+  color: #fff;
+}
+.qt-tb-vline {
+  width: 1px;
+  height: 20px;
+  background: var(--qt-border);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+.qt-tb-spacer { flex: 1; }
+.qt-tb-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qt-tb-pill {
+  height: 26px;
+  padding: 0 8px;
+  background: var(--qt-neutral);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  color: var(--qt-text);
+  font-size: 11.5px;
+  gap: 5px;
+}
+.qt-tb-pill img {
+  width: 15px;
+  height: 15px;
+}
+
+/* Extensions Docks Popup (AdaptixWidget::extDocksPopup) */
+.qt-ext-wrap { position: relative; }
+.qt-ext-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 264px;
+  padding: 8px;
+  background: var(--qt-bg1);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.58);
+  z-index: 150;
+}
+.qt-ext-title {
+  padding: 0 4px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--qt-text-muted);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  margin-bottom: 6px;
+}
+.qt-ext-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--qt-bg4);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 3px;
+  padding: 3px;
+}
+.qt-ext-item {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--qt-text);
+  justify-content: space-between;
+  font-size: 12px;
+}
+.qt-ext-item:hover {
+  background: var(--qt-primary);
+  color: var(--qt-primary-fg);
+}
+.qt-ext-item:hover .qt-ext-sub {
+  color: var(--qt-primary-fg);
+  opacity: 0.85;
+}
+.qt-ext-sub {
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+}
+
+/* ============================================================================
+ * 2. KDDockWidgets Dual-Zone Workspace (dockTop + 5px Separator + dockBottom)
+ * ============================================================================ */
+.qt-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-workspace);
+  padding: 3px;
+  gap: 0;
+  overflow: hidden;
+}
+.qt-dock {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.qt-dock-bar {
+  height: 28px;
+  flex-shrink: 0;
+  background: var(--qt-tabbar);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: flex-end;
+  padding: 0 4px 0 2px;
+  gap: 2px;
+}
+.qt-dock-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.qt-dock-tabs::-webkit-scrollbar { height: 0; }
+
+/* KDDockWidgets Tab with real PNG icon + close button */
+.qt-tab {
+  height: 25px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: var(--qt-text-muted);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  top: 1px;
+}
+.qt-tab:hover {
+  background: var(--qt-semi-2);
+  color: var(--qt-text);
+}
+.qt-tab.active {
+  background: var(--qt-bg3);
+  border-color: var(--qt-border);
+  border-bottom: 1px solid var(--qt-bg3);
+  color: var(--qt-text-press);
+  font-weight: 600;
+}
+.qt-tab.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--qt-primary);
+  border-radius: 3px 3px 0 0;
+}
+.qt-tab-ico {
+  width: 14px;
+  height: 14px;
+}
+.qt-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.qt-tab-dot.on { background: #39FF14; box-shadow: 0 0 4px rgba(57, 255, 20, 0.5); }
+.qt-tab-dot.off { background: var(--qt-text-disabled); }
+.qt-tab-x {
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--qt-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.qt-tab-x:hover {
+  background: color-mix(in srgb, var(--qt-err) 22%, transparent);
+  color: var(--qt-err);
+}
+
+.qt-dock-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 3px;
+  flex-shrink: 0;
+}
+.qt-dock-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--qt-text-muted);
+  font-size: 11px;
+}
+.qt-dock-btn:hover {
+  background: var(--qt-neutral-hover);
+  border-color: var(--qt-border);
+  color: var(--qt-text);
+}
+
+.qt-dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--qt-bg3);
+  user-select: text;
+}
+
+/* KDDockWidgets 5px Splitter (setSeparatorThickness(5)) */
+.qt-splitter {
+  height: 5px;
+  flex-shrink: 0;
+  cursor: row-resize;
+  background: var(--qt-workspace);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 100ms ease;
+}
+.qt-splitter::after {
+  content: "";
+  width: 44px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--qt-border);
+}
+.qt-splitter:hover,
+.qt-splitter.dragging {
+  background: color-mix(in srgb, var(--qt-primary) 35%, var(--qt-workspace));
+}
+.qt-splitter:hover::after,
+.qt-splitter.dragging::after {
+  background: var(--qt-primary);
+}
+
+/* ── 3. MainUI QTabWidget::South Project TabBar ── */
+.qt-south {
+  height: 26px;
+  flex-shrink: 0;
+  background: var(--qt-tabbar);
+  border-top: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: stretch;
+  padding: 0 8px 0 4px;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.qt-project-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--qt-bg3);
+  border: 1px solid var(--qt-border);
+  border-top: none;
+  border-bottom: 2px solid var(--qt-primary);
+  border-radius: 0 0 4px 4px;
+  color: var(--qt-text-press);
+  font-weight: 600;
+  font-size: 11.5px;
+  margin-bottom: 2px;
+}
+.qt-project-tab img {
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+}
+.qt-south-sep {
+  width: 1px;
+  height: 14px;
+  align-self: center;
+  background: var(--qt-border);
+}
+.qt-south-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--qt-text-muted);
+  font-family: var(--qt-mono-font);
+  font-size: 11px;
+}
+.qt-south-stat b {
+  color: var(--qt-text);
+  font-weight: 600;
+}
+.qt-south-spacer { flex: 1; }
+.qt-south-btn {
+  height: 20px;
+  align-self: center;
+  padding: 0 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--qt-text-muted);
+  font-size: 11px;
+}
+.qt-south-btn:hover {
+  background: var(--qt-neutral);
+  border-color: var(--qt-border);
+  color: var(--qt-text);
+}
+
+/* StatusPill inside Qt South bar — crisp single line */
+.qt-south .conn-chip {
+  height: 19px;
+  padding: 0 7px;
+  align-self: center;
+  border-radius: 3px;
+  font-size: 11px;
+  gap: 5px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--qt-border);
+  background: var(--qt-bg4);
+}
+.qt-south .conn-chip .conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.qt-south .conn-chip.is-live .conn-dot { background: #39FF14; }
+.qt-south .conn-chip.is-sync .conn-dot { background: var(--qt-warn); }
+.qt-south .conn-chip.is-rest .conn-dot { background: var(--qt-info); }
+.qt-south .conn-chip.is-off  .conn-dot { background: var(--qt-err); }
+.qt-south .conn-chip .conn-label {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 4px !important;
+  line-height: 1 !important;
+}
+.qt-south .conn-chip .conn-title { font-size: 11px; font-weight: 600; color: var(--qt-text); }
+.qt-south .conn-chip .conn-sub   { font-size: 10.5px; color: var(--qt-text-muted); }
+
+/* ============================================================================
+ * 4. SessionsTableWidget (1:1 Qt QTableView + BoldHeaderView + Collapsible Search)
+ * ============================================================================ */
+.qt-sessions {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+  overflow: hidden;
+}
+.qt-search-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+}
+.qt-search-input {
+  width: 280px;
+  max-width: 40vw;
+  height: 24px;
+  padding: 0 8px;
+}
+.qt-search-combo {
+  min-width: 140px;
+  height: 24px;
+  padding: 0 6px;
+}
+.qt-check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--qt-text);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.qt-search-x {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--qt-text-muted);
+  font-weight: 700;
+}
+.qt-search-x:hover {
+  background: var(--qt-neutral-hover);
+  color: var(--qt-text);
+}
+
+.qt-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--qt-bg3);
+}
+.qt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--qt-font-size);
+  table-layout: auto;
+}
+.qt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--qt-bg1);
+  border-bottom: 1px solid var(--qt-border);
+  border-right: 1px solid var(--qt-border-disabled);
+  color: var(--qt-text-press);
+  font-weight: 700;
+  font-size: 11.5px;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.qt-table thead th:last-child { border-right: none; }
+.qt-table thead th:hover { background: var(--qt-neutral); }
+.qt-table thead th.align-l { text-align: left; }
+
+.qt-table tbody tr {
+  height: 24px;
+  background: var(--qt-bg3);
+  cursor: default;
+}
+.qt-table tbody tr:nth-child(even) {
+  background: var(--qt-bg2);
+}
+.qt-table tbody tr:hover {
+  background: var(--qt-semi-2);
+}
+.qt-table tbody tr.selected {
+  background: color-mix(in srgb, var(--qt-primary) 28%, var(--qt-bg2)) !important;
+  color: var(--qt-text-press);
+}
+.qt-table tbody tr.is-offline {
+  color: var(--qt-text-disabled);
+}
+.qt-table tbody tr.is-offline td {
+  color: var(--qt-text-disabled);
+}
+.qt-table tbody td {
+  padding: 2px 8px;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--qt-semi-1);
+}
+.qt-table tbody td.align-l { text-align: left; }
+.qt-os-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.qt-os-icon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.qt-user-elev {
+  color: var(--qt-err);
+  font-weight: 700;
+}
+.qt-tag-pill {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  background: color-mix(in srgb, var(--qt-primary) 20%, transparent);
+  color: var(--qt-primary-hover);
+  border: 1px solid color-mix(in srgb, var(--qt-primary) 40%, transparent);
+}
+.qt-table-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--qt-text-muted);
+  padding: 24px;
+}
+
+/* ============================================================================
+ * 5. ConsoleWidget & LogsWidget (TextEditConsole + adaptix_background.png)
+ * ============================================================================ */
+.qt-ev-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.qt-console {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+  padding: 2px 3px 4px;
+  gap: 4px;
+  overflow: hidden;
+}
+.qt-console-search {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 2px 0;
+}
+.qt-console-search button {
+  height: 22px;
+  min-width: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.qt-console-search input {
+  width: 260px;
+  height: 22px;
+  padding: 0 7px;
+}
+.qt-console-search-count {
+  font-family: var(--qt-mono-font);
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  min-width: 54px;
+  text-align: center;
+}
+
+/* TextEditConsole with authentic Adaptix chameleon background wallpaper + dimming */
+.qt-console-out-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background: var(--qtc-bg);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: var(--qt-radius);
+  overflow: hidden;
+}
+.qt-console-bg-img {
+  position: absolute;
+  inset: 0;
+  background-image: var(--qt-console-bg-url);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 0;
+}
+.qt-console-bg-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--qtc-bg);
+  opacity: var(--qtc-dim);
+  pointer-events: none;
+  z-index: 1;
+}
+html[data-qt-console-bg="off"] .qt-console-bg-img,
+html[data-qt-console-bg="off"] .qt-console-bg-dim {
+  display: none;
+}
+.qt-console-out {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  overflow: auto;
+  padding: 6px 10px;
+  font-family: var(--qt-mono-font);
+  font-size: var(--qt-font-size);
+  line-height: 1.48;
+  color: var(--qtc-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.qt-console-out.nowrap {
+  white-space: pre;
+  word-break: normal;
+}
+.qt-c-line {
+  margin: 0;
+}
+.qt-c-line.hit {
+  background: rgba(59, 130, 246, 0.25);
+}
+.qt-c-line.hit-cur {
+  background: rgba(59, 130, 246, 0.52);
+}
+.qt-c-time     { color: var(--qtc-debug); }
+.qt-c-operator { color: var(--qtc-operator); }
+.qt-c-agent    { color: var(--qtc-agent); text-decoration: underline; }
+.qt-c-cmd      { color: var(--qtc-command); font-weight: 700; }
+.qt-c-ok       { color: var(--qtc-success); }
+.qt-c-err      { color: var(--qtc-error); }
+.qt-c-info     { color: var(--qtc-info); }
+.qt-c-debug    { color: var(--qtc-debug); }
+.qt-c-log-agent    { color: var(--qtc-log-agent); }
+.qt-c-log-listener { color: var(--qtc-log-listener); }
+.qt-c-log-tunnel   { color: var(--qtc-log-tunnel); }
+.qt-c-log-conn     { color: var(--qtc-log-connect); }
+.qt-c-log-disc     { color: var(--qtc-log-disconnect); }
+
+/* ConsoleWidget::InfoLabel ([id] user @ host.domain) */
+.qt-console-info {
+  flex-shrink: 0;
+  padding: 2px 4px;
+  color: var(--qt-text);
+  font-family: var(--qt-mono-font);
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  user-select: text;
+}
+.qt-console-info-meta {
+  color: var(--qt-text-muted);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ConsoleWidget::CmdLabel + InputLineEdit */
+.qt-console-prompt-row {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+.qt-console-prompt-lbl {
+  color: var(--qt-text);
+  font-family: var(--qt-mono-font);
+  font-size: var(--qt-font-size);
+  padding: 0 2px 0 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.qt-console-input-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+}
+.qt-console-input {
+  width: 100%;
+  height: 28px;
+  padding: 4px 8px;
+  background: var(--qt-bg4) !important;
+  color: var(--qt-text) !important;
+  border: 1px solid var(--qt-border-disabled) !important;
+  border-radius: var(--qt-radius) !important;
+  font-family: var(--qt-mono-font) !important;
+  font-size: var(--qt-font-size) !important;
+}
+
+/* ============================================================================
+ * 6. DialogConnect (Login — exact 720×470 Qt two-column dialog + Profiles)
+ * ============================================================================ */
+.qt-login-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--qt-workspace);
+  padding: 16px;
+}
+.qt-connect-win {
+  width: 720px;
+  max-width: 100%;
+  min-height: 450px;
+  background: var(--qt-bg1);
+  border: 1px solid var(--qt-border);
+  border-radius: 6px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.62);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.qt-connect-titlebar {
+  height: 34px;
+  padding: 0 12px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.qt-connect-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--qt-text-press);
+}
+.qt-connect-brand img {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+.qt-connect-body {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr 1px 248px;
+  gap: 0;
+  padding: 8px;
+}
+.qt-connect-left {
+  padding: 6px 12px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qt-connect-vline {
+  background: var(--qt-border-disabled);
+  margin: 4px 0;
+}
+.qt-connect-right {
+  padding: 4px 6px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qt-groupbox {
+  position: relative;
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  padding: 14px 12px 12px;
+  margin-top: 6px;
+  background: color-mix(in srgb, var(--qt-bg2) 55%, var(--qt-bg1));
+}
+.qt-groupbox-title {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  padding: 0 6px;
+  background: var(--qt-bg1);
+  color: var(--qt-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.qt-form-grid {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 8px;
+}
+.qt-form-grid label {
+  color: var(--qt-text);
+  font-size: 12px;
+  text-align: left;
+}
+.qt-pass-wrap {
+  display: flex;
+  gap: 4px;
+}
+.qt-pass-wrap input { flex: 1 1 auto; min-width: 0; }
+.qt-pass-wrap button { height: 27px; padding: 0 8px; flex-shrink: 0; }
+.qt-connect-err {
+  min-height: 18px;
+  font-size: 11.5px;
+  color: var(--qt-err);
+}
+.qt-connect-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+.qt-connect-submit {
+  width: 164px;
+  height: 30px;
+}
+
+/* Profiles CardListWidget (right side of DialogConnect) */
+.qt-profiles-head {
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--qt-text);
+  padding: 2px 0;
+}
+.qt-profiles-list {
+  flex: 1 1 auto;
+  min-height: 260px;
+  max-height: 318px;
+  overflow-y: auto;
+  background: var(--qt-bg4);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qt-profile-card {
+  position: relative;
+  padding: 7px 26px 7px 9px;
+  background: var(--qt-bg2);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 4px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: pointer;
+}
+.qt-profile-card:hover {
+  background: var(--qt-neutral);
+  border-color: var(--qt-border-hover);
+}
+.qt-profile-card.active {
+  background: color-mix(in srgb, var(--qt-primary) 22%, var(--qt-bg2));
+  border-color: var(--qt-primary);
+}
+.qt-profile-name {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--qt-text-press);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qt-profile-sub {
+  font-family: var(--qt-mono-font);
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qt-profile-del {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--qt-text-muted);
+  font-size: 13px;
+}
+.qt-profile-del:hover {
+  background: color-mix(in srgb, var(--qt-err) 22%, transparent);
+  color: var(--qt-err);
+}
+.qt-profiles-empty {
+  margin: auto;
+  text-align: center;
+  font-size: 11px;
+  color: var(--qt-text-disabled);
+  padding: 16px 8px;
+}
+.qt-profiles-btns {
+  display: flex;
+  gap: 5px;
+}
+.qt-profiles-btns .new-btn {
+  flex: 1 1 auto;
+  height: 30px;
+}
+.qt-profiles-btns .ico-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.qt-profiles-btns .ico-btn img {
+  width: 18px;
+  height: 18px;
+}
+
+/* ============================================================================
+ * 7. DialogSettings (640×420 Split Sidebar Qt Settings Dialog)
+ * ============================================================================ */
+.qt-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.56);
+  display: grid;
+  place-items: center;
+  z-index: 300;
+}
+.qt-dialog {
+  width: 660px;
+  max-width: 94vw;
+  max-height: 86vh;
+  background: var(--qt-bg1);
+  border: 1px solid var(--qt-border);
+  border-radius: 6px;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.qt-dialog-hd {
+  height: 34px;
+  padding: 0 12px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--qt-text-press);
+}
+.qt-settings-split {
+  flex: 1 1 auto;
+  min-height: 320px;
+  max-height: 540px;
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  overflow: hidden;
+}
+.qt-settings-nav {
+  background: var(--qt-bg2);
+  border-right: 1px solid var(--qt-border-disabled);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.qt-settings-nav-btn {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  justify-content: flex-start;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--qt-radius);
+  color: var(--qt-text);
+}
+.qt-settings-nav-btn:hover {
+  background: var(--qt-neutral);
+}
+.qt-settings-nav-btn.active {
+  background: var(--qt-primary);
+  color: var(--qt-primary-fg);
+  font-weight: 600;
+}
+.qt-settings-pane {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qt-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.qt-theme-card {
+  padding: 7px 10px;
+  background: var(--qt-bg3);
+  border: 1px solid var(--qt-border);
+  border-radius: var(--qt-radius);
+  justify-content: space-between;
+  font-size: 11.5px;
+}
+.qt-theme-card.active {
+  border-color: var(--qt-primary);
+  background: color-mix(in srgb, var(--qt-primary) 18%, var(--qt-bg3));
+  color: var(--qt-text-press);
+  font-weight: 600;
+}
+.qt-cols-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 10px;
+  padding: 6px 0;
+}
+.qt-set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.qt-set-label {
+  font-size: 12px;
+  color: var(--qt-text);
+  font-weight: 600;
+}
+.qt-dialog-foot {
+  padding: 8px 12px;
+  background: var(--qt-bg2);
+  border-top: 1px solid var(--qt-border-disabled);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ============================================================================
+ * 8. Tasks Split (Tasks Table + Task Output Console — 1:1 TasksWidget.cpp)
+ * ============================================================================ */
+.qt-tasks-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  overflow: hidden;
+}
+.qt-tasks-left {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--qt-border);
+  overflow: hidden;
+}
+.qt-tasks-right {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+  padding: 4px;
+  gap: 4px;
+  overflow: hidden;
+}
+.qt-task-out-hd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qt-task-out-msg {
+  flex: 1 1 auto;
+  height: 26px;
+  font-family: var(--qt-mono-font) !important;
+  background: var(--qt-bg4) !important;
+}
+.qt-task-out-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--qt-bg4);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: var(--qt-radius);
+  color: var(--qt-text);
+  font-family: var(--qt-mono-font);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ============================================================================
+ * 9. Global Qlementine Normalization for All Secondary Sub-Docks
+ *    (Listeners, Downloads, Tunnels, Credentials, Targets, Screenshots, Chat,
+ *     Graph, FileManager, ProcessManager, Generate, Delivery, BOFs, etc.)
+ * ============================================================================ */
+.qt-dock-body .page,
+.qt-dock-body .ps {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3) !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  overflow: hidden;
+}
+.qt-dock-body .page-head,
+.qt-dock-body .ps-bar,
+.qt-dock-body .toolbar,
+.qt-dock-body .fm-bar,
+.qt-dock-body .pm-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px !important;
+  min-height: 32px !important;
+  background: var(--qt-bg2) !important;
+  border-bottom: 1px solid var(--qt-border-disabled) !important;
+  border-radius: 0 !important;
+}
+.qt-dock-body .page-head h1,
+.qt-dock-body .page-head h2 {
+  font-size: 12.5px !important;
+  margin: 0 6px 0 0 !important;
+  font-weight: 700 !important;
+  color: var(--qt-text-press) !important;
+}
+.qt-dock-body .page-head .sub,
+.qt-dock-body .page-head p {
+  display: none !important;
+}
+.qt-dock-body .ps-body,
+.qt-dock-body .page-body,
+.qt-dock-body .tbl-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 !important;
+  background: var(--qt-bg3) !important;
+}
+.qt-dock-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--qt-font-size);
+}
+.qt-dock-body table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 26px;
+  padding: 0 8px !important;
+  background: var(--qt-bg1) !important;
+  border-bottom: 1px solid var(--qt-border) !important;
+  border-right: 1px solid var(--qt-border-disabled);
+  color: var(--qt-text-press) !important;
+  font-weight: 700 !important;
+  font-size: 11.5px !important;
+  text-align: left;
+  white-space: nowrap;
+}
+.qt-dock-body table td {
+  height: 24px;
+  padding: 2px 8px !important;
+  border-bottom: 1px solid var(--qt-semi-1) !important;
+  color: var(--qt-text);
+  vertical-align: middle;
+}
+.qt-dock-body table tbody tr:nth-child(even) {
+  background: var(--qt-bg2);
+}
+.qt-dock-body table tbody tr:hover {
+  background: var(--qt-semi-2) !important;
+}
+.qt-dock-body .card,
+.qt-dock-body .panel,
+.qt-dock-body .box {
+  background: var(--qt-bg2) !important;
+  border: 1px solid var(--qt-border) !important;
+  border-radius: var(--qt-radius) !important;
+}
+.qt-dock-body .ps-bar input[type="search"],
+.qt-dock-body .toolbar input[type="search"] {
+  height: 24px !important;
+  padding: 0 8px !important;
+}
+.qt-dock-body .ps-bar button,
+.qt-dock-body .toolbar button,
+.qt-dock-body .page-head button {
+  height: 24px !important;
+  padding: 0 9px !important;
+  font-size: 11.5px !important;
+}
+.qt-dock-body .empty {
+  height: 100%;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--qt-text-muted);
+  padding: 20px;
+}
+
+/* Context Menu (QMenu) */
+.ctx {
+  position: fixed;
+  z-index: 400;
+  min-width: 196px;
+  padding: 4px;
+  background: var(--qt-bg1) !important;
+  border: 1px solid var(--qt-border) !important;
+  border-radius: var(--qt-radius) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6) !important;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ctx button {
+  width: 100%;
+  height: 25px;
+  padding: 0 10px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 3px !important;
+  color: var(--qt-text) !important;
+  justify-content: space-between !important;
+  font-size: 12px !important;
+  text-align: left !important;
+}
+.ctx button:hover:not(:disabled) {
+  background: var(--qt-primary) !important;
+  color: var(--qt-primary-fg) !important;
+}
+.ctx button.danger {
+  color: var(--qt-err) !important;
+}
+.ctx button.danger:hover:not(:disabled) {
+  background: var(--qt-err) !important;
+  color: #fff !important;
+}
+.ctx hr {
+  border: none;
+  height: 1px;
+  background: var(--qt-border);
+  margin: 4px 6px;
+}
+
+/* Modal & Dialog overrides for all sub-pages */
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.56) !important;
+  display: grid;
+  place-items: center;
+  z-index: 320;
+}
+.dlg {
+  background: var(--qt-bg1) !important;
+  border: 1px solid var(--qt-border) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.65) !important;
+  color: var(--qt-text) !important;
+}
+
+/* Syncing Splash Screen (SyncLogo.png) */
+.qt-splash {
+  width: 340px;
+  padding: 18px 20px;
+  background: var(--qt-bg1);
+  border: 1px solid var(--qt-border);
+  border-radius: 6px;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.qt-splash img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+.qt-splash-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--qt-bg4);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.qt-splash-bar > i {
+  display: block;
+  width: 42%;
+  height: 100%;
+  background: var(--qt-primary);
+  animation: qtSlide 1.1s ease-in-out infinite;
+}
+@keyframes qtSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+
+/* ============================================================================
+ * 10. Audit Polish: Floating PageTips, Context Menu, Overview, AI, Shortcuts,
+ *     Listeners, Graph, Generate, WebDelivery, ArgFuscator, Dock Tab Scrolling
+ * ============================================================================ */
+
+/* Floating PageTips popover (never expands inline inside toolbars!) */
+.page-tips {
+  position: fixed !important;
+  right: 16px;
+  bottom: 36px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: 62vh;
+  z-index: 280;
+  background: var(--qt-bg1);
+  border: 1px solid var(--qt-border);
+  border-radius: 6px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.62);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.page-tips-head {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--qt-text-press);
+}
+.page-tips-body {
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--qt-text);
+}
+.page-tips-body p {
+  margin: 0 0 6px;
+}
+.page-tips-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Context Menu polish: clean header, crisp divider, no permanent pink box on danger item */
+.ctx-hd {
+  padding: 4px 10px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--qt-text-muted);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  margin-bottom: 3px;
+}
+.ctx .sep {
+  height: 1px;
+  background: var(--qt-border);
+  margin: 4px 6px;
+}
+.qt-shell .ctx button.danger,
+.ctx button.danger {
+  background: transparent !important;
+  border: none !important;
+  color: var(--qt-err) !important;
+}
+.qt-shell .ctx button.danger:hover:not(:disabled),
+.ctx button.danger:hover:not(:disabled) {
+  background: var(--qt-err) !important;
+  color: #fff !important;
+}
+
+/* ShortcutHelp dialog: full scrollable body, never clips last row */
+.shortcut-dlg {
+  width: 560px;
+  max-width: 94vw;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 !important;
+}
+.shortcut-dlg .dlg-hd {
+  padding: 10px 14px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.shortcut-dlg .dlg-hd h2 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--qt-text-press);
+}
+.shortcut-dlg .shortcut-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.shortcut-dlg .shortcut-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--qt-bg3);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.shortcut-dlg .dlg-foot {
+  padding: 8px 14px;
+  background: var(--qt-bg2);
+  border-top: 1px solid var(--qt-border-disabled);
+  font-size: 11.5px;
+}
+
+/* Qt System Overview (Dashboard.tsx) */
+.qt-overview {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--qt-bg3);
+}
+.qt-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--qt-border-disabled);
+}
+.qt-overview-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--qt-text-press);
+}
+.qt-overview-sub {
+  font-size: 11.5px;
+  color: var(--qt-text-muted);
+  margin-top: 2px;
+}
+.qt-overview-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qt-overview-actions .conn-chip {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11.5px;
+  gap: 5px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--qt-border);
+  background: var(--qt-bg4);
+}
+.qt-overview-actions .conn-chip .conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #39FF14;
+}
+.qt-overview-actions .conn-chip .conn-label {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+.qt-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.qt-stat-card {
+  height: auto !important;
+  min-height: 92px;
+  padding: 12px 14px !important;
+  background: var(--qt-bg2) !important;
+  border: 1px solid var(--qt-border) !important;
+  border-radius: var(--qt-radius) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  text-align: left !important;
+}
+.qt-stat-card:hover {
+  border-color: var(--qt-primary) !important;
+  background: var(--qt-bg1) !important;
+}
+.qt-stat-card .k {
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.qt-stat-card .v {
+  font-size: 20px;
+  color: var(--qt-text);
+}
+.qt-stat-card .v b {
+  color: var(--qt-primary-hover);
+}
+.qt-stat-card .d {
+  font-size: 11px;
+  color: var(--qt-text-muted);
+}
+
+/* AI Collab layout fix: compact chrome so message area always has generous height */
+.qt-dock-body .ai-page,
+.qt-dock-body .ai-battle-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 6px 10px !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+  background: var(--qt-bg3) !important;
+}
+.qt-dock-body .ai-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 4px !important;
+  border-bottom: 1px solid var(--qt-border-disabled);
+}
+.qt-dock-body .ai-title-block .ai-kicker,
+.qt-dock-body .ai-title-block p {
+  display: none;
+}
+.qt-dock-body .ai-title-block h2 {
+  margin: 0;
+  font-size: 12.5px;
+}
+.qt-dock-body .ai-battle-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+  overflow: hidden !important;
+}
+.qt-dock-body .ai-battle-context {
+  flex-shrink: 0;
+  padding: 4px 8px !important;
+  min-height: 30px !important;
+  background: var(--qt-bg2) !important;
+  border: 1px solid var(--qt-border-disabled) !important;
+  border-radius: var(--qt-radius);
+}
+.qt-dock-body .ai-assistant-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: var(--qt-bg2) !important;
+  border: 1px solid var(--qt-border) !important;
+  border-radius: var(--qt-radius);
+}
+.qt-dock-body .ai-assistant-head {
+  flex-shrink: 0;
+  padding: 5px 10px !important;
+  min-height: 28px !important;
+}
+.qt-dock-body .ai-message-list {
+  flex: 1 1 auto;
+  min-height: 80px;
+  overflow-y: auto !important;
+  padding: 8px 10px !important;
+}
+.qt-dock-body .ai-suggestions {
+  flex-shrink: 0;
+  padding: 4px 8px !important;
+  border-top: 1px solid var(--qt-border-disabled);
+  gap: 5px;
+}
+.qt-dock-body .ai-composer {
+  flex-shrink: 0;
+  position: static !important;
+  margin: 0 !important;
+  padding: 6px 8px !important;
+  border-top: 1px solid var(--qt-border-disabled) !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  background: var(--qt-bg4) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+.qt-dock-body .ai-composer textarea {
+  min-height: 36px !important;
+  max-height: 72px !important;
+  padding: 5px 8px !important;
+  resize: none;
+  background: var(--qt-bg3) !important;
+}
+.qt-dock-body .ai-safety-note {
+  display: none !important;
+}
+
+/* Compact Listeners / Generate / WebDelivery / ArgFuscator / Graph / Chat inside Qt docks */
+.qt-dock-body .graph-page,
+.qt-dock-body .graph-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.qt-dock-body .graph-bar {
+  flex-shrink: 0;
+  min-height: 32px !important;
+  height: auto !important;
+  padding: 4px 8px !important;
+  background: var(--qt-bg2) !important;
+  border-bottom: 1px solid var(--qt-border-disabled) !important;
+}
+.qt-dock-body .lis-head,
+.qt-dock-body .lis-strip {
+  padding: 4px 10px !important;
+  min-height: 30px !important;
+}
+.qt-dock-body .lis-strip {
+  display: none !important;
+}
+.qt-dock-body .lis-table td,
+.qt-dock-body .lis-table th {
+  height: 26px !important;
+  padding: 3px 10px !important;
+}
+.qt-dock-body .wd-grid,
+.qt-dock-body .gen-layout,
+.qt-dock-body .af-layout {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+.qt-dock-body .form-row,
+.qt-dock-body .wd-field {
+  grid-template-columns: 140px 1fr !important;
+}
+
+/* Subtle horizontal scrollbar for dock tab strips when many tabs are open */
+.qt-dock-tabs {
+  scrollbar-width: thin;
+}
+.qt-dock-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+.qt-dock-tabs::-webkit-scrollbar-thumb {
+  background: var(--qt-border-hover);
+  border-radius: 2px;
+}
+
+/* ============================================================================
+ * 11. Native Qt File Browser (BrowserFilesWidget) & Process Browser (BrowserProcessWidget)
+ *     Dual-pane QSplitter + QTreeWidget + QTableView + Qt PNG filesystem icons
+ * ============================================================================ */
+.qt-browser {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  background: var(--qt-bg3);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Left QTreeWidget pane */
+.qt-browser-tree {
+  flex-shrink: 0;
+  min-width: 180px;
+  max-width: 58%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+  border-right: 1px solid var(--qt-border-disabled);
+  overflow: hidden;
+}
+.qt-tree-hd {
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  background: var(--qt-bg1);
+  border-bottom: 1px solid var(--qt-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--qt-text-press);
+  user-select: none;
+}
+.qt-tree-hd-cols {
+  display: grid;
+  grid-template-columns: 1fr 56px 96px;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+.qt-tree-hd-cols span:nth-child(2) {
+  text-align: right;
+  padding-right: 4px;
+}
+.qt-tree-hd-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.qt-tree-hd-btn {
+  height: 20px;
+  padding: 0 5px !important;
+  font-size: 10.5px !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--qt-text-muted) !important;
+}
+.qt-tree-hd-btn:hover {
+  background: var(--qt-neutral) !important;
+  color: var(--qt-text) !important;
+}
+.qt-tree-bd {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 3px 0;
+  background: var(--qt-bg3);
+}
+.qt-tree-row {
+  height: 23px;
+  padding-right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--qt-text);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.qt-tree-row:hover {
+  background: var(--qt-semi-2);
+}
+.qt-tree-row.active {
+  background: color-mix(in srgb, var(--qt-primary) 26%, var(--qt-bg2));
+  color: var(--qt-text-press);
+  font-weight: 600;
+}
+.qt-tree-row.is-self {
+  color: var(--qt-err);
+  font-weight: 700;
+}
+.qt-tree-caret {
+  width: 16px;
+  height: 16px;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--qt-text-muted) !important;
+  font-size: 10px !important;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.qt-tree-caret:hover {
+  color: var(--qt-text-press) !important;
+}
+.qt-tree-ico {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.qt-tree-lbl {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qt-tree-pid {
+  width: 52px;
+  text-align: right;
+  font-family: var(--qt-mono-font);
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  flex-shrink: 0;
+}
+.qt-tree-ctx {
+  width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  flex-shrink: 0;
+}
+.qt-tree-row.is-self .qt-tree-pid,
+.qt-tree-row.is-self .qt-tree-ctx {
+  color: var(--qt-err);
+}
+
+/* Horizontal QSplitter handle between Tree and Table */
+.qt-vsplit {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--qt-workspace);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 100ms ease;
+}
+.qt-vsplit::after {
+  content: "";
+  width: 1px;
+  height: 36px;
+  background: var(--qt-border);
+}
+.qt-vsplit:hover,
+.qt-vsplit.dragging {
+  background: color-mix(in srgb, var(--qt-primary) 38%, var(--qt-workspace));
+}
+.qt-vsplit:hover::after,
+.qt-vsplit.dragging::after {
+  background: var(--qt-primary);
+}
+
+/* Right pane (Toolbar + QTableView + Status bar) */
+.qt-browser-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+  overflow: hidden;
+  position: relative;
+}
+.qt-browser-bar {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 4px 6px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.qt-browser-bar::-webkit-scrollbar { height: 0; }
+.qt-b-ico-btn {
+  width: 30px;
+  height: 26px;
+  padding: 0 !important;
+  flex-shrink: 0;
+}
+.qt-b-ico-btn img {
+  width: 16px;
+  height: 16px;
+}
+.qt-b-btn {
+  height: 26px;
+  padding: 0 8px !important;
+  font-size: 11.5px !important;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.qt-b-btn img {
+  width: 15px;
+  height: 15px;
+}
+.qt-b-path-wrap {
+  flex: 1 1 220px;
+  min-width: 150px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qt-b-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px !important;
+  font-family: var(--qt-mono-font) !important;
+  font-size: 11.5px !important;
+}
+.qt-b-filter {
+  width: 185px;
+  min-width: 120px;
+  height: 26px;
+  padding: 0 8px !important;
+  font-size: 11.5px !important;
+}
+.qt-b-status {
+  font-family: var(--qt-mono-font);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--qt-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.qt-b-status.ok { color: #39FF14; }
+html[data-qt-mode="light"] .qt-b-status.ok { color: var(--qt-ok); font-weight: 600; }
+.qt-b-status.err { color: var(--qt-err); }
+.qt-b-status.busy { color: var(--qt-warn); }
+
+/* Breadcrumb sub-strip inside File Browser (ultra-compact 24px) */
+.qt-b-crumbs {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--qt-bg1);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  font-size: 11px;
+}
+.qt-b-crumbs::-webkit-scrollbar { height: 0; }
+.qt-b-crumb-btn {
+  height: 19px;
+  padding: 0 6px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--qt-text-muted) !important;
+  font-family: var(--qt-mono-font);
+  font-size: 11px !important;
+  border-radius: 3px;
+}
+.qt-b-crumb-btn:hover {
+  background: var(--qt-neutral) !important;
+  color: var(--qt-text-press) !important;
+}
+.qt-b-crumb-btn.last {
+  color: var(--qt-text-press) !important;
+  font-weight: 600;
+}
+.qt-b-crumb-sep {
+  color: var(--qt-text-disabled);
+  font-size: 11px;
+  user-select: none;
+}
+.qt-b-boost {
+  margin-left: auto;
+  font-family: var(--qt-mono-font);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--qt-border-disabled);
+  color: var(--qt-text-muted);
+  white-space: nowrap;
+}
+.qt-b-boost.on {
+  border-color: color-mix(in srgb, var(--qt-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--qt-primary) 16%, transparent);
+  color: var(--qt-primary-hover);
+}
+
+/* File / Process table enhancements */
+.qt-file-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+}
+.qt-file-ico {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.qt-file-dir {
+  font-weight: 600;
+  color: var(--qt-text-press);
+}
+.qt-file-ext {
+  font-family: var(--qt-mono-font);
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--qt-neutral);
+  color: var(--qt-text-muted);
+}
+.qt-table tbody tr.is-self-proc,
+.qt-table tbody tr.is-self-proc td {
+  color: var(--qt-err) !important;
+  font-weight: 700;
+}
+.qt-self-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-family: var(--qt-mono-font);
+  background: color-mix(in srgb, var(--qt-err) 20%, transparent);
+  color: var(--qt-err);
+  border: 1px solid color-mix(in srgb, var(--qt-err) 50%, transparent);
+}
+.qt-table tbody td.qt-priv-ctx {
+  color: var(--qt-warn) !important;
+  font-weight: 600;
+}
+html[data-qt-mode="light"] .qt-table tbody td.qt-priv-ctx {
+  color: #b45309 !important;
+}
+
+/* Drag-drop upload overlay */
+.qt-drop-overlay {
+  position: absolute;
+  inset: 6px;
+  z-index: 40;
+  background: color-mix(in srgb, var(--qt-bg1) 88%, transparent);
+  border: 2px dashed var(--qt-primary);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--qt-primary-hover);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* Compact Qt Browser Footer Status Bar (26px) */
+.qt-browser-foot {
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  background: var(--qt-bg2);
+  border-top: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  overflow: hidden;
+}
+.qt-browser-foot-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--qt-mono-font);
+  color: var(--qt-text);
+}
+.qt-browser-foot-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.qt-browser-foot-actions button {
+  height: 20px;
+  padding: 0 7px !important;
+  font-size: 11px !important;
+}
+
+/* File preview modal in Qt style */
+.qt-preview-dlg {
+  width: 780px;
+  max-width: 94vw;
+  height: 76vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 !important;
+}
+.qt-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--qt-bg4);
+  color: var(--qt-text);
+  font-family: var(--qt-mono-font);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}

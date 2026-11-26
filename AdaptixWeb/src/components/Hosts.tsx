@@ -7,6 +7,23 @@ import { lookupIpGeoSync, preloadIpGeo } from '../utils/ipdb'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
+import { loadQtSettings, qtAsset, type QtClientSettings } from '../design/qt-themes'
+
+function osIconPath(a: Agent, live: boolean): string {
+  const desc = (a.a_os_desc || '').toLowerCase()
+  const fam = isLinuxAgent(a)
+    ? 'linux'
+    : (a.a_os === 3 || desc.includes('mac') || desc.includes('darwin') ? 'mac' : 'windows')
+  const tone = !live ? 'grey' : (a.a_elevated ? 'red' : 'blue')
+  return qtAsset(`icons/os/icon-${fam}-${tone}.png`)
+}
+
+function formatQtSleep(a: Agent): string {
+  if (a.a_mark) return a.a_mark
+  const sec = Number(a.a_sleep ?? 0)
+  if (sec <= 0) return '⟶⟶⟶'
+  return `${sec}s (${Number(a.a_jitter ?? 0)}%)`
+}
 
 type Ctx = { x: number; y: number; id: string } | null
 
@@ -139,6 +156,14 @@ export function Hosts() {
 
   const [ctx, setCtx] = useState<Ctx>(null)
   const [busy, setBusy] = useState(false)
+  const [agentType, setAgentType] = useState('ALL')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [autoSearch, setAutoSearch] = useState(true)
+  const [draftFilter, setDraftFilter] = useState(filter)
+  const [sortCol, setSortCol] = useState<string>('created')
+  const [sortAsc, setSortAsc] = useState(false)
+  const [cols, setCols] = useState<Record<string, boolean>>(() => loadQtSettings().sessionsCols)
+  const searchRef = useRef<HTMLInputElement>(null)
   // 动态心跳：每秒刷新 age 文案（对齐 Qt LastTickWorker 500ms）
   const [nowTick, setNowTick] = useState(() => Date.now())
   const [geoVer, setGeoVer] = useState(0)
@@ -158,16 +183,25 @@ export function Hosts() {
     external_ip: string
   } | null>(null)
 
+  const agentTypes = useMemo(() => {
+    const s = new Set<string>()
+    for (const a of Object.values(agents)) {
+      if (a.a_name) s.add(a.a_name)
+    }
+    return Array.from(s).sort()
+  }, [agents])
+
   // 仅在线筛选时每 5 秒跟随 nowTick 刷新一次，避免已超时离线的主机滞留在「仅在线」结果中
   const onlyActiveBucket = onlyActive ? Math.floor(nowTick / 5000) : 0
   const filteredFixed = useMemo(() => {
     void onlyActiveBucket
     let arr = Object.values(agents)
     if (onlyActive) arr = arr.filter((a) => isAgentOnline(a, { now: nowTick }))
+    if (agentType !== 'ALL') arr = arr.filter((a) => a.a_name === agentType)
     if (filter.trim()) {
       const q = filter.trim().toLowerCase()
       arr = arr.filter((a) =>
-        [a.a_id, a.a_computer, a.a_username, a.a_internal_ip, a.a_external_ip, a.a_process, a.a_listener, a.a_tags, a.a_domain]
+        [a.a_id, a.a_name, a.a_computer, a.a_username, a.a_internal_ip, a.a_external_ip, a.a_process, a.a_listener, a.a_tags, a.a_domain]
           .filter(Boolean).some((x) => String(x).toLowerCase().includes(q)))
     }
     // ★ 排序键是 a_create_time（首次注册时间，恒定），不是 a_last_tick：
@@ -182,7 +216,7 @@ export function Hosts() {
       if (ta !== tb) return tb - ta // 新注册在前，贴近原「最新在顶部」的习惯
       return String(a.a_id).localeCompare(String(b.a_id))
     })
-  }, [agents, filter, onlyActive, onlyActiveBucket])
+  }, [agents, filter, onlyActive, onlyActiveBucket, agentType])
 
   const online = filteredFixed.filter((a) => isAgentOnline(a, { now: nowTick }))
   const offline = filteredFixed.filter((a) => !isAgentOnline(a, { now: nowTick }))
@@ -221,6 +255,31 @@ export function Hosts() {
     const t = window.setInterval(() => setNowTick(Date.now()), 1000)
     return () => window.clearInterval(t)
   }, [])
+
+  // Ctrl+F toggles collapsible search bar + live column config sync
+  useEffect(() => {
+    const onSettings = (e: Event) => {
+      const detail = (e as CustomEvent<QtClientSettings>).detail
+      setCols((detail || loadQtSettings()).sessionsCols)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        const tag = (e.target as HTMLElement | null)?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        setSearchOpen(true)
+        setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select() }, 0)
+      } else if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false)
+      }
+    }
+    window.addEventListener('adaptix-qt-settings', onSettings)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('adaptix-qt-settings', onSettings)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [searchOpen])
 
   // 归属地：把这一屏主机的**外网 IP** 批量丢给服务端查一次（库在服务端，见 utils/ipdb.ts）。
   // 表是同步渲染的、查库是异步的，所以拿回新结果后 bump 一次 geoVer 触发重渲染。
@@ -337,177 +396,239 @@ export function Hosts() {
     )
   }
 
+  function toggleSort(col: string) {
+    if (sortCol === col) setSortAsc((v) => !v)
+    else { setSortCol(col); setSortAsc(true) }
+  }
+
+  const sortedList = useMemo(() => {
+    const arr = [...tableList]
+    const dir = sortAsc ? 1 : -1
+    const val = (a: Agent): string | number => {
+      switch (sortCol) {
+        case 'id': return a.a_id || ''
+        case 'type': return a.a_name || ''
+        case 'external': return a.a_external_ip || ''
+        case 'listener': return a.a_listener || ''
+        case 'internal': return a.a_internal_ip || ''
+        case 'domain': return a.a_domain || ''
+        case 'computer': return a.a_computer || ''
+        case 'user': return a.a_username || ''
+        case 'os': return a.a_os_desc || ''
+        case 'process': return a.a_process || ''
+        case 'pid': return Number(a.a_pid) || 0
+        case 'tid': return Number(a.a_tid) || 0
+        case 'tags': return a.a_tags || ''
+        case 'created': return a.a_create_time || 0
+        case 'last': return a.a_last_tick || 0
+        case 'sleep': return a.a_sleep || 0
+        case 'geo': return lookupIpGeoSync(String(a.a_external_ip || '').trim()) || ''
+        default: return a.a_create_time || 0
+      }
+    }
+    return arr.sort((a, b) => {
+      const va = val(a), vb = val(b)
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
+      return String(va).localeCompare(String(vb)) * dir
+    })
+  }, [tableList, sortCol, sortAsc, geoVer])
+
+  const showSearchBar = searchOpen || !!filter || onlyActive || agentType !== 'ALL' || checkedIds.size > 0
+  const colOn = (k: string) => cols[k] !== false
+
+  const headers: { key: string; label: string; alignLeft?: boolean }[] = [
+    { key: 'id', label: 'ID' },
+    { key: 'type', label: 'Type' },
+    { key: 'external', label: 'External' },
+    { key: 'listener', label: 'Listener' },
+    { key: 'internal', label: 'Internal' },
+    { key: 'domain', label: 'Domain' },
+    { key: 'computer', label: 'Computer' },
+    { key: 'user', label: 'User' },
+    { key: 'os', label: 'OS' },
+    { key: 'process', label: 'Process', alignLeft: true },
+    { key: 'pid', label: 'PID' },
+    { key: 'tid', label: 'TID' },
+    { key: 'tags', label: 'Tags', alignLeft: true },
+    { key: 'created', label: 'Created' },
+    { key: 'last', label: 'Last' },
+    { key: 'sleep', label: 'Sleep' },
+    { key: 'geo', label: 'Geo', alignLeft: true },
+  ].filter((h) => colOn(h.key))
+
+  function onRowClick(e: React.MouseEvent, a: Agent) {
+    if (e.ctrlKey || e.metaKey) {
+      toggleChecked(a.a_id, !checkedIds.has(a.a_id))
+      selectAgent(a.a_id)
+      return
+    }
+    if (checkedIds.size > 0) clearChecked()
+    selectAgent(a.a_id)
+  }
+
   return (
-    <div className="sess">
-      <section className="sess-main">
-        <div className="sess-bar">
+    <div className="qt-sessions">
+      {showSearchBar && (
+        <div className="qt-search-bar">
           <input
-            className="sess-search"
+            ref={searchRef}
+            className="qt-search-input"
             type="search"
-            placeholder={t('搜索主机 / IP / 用户 / 标签')}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            placeholder="filter: (admin | root) & ^(test)"
+            value={autoSearch ? filter : draftFilter}
+            onChange={(e) => {
+              const v = e.target.value
+              setDraftFilter(v)
+              if (autoSearch) setFilter(v)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !autoSearch) setFilter(draftFilter)
+              if (e.key === 'Escape') setSearchOpen(false)
+            }}
           />
-          <label className="sess-check">
-            <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
-            {t('仅在线')}
+          <label className="qt-check-inline" title="Auto search on text change">
+            <input
+              type="checkbox"
+              checked={autoSearch}
+              onChange={(e) => {
+                setAutoSearch(e.target.checked)
+                if (e.target.checked) setFilter(draftFilter)
+              }}
+            />
+            <span>auto</span>
           </label>
-
-          {/* 批量条独立于 .sess-actions：后者是**单选**工具条（作用于 selectedAgentId），
-              两者混在一起，操作员就分不清「删除」删的到底是哪一个。 */}
+          <select
+            className="qt-search-combo"
+            value={agentType}
+            onChange={(e) => setAgentType(e.target.value)}
+            title="Agent type"
+          >
+            <option value="ALL">All types</option>
+            {agentTypes.map((tp) => (
+              <option key={tp} value={tp}>{tp}</option>
+            ))}
+          </select>
+          <label className="qt-check-inline">
+            <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />
+            <span>only active</span>
+          </label>
           {checkedIds.size > 0 && (
-            <div className="sess-bulk">
-              <span className="sb-n">{t('已选')} <b>{checkedIds.size}</b> {t('台')}</span>
-              {hiddenChecked > 0 && (
-                <span className="sb-note" title={t('勾选不会被搜索收窄悄悄丢掉')}>
-                  （{hiddenChecked} 台不在当前筛选里）
-                </span>
-              )}
-              <button className="ghost" onClick={() => setChecked(tableIds, !allChecked)}>
-                {allChecked ? t('取消全选') : t('全选当前结果')}
+            <>
+              <span className="qt-south-sep" />
+              <span className="mono" style={{ fontSize: 11.5 }}>{checkedIds.size} selected</span>
+              <button type="button" className="danger" style={{ height: 22, padding: '0 8px' }} onClick={() => setBulkDlg(true)}>
+                Remove ({checkedIds.size})
               </button>
-              <button className="ghost" onClick={clearChecked}>{t('清除')}</button>
-              <button className="danger" onClick={() => setBulkDlg(true)}>
-                删除 {checkedIds.size} 台
+              <button type="button" className="ghost" style={{ height: 22, padding: '0 6px' }} onClick={clearChecked}>
+                Clear
               </button>
-            </div>
+            </>
           )}
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            className="qt-search-x"
+            title="Hide search (Esc)"
+            onClick={() => {
+              setSearchOpen(false)
+              setFilter('')
+              setDraftFilter('')
+              setAgentType('ALL')
+              setOnlyActive(false)
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
-          <div className="sess-actions">
-            {selectedAgent ? (
-              <>
-                <span className="sess-sel mono">{selectedAgent.a_computer || selected}</span>
-                <span className="sep" />
-                <button disabled={!selectedOnline} onClick={() => selected && tryFiles(selected)}>{t('文件')}</button>
-                <button disabled={!selectedOnline} onClick={() => selected && tryProcs(selected)}>{t('进程')}</button>
-                <button disabled={!selectedOnline} onClick={() => selected && tryPty(selected)}>PTY</button>
-                <button disabled={!selectedOnline} onClick={() => selected && tryVnc(selected)}>VNC</button>
-                <button onClick={() => selected && openTunnels(selected)}>{t('隧道')}</button>
-                <button className="danger" onClick={() => removeSelected().catch((e) => pushLog('err', String(e)))}>{t('删除')}</button>
-              </>
-            ) : (
-              <span className="dim">{t('点表格行选中并打开控制台 · 右键出操作菜单 · 勾选可批量')}</span>
-            )}
+      <div className="qt-table-wrap">
+        {sortedList.length === 0 ? (
+          <div className="qt-table-empty">
+            <div>{Object.keys(agents).length === 0 ? t('还没有主机 — 等待接入或打开投递') : t('无匹配主机')}</div>
+            {Object.keys(agents).length === 0 ? (
+              <button type="button" className="primary" onClick={() => { setTab('delivery'); openUiTab('delivery') }}>
+                {t('去投递')}
+              </button>
+            ) : null}
           </div>
-        </div>
-
-        <div className="sess-table-wrap">
-          {tableList.length === 0 ? (
-            <div className="sess-empty big">
-              {Object.keys(agents).length === 0 ? (
-                <>
-                  <div className="title">{t('还没有主机')}</div>
-                  <div className="hint">{t('打开投递，复制一条命令到目标机器执行')}</div>
-                  <button
-                    type="button"
-                    className="primary"
-                    style={{ marginTop: 12 }}
-                    onClick={() => { setTab('delivery'); openUiTab('delivery') }}
+        ) : (
+          <table className="qt-table">
+            <thead>
+              <tr>
+                {headers.map((h) => (
+                  <th
+                    key={h.key}
+                    className={h.alignLeft ? 'align-l' : ''}
+                    onClick={() => toggleSort(h.key)}
                   >
-                    {t('去投递')}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="title">{t('无匹配主机')}</div>
-                  <div className="hint">{t('调整搜索条件，或取消「仅在线」')}</div>
-                </>
-              )}
-            </div>
-          ) : (
-            <table className="sess-table">
-              <thead>
-                <tr>
-                  <th className="sess-cell-check">
-                    <label className="sess-check" title={t('全选 / 取消全选当前筛选结果')}>
-                      <input
-                        type="checkbox"
-                        checked={allChecked}
-                        // indeterminate 不是 React prop（只是 DOM 属性），得手动设。
-                        // 回调 ref 每次渲染都会重跑，所以这个值不会滞留。
-                        ref={(el) => { if (el) el.indeterminate = someChecked }}
-                        onChange={(e) => setChecked(tableIds, e.target.checked)}
-                      />
-                    </label>
+                    {h.label}
+                    {sortCol === h.key ? (sortAsc ? ' ▲' : ' ▼') : ''}
                   </th>
-                  <th style={{ width: 56 }}>{t('状态')}</th>
-                  <th>{t('主机')}</th>
-                  <th>{t('用户')}</th>
-                  <th>{t('内网')}</th>
-                  <th>{t('外网')}</th>
-                  <th>{t('归属地')}</th>
-                  <th>{t('进程')}</th>
-                  <th>{t('系统')}</th>
-                  <th>{t('监听器')}</th>
-                  <th title={t('距上次回连 / 配置 sleep（动态刷新）')}>{t('心跳')}</th>
-                  <th>{t('标签')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableList.map((a) => {
-                  const live = isAgentOnline(a, { now: nowTick })
-                  const hb = formatHeartbeat(a, { now: nowTick }, isLinuxAgent(a))
-                  const ext = String(a.a_external_ip || '').trim()
-                  // geoVer 仅触发重渲染；lookup 同步读缓存
-                  void geoVer
-                  const geo = ext ? lookupIpGeoSync(ext) : ''
-                  return (
-                    <tr
-                      key={a.a_id}
-                      className={`${selected === a.a_id ? 'selected' : ''} ${checkedIds.has(a.a_id) ? 'checked' : ''}`.trim()}
-                      onClick={() => pick(a)}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        selectAgent(a.a_id)
-                        setCtx({ x: e.clientX, y: e.clientY, id: a.a_id })
-                      }}
-                    >
-                      <td className="sess-cell-check">
-                        {/* ★ stopPropagation 是本功能最大的回归风险：这一行上有
-                            onClick={() => pick(a)}（选中 + 开控制台）和 onContextMenu。
-                            不拦传播的话，每点一次复选框就多开一个控制台页签。
-                            用 <label> {t('包住')} <input> 可同时保住「点哪儿都能切换」和拦截。 */}
-                        <label className="sess-check" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={checkedIds.has(a.a_id)}
-                            onChange={(e) => toggleChecked(a.a_id, e.target.checked)}
-                          />
-                        </label>
-                      </td>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedList.map((a) => {
+                const live = isAgentOnline(a, { now: nowTick })
+                const hb = formatHeartbeat(a, { now: nowTick }, isLinuxAgent(a))
+                const ext = String(a.a_external_ip || '').trim()
+                void geoVer
+                const geo = ext ? lookupIpGeoSync(ext) : ''
+                const isSel = selected === a.a_id || checkedIds.has(a.a_id)
+                const procText = a.a_arch ? `${a.a_process || '-'} (${a.a_arch})` : (a.a_process || '-')
+                return (
+                  <tr
+                    key={a.a_id}
+                    className={`${isSel ? 'selected' : ''} ${live ? '' : 'is-offline'}`.trim()}
+                    onClick={(e) => onRowClick(e, a)}
+                    onDoubleClick={() => pick(a)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      selectAgent(a.a_id)
+                      setCtx({ x: e.clientX, y: e.clientY, id: a.a_id })
+                    }}
+                  >
+                    {colOn('id') && <td className="mono" title={a.a_id}>{a.a_id}</td>}
+                    {colOn('type') && <td className="mono">{a.a_name || '-'}</td>}
+                    {colOn('external') && <td className="mono">{ext || '-'}</td>}
+                    {colOn('listener') && <td className="mono">{a.a_listener || '-'}</td>}
+                    {colOn('internal') && <td className="mono">{a.a_internal_ip || '-'}</td>}
+                    {colOn('domain') && <td>{a.a_domain || ''}</td>}
+                    {colOn('computer') && <td>{a.a_computer || '-'}</td>}
+                    {colOn('user') && (
                       <td>
-                        <span className={`st ${live ? 'on' : 'off'}`}>{live ? t('在线') : t('离线')}</span>
+                        {a.a_elevated ? <span className="qt-user-elev">* </span> : null}
+                        {a.a_username || '-'}
                       </td>
-                      <td>
-                        <div className="cell-main">{a.a_computer || '-'}</div>
-                        <div className="cell-sub mono" title={a.a_id}>{a.a_id}</div>
+                    )}
+                    {colOn('os') && (
+                      <td title={a.a_os_desc || a.a_arch || ''}>
+                        <span className="qt-os-cell">
+                          <img className="qt-os-icon" src={osIconPath(a, live)} alt="" />
+                          <span>{a.a_os_desc || a.a_arch || '-'}</span>
+                        </span>
                       </td>
-                      <td>
-                        <div>{a.a_domain ? `${a.a_domain}\\` : ''}{a.a_username || '-'}</div>
-                        {a.a_elevated ? <div className="cell-sub signal">elevated</div> : null}
+                    )}
+                    {colOn('process') && <td className="align-l mono" title={procText}>{procText}</td>}
+                    {colOn('pid') && <td className="mono">{a.a_pid || ''}</td>}
+                    {colOn('tid') && <td className="mono">{a.a_tid || ''}</td>}
+                    {colOn('tags') && (
+                      <td className="align-l">
+                        {a.a_tags ? <span className="qt-tag-pill">{a.a_tags}</span> : ''}
                       </td>
-                      <td className="mono">{a.a_internal_ip || '-'}</td>
-                      <td className="mono" title={ext || ''}>{ext || '-'}</td>
-                      <td className="dim" title={geo || (ext ? t('解析中/未知') : '')}>{geo || (ext ? '…' : '-')}</td>
-                      <td>
-                        <div>{a.a_process || '-'}</div>
-                        <div className="cell-sub mono">{a.a_pid || ''}</div>
-                      </td>
-                      <td className="dim">{a.a_os_desc || a.a_arch || '-'}</td>
-                      <td className="mono">{a.a_listener || '-'}</td>
-                      <td className="mono" title={fmtTime(a.a_last_tick)}>
-                        <div className={live ? '' : 'dim'}>{hb.text}</div>
-                        {hb.sub ? <div className="cell-sub">{hb.sub}</div> : null}
-                      </td>
-                      <td>{a.a_tags || ''}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </section>
+                    )}
+                    {colOn('created') && <td className="mono">{fmtTime(a.a_create_time)}</td>}
+                    {colOn('last') && <td className="mono" title={fmtTime(a.a_last_tick)}>{hb.text}</td>}
+                    {colOn('sleep') && <td className="mono">{formatQtSleep(a)}</td>}
+                    {colOn('geo') && <td className="align-l" title={geo}>{geo || ''}</td>}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {ctx && (
         <div

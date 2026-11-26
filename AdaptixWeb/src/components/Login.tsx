@@ -1,22 +1,62 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { loadLoginPrefs, loadRuntimeConfig } from '../utils'
+import { QT_THEMES, applyQtTheme, loadQtTheme, qtAsset, type QtThemeId } from '../design/qt-themes'
 
+type SavedProfile = {
+  id: string
+  project: string
+  username: string
+  baseUrl: string
+}
+
+const PROFILES_KEY = 'adaptix.qt.profiles.v1'
+
+function loadProfiles(): SavedProfile[] {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((x) => x && typeof x.project === 'string')
+  } catch {
+    return []
+  }
+}
+
+function saveProfiles(list: SavedProfile[]) {
+  try { localStorage.setItem(PROFILES_KEY, JSON.stringify(list)) } catch {}
+}
+
+/**
+ * 1:1 Qt DialogConnect (AdaptixClient/Source/UI/Dialogs/DialogConnect.cpp)
+ * 720×470 two-column desktop dialog:
+ *  - Left: QGroupBox("User Info") + QGroupBox("Server Details") + QGroupBox("Project") + Connect
+ *  - Right: Saved Profiles CardListWidget + New Profile / Load / Save
+ */
 export function Login() {
   const loginAndConnect = useStore((s) => s.loginAndConnect)
   const pushLog = useStore((s) => s.pushLog)
   const prefs = loadLoginPrefs()
-  const [baseUrl, setBaseUrl] = useState(prefs.baseUrl)
-  // 只回填**自己上次输过**的用户名；不给陌生访客预填 admin
+
+  const [profiles, setProfiles] = useState<SavedProfile[]>(() => loadProfiles())
+  const [activeProfId, setActiveProfId] = useState<string | null>(null)
+  const [project, setProject] = useState(() => localStorage.getItem('adaptix.qt.project') || 'Adaptix')
+  const [baseUrl, setBaseUrl] = useState(prefs.baseUrl || '')
   const [username, setUsername] = useState(prefs.username || '')
   const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [advanced, setAdvanced] = useState(!!prefs.baseUrl)
+  const [qtTheme, setQtTheme] = useState<QtThemeId>(() => loadQtTheme())
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  // Product mode: server may ship /config.json (or {base}config.json) with api_base.
+  function switchTheme(id: QtThemeId) {
+    setQtTheme(id)
+    applyQtTheme(id)
+  }
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -24,20 +64,87 @@ export function Login() {
       const cfg = await loadRuntimeConfig()
       if (cancelled || !cfg) return
       const api = (cfg.api_base || '').trim()
-      if (api) {
-        setBaseUrl(api)
-        setAdvanced(true)
-      }
-      // empty api_base => same-origin /api (leave baseUrl empty)
+      if (api) setBaseUrl(api)
     })()
     return () => { cancelled = true }
   }, [])
+
+  function selectProfile(p: SavedProfile) {
+    setActiveProfId(p.id)
+    setProject(p.project)
+    setUsername(p.username)
+    setBaseUrl(p.baseUrl)
+    setErr('')
+  }
+
+  function newProfile() {
+    setActiveProfId(null)
+    setProject('Adaptix')
+    setUsername('')
+    setPassword('')
+    setBaseUrl('')
+    setErr('')
+  }
+
+  function upsertCurrentProfile(projName: string, user: string, url: string) {
+    const cleanProj = projName.trim() || 'Adaptix'
+    const cleanUser = user.trim()
+    const cleanUrl = url.trim()
+    if (!cleanUser) return
+    setProfiles((prev) => {
+      const existing = prev.find((x) => x.project === cleanProj && x.username === cleanUser && x.baseUrl === cleanUrl)
+      const next: SavedProfile[] = existing
+        ? [existing, ...prev.filter((x) => x.id !== existing.id)]
+        : [{ id: String(Date.now()), project: cleanProj, username: cleanUser, baseUrl: cleanUrl }, ...prev].slice(0, 20)
+      saveProfiles(next)
+      return next
+    })
+  }
+
+  function removeProfile(id: string) {
+    setProfiles((prev) => {
+      const next = prev.filter((x) => x.id !== id)
+      saveProfiles(next)
+      return next
+    })
+    if (activeProfId === id) setActiveProfId(null)
+  }
+
+  function saveProfileToFile() {
+    const data = {
+      project: project.trim() || 'Adaptix',
+      username: username.trim(),
+      url: baseUrl.trim(),
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${data.project.replace(/[^\w.-]/g, '_')}.profile.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  function loadProfileFromFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    f.text().then((txt) => {
+      const j = JSON.parse(txt)
+      if (j.project) setProject(String(j.project))
+      if (j.username || j.user) setUsername(String(j.username || j.user))
+      if (j.url || j.baseUrl) setBaseUrl(String(j.url || j.baseUrl))
+      setErr('')
+    }).catch(() => setErr(t('无法解析配置文件')))
+    e.target.value = ''
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setErr('')
     try {
+      const proj = project.trim() || 'Adaptix'
+      try { localStorage.setItem('adaptix.qt.project', proj) } catch {}
+      upsertCurrentProfile(proj, username, baseUrl)
       await loginAndConnect({ baseUrl: baseUrl.trim(), username, password })
     } catch (ex: any) {
       const msg = ex?.message || String(ex)
@@ -49,82 +156,162 @@ export function Login() {
     }
   }
 
+  const hostHint = window.location.origin
+
   return (
-    <div className="lx">
-      <div className="lx-card">
-        {/* 品牌行：`> Console▊` 整行由光标动画逐字打出
-            （样式见 hacker.css 的 .lx-brandline*）。
-            ★ 多一层 `.lx-brandline-typing` 是必需的：光标是它的 ::after，
-            **不能**挂在做 clip-path 的 `.lx-brandline-text` 上 ——
-            clip-path 会连子孙一起裁掉，光标会整段消失。
-            ★ 刻意**不用** `.lx-mark`：hacker.css 里有一组针对 `.lx-mark span`
-            的 `display:none !important`（旧太极子元素留下的守卫），而本行要按
-            span 分段配色，套那个类会被整条藏掉。
-            ★ 名字就是 `Console`，不再带任何前缀/后缀 —— 刻意留白的品牌字符串
-            容易被当成指纹（原来是 `4-T34M OPS CONSOLE`）。 */}
-        <div className="lx-brand">
-          <div className="lx-brandline" role="img" aria-label="Console">
-            <span className="lx-brandline-prompt">{'>'}</span>
-            <span className="lx-brandline-typing">
-              <span className="lx-brandline-text">
-                <span className="lx-brandline-name">Console</span>
-              </span>
-            </span>
+    <div className="qt-login-screen">
+      <div className="qt-connect-win" role="dialog" aria-label="Connect">
+        <div className="qt-connect-titlebar">
+          <div className="qt-connect-brand">
+            <img src={qtAsset('Logo.png')} alt="" />
+            <span>Connect</span>
           </div>
+          <select
+            style={{ height: 22, padding: '0 6px', fontSize: 11 }}
+            value={qtTheme}
+            onChange={(e) => switchTheme(e.target.value as QtThemeId)}
+            aria-label="Theme"
+          >
+            {QT_THEMES.map((th) => (
+              <option key={th.id} value={th.id}>{th.name}</option>
+            ))}
+          </select>
         </div>
 
-        <form className="lx-form" onSubmit={onSubmit}>
-          <label className="lx-label">{t('用户名')}</label>
-          <input
-            className="lx-input"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            autoFocus
-            spellCheck={false}
-          />
+        <div className="qt-connect-body">
+          {/* Left Form Column: User Info · Server Details · Project · Connect */}
+          <form className="qt-connect-left" onSubmit={onSubmit}>
+            <div className="qt-groupbox">
+              <span className="qt-groupbox-title">User Info</span>
+              <div className="qt-form-grid">
+                <label htmlFor="qt-login-user">User:</label>
+                <input
+                  id="qt-login-user"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
+                  autoFocus
+                  spellCheck={false}
+                  placeholder="operator"
+                />
 
-          <label className="lx-label">{t('密码')}</label>
-          <div className="lx-pass">
-            <input
-              className="lx-input"
-              type={showPass ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              placeholder="••••••••"
-            />
-            <button type="button" className="lx-textbtn" onClick={() => setShowPass((v) => !v)}>
-              {showPass ? t('隐藏') : t('显示')}
-            </button>
-          </div>
-
-          <button type="button" className="lx-textbtn lx-adv" onClick={() => setAdvanced((v) => !v)}>
-            {advanced ? t('收起服务器设置') : t('服务器设置')}
-          </button>
-          {advanced && (
-            <div className="lx-advbox">
-              <input
-                className="lx-input"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={t('留空则使用当前站点 /api')}
-                autoComplete="url"
-                spellCheck={false}
-              />
+                <label htmlFor="qt-login-pass">Password:</label>
+                <div className="qt-pass-wrap">
+                  <input
+                    id="qt-login-pass"
+                    type={showPass ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                  />
+                  <button type="button" onClick={() => setShowPass((v) => !v)}>
+                    {showPass ? t('隐藏') : t('显示')}
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
 
-          <button className="lx-submit" type="submit" disabled={busy || !username || !password}>
-            {busy ? t('连接中…') : t('继续')}
-          </button>
+            <div className="qt-groupbox">
+              <span className="qt-groupbox-title">Server Details</span>
+              <div className="qt-form-grid">
+                <label htmlFor="qt-login-url">URL:</label>
+                <input
+                  id="qt-login-url"
+                  className="mono"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={`${hostHint} (${t('留空使用当前站点')})`}
+                  autoComplete="url"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
 
-          {err ? <div className="lx-err">{err}</div> : <div className="lx-err spacer" />}
-        </form>
+            <div className="qt-groupbox">
+              <span className="qt-groupbox-title">Project</span>
+              <div className="qt-form-grid">
+                <label htmlFor="qt-login-proj">Name:</label>
+                <input
+                  id="qt-login-proj"
+                  value={project}
+                  onChange={(e) => setProject(e.target.value)}
+                  placeholder="Adaptix"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
 
-        <div className="lx-foot">
-          <kbd>⌘</kbd><kbd>K</kbd>
-          <span>{t('登录后可快速跳转')}</span>
+            {err ? <div className="qt-connect-err" role="alert">{err}</div> : null}
+
+            <div className="qt-connect-actions">
+              <button
+                className="primary qt-connect-submit"
+                type="submit"
+                disabled={busy || !username || !password}
+              >
+                {busy ? t('连接中…') : 'Connect'}
+              </button>
+            </div>
+          </form>
+
+          <div className="qt-connect-vline" />
+
+          {/* Right Profiles Column (DialogConnect::cardWidget) */}
+          <div className="qt-connect-right">
+            <div className="qt-profiles-head">Profiles</div>
+            <div className="qt-profiles-list">
+              {profiles.length === 0 ? (
+                <div className="qt-profiles-empty">
+                  {t('暂无保存的连接档案\n连接成功后自动保存')}
+                </div>
+              ) : (
+                profiles.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`qt-profile-card ${activeProfId === p.id ? 'active' : ''}`}
+                    onClick={() => selectProfile(p)}
+                  >
+                    <div className="qt-profile-name">{p.project}</div>
+                    <div className="qt-profile-sub">
+                      {p.username} @ {(p.baseUrl || window.location.host).replace(/^https?:\/\//, '')}
+                    </div>
+                    <button
+                      type="button"
+                      className="qt-profile-del"
+                      title="Remove"
+                      onClick={(e) => { e.stopPropagation(); removeProfile(p.id) }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="qt-profiles-btns">
+              <button type="button" className="new-btn" onClick={newProfile}>
+                New Profile
+              </button>
+              <button
+                type="button"
+                className="ico-btn"
+                title="Load profile from file"
+                onClick={() => fileRef.current?.click()}
+              >
+                <img className="qt-ico qt-ico-mono" src={qtAsset('icons/file_open_64dp.png')} alt="" />
+              </button>
+              <button
+                type="button"
+                className="ico-btn"
+                title="Save profile to file"
+                onClick={saveProfileToFile}
+              >
+                <img className="qt-ico qt-ico-mono" src={qtAsset('icons/save_as_64dp.png')} alt="" />
+              </button>
+              <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={loadProfileFromFile} />
+            </div>
+          </div>
         </div>
       </div>
     </div>

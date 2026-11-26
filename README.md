@@ -10,7 +10,7 @@ AdaptixC2 是面向红队的 C2 框架（基于 [Adaptix-Framework/AdaptixC2](ht
 |------|------|
 | `AdaptixServer/` | Go 团队服务端（操作员认证、任务/数据持久化、WebSocket 多端协作），插件以 `-buildmode=plugin` 动态加载 |
 | `AdaptixServer/extenders/*` | 监听器与 Agent 插件：HTTP / HTTPS 仿真 / SMB / TCP / WS / DNS / Discord 监听、Kharon、libp2p 中继、Linux eBPF agent、macOS agent、VNC/HVNC 等 |
-| `AdaptixWeb/` | Web 控制台前端（React + Vite，构建产物由服务端托管） |
+| `AdaptixWeb/` | Qt 桌面风格 Web 控制台前端（React + Vite，1:1 复刻 AdaptixClient Qlementine 10 主题 + KDDockWidgets 双区 Dock，产物由服务端托管） |
 | `AdaptixApp/` | Android 控制端（**v2.0 新增**，与 Web 控制台同一套 API） |
 | `Extension-Kit/` | BOF / 脚本扩展包（`extension-kit.axs`） |
 
@@ -37,6 +37,10 @@ vim profile.yaml        # 至少改掉 Teamserver.password；监听器按需改 
 
 - 浏览器打开 `https://<ip>:8080<Web.path>/` —— 入口路径见 `profile.yaml` 的 `Web.path`（CI 包里是 `/bf21a14d8b0eb60f8b95ae0df61162b8/`），自签证书点「继续访问」。
 - 登录：默认 `only_password: true`，**任意用户名 + `Teamserver.password`**；改成 `false` 则按 `operators:` 账号表逐个登录。
+- **Qt 客户端风格界面与主题（2026-11-26 重写）**：
+  - 完整复刻 `AdaptixClient` 桌面端交互：顶部 `QMenuBar`（项目 / 扩展 / 设置）+ 分组图文工具栏 + 可拖拽 `KDDockWidgets` 上下双区 Dock + 底部项目状态栏。
+  - 内置全部 **10 套 Qlementine 主题**与 **10 套 Console 主题**（默认 `Adaptix Dark`，含 `Adaptix Dracula`、`Adaptix Light`、`Dark Ice`、`Hacker Tech`、`Fallout Pip-Boy`、`Glass Morphism` 等），右上角或设置弹窗即时切换，自动适配 `VITE_BASE` 资源路径。
+  - 1:1 桌面级功能视图：`DialogConnect` 双栏档案登录弹窗、17 列可配 `Sessions table`（含真实 OS 权限图标与 `Ctrl+F` 折叠搜索）、带官方暗化背景的 `Console` / `Logs`、`Tasks + Task Output` 分屏面板、以及带目录树 / 进程树双栏联动与切页保活的**文件管理**与**进程管理**。
 - **界面语言（中文 / English）**：控制台内置双语，两种切换方式 ——
   - 打开 `https://<ip>:8080<Web.path>/?lang=en` 即英文版（`?lang=zh` 或去掉参数回中文）；
   - 或登录后在右上角点 **EN / 中** 按钮即时切换。选择会记住（localStorage），下次打开保持。
@@ -119,6 +123,25 @@ VITE_BASE=/bf21a14d8b0eb60f8b95ae0df61162b8/ npm run build   # → dist/
 | `main` | 最新代码（**v2.0**，AdaptixApp 已并入） |
 | `dev` | v2.0 预发线（已并入 `main`，保留作归档） |
 | `1.3` | v1.3 原始备份 |
+
+## v2.1 更新内容（Qt 风格 WebUI 重写 & WS/心跳稳定性修复）
+
+### 1. AdaptixWeb：按 `AdaptixClient` Qt 风格全面重写
+
+- **完整主题与官方资源体系**：移植 `AdaptixClient` 全部 10 套 Qlementine 应用主题 + 10 套 Console 主题、官方 PNG 图标（工具栏 / OS 权限状态 / 文件系统）、`Logo.png` / `SyncLogo.png`、控制台背景图与 `JetBrains Mono` / `Hack` 字体，并全链路兼容自定义 `VITE_BASE` 子路径部署。
+- **主窗口与 KDDockWidgets 双区布局**：顶部 `QMenuBar`（项目 / 扩展 / 设置）+ 带文字标签的分组图标工具栏 + `Extensions Docks` 弹出入口（收纳载荷生成、一键投递、中转、AI 协作、BOF、参数混淆、扩展命令、状态概览）+ 上下可拖拽双区 Dock（支持多标签、中键关闭、最大化/折叠、自动滚入视口）+ 底部 `QTabWidget::South` 项目栏；内置 4 栏侧边 `Adaptix Settings` 弹窗。
+- **核心视图 1:1 对齐 Qt 客户端**：
+  - **登录弹窗（`DialogConnect`）**：`720×470` 双栏桌面弹窗，右侧自动保存历史连接 `Profiles` 档案卡片，支持新建与 JSON 导入/导出。
+  - **会话表（`Sessions table`）**：17 列可配列显隐与排序，真实 OS 蓝/红/灰图标标识在线与提权状态，`Ctrl+F` 呼出折叠过滤条，双击直开下区独立 `Console` 页签。
+  - **控制台 & 日志（`Console` / `Logs`）**：纯净 `Hack` 等宽输出 + 可开关背景图 + 官方语法配色 + `Ctrl+F` 查找 + 右键快捷菜单。
+  - **任务中心（`Tasks`）**：左任务表 + 右 `Task Output` 实时分屏输出。
+  - **文件管理 & 进程管理（双栏可拖拽 + 切页保活）**：文件管理提供左侧 `Directory Tree` + 右侧文件表（Windows/Linux 跨平台列、数值大小排序、拖拽上传、多编码预览）；进程管理提供左侧 3 列 `Process Tree`（`PID/PPID` 父子树）与右侧进程表双向联动、自身会话 PID 红字防误杀标识与 `SYSTEM/root` 权限高亮。
+- **本地离线预览服务器**：`node scripts/preview_server.mjs [port]` 内置 6 台模拟主机与完整 WebSocket 推包（含文件/进程浏览器实时模拟），无服务端亦可本地验收 UI。
+
+### 2. 服务端 & 前端 WebSocket 并发与 F5 恢复稳定性修复
+
+- 修复服务端 `tcConnectOTP` 挂起屏障、`Broker` 同步注册/注销与 `MarkSyncedAndDrain`、隧道/终端写锁与注册顺序，并将 `TsAgentSetTick` / `DbAgentTick` 与 SQLite 单连接解耦，消除高频心跳阻塞与假离线。
+- 修复前端 `SyncSocket` 过期事件隔离、`connectEpoch` 防旧连接污染、时钟偏移校准、精简 `DEFAULT_SUBSCRIPTIONS` 与非阻塞 F5 会话恢复。
 
 ## v2.0 更新内容
 

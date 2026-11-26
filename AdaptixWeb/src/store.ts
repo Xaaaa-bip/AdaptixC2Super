@@ -19,6 +19,7 @@ export type StaticTabId =
   | 'argfuscator' | 'extkit' | 'relay' | 'terminal' | 'ai'
 export type TabId =
   | StaticTabId
+  | `console:${string}`
   | `files:${string}` | `procs:${string}` | `pty:${string}` | `vnc:${string}`
   // 命令执行台（全屏终端式，走命令通道不是 PTY）。`#n` 是多开的会话序号。
   | `cmd:${string}`
@@ -47,6 +48,12 @@ export type TabId =
  *   返回 ok:true，而 Consoles / Tasks **两张表都不增行**。
  */
 
+export function isConsoleTab(id: string | null | undefined): id is `console:${string}` {
+  return !!id && id.startsWith('console:')
+}
+export function isTopDockTab(id: string | null | undefined): boolean {
+  return id === 'sessions' || id === 'graph' || id === 'tasks'
+}
 export function isFilesTab(id: string | null | undefined): id is `files:${string}` {
   return !!id && id.startsWith('files:')
 }
@@ -67,13 +74,14 @@ export function isInteractTab(id: string | null | undefined) {
 }
 export function tabAgentId(id: string | null | undefined): string | null {
   if (!id) return null
-  if (isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id) || isCmdTab(id)) {
+  if (isConsoleTab(id) || isFilesTab(id) || isProcsTab(id) || isPtyTab(id) || isVncTab(id) || isCmdTab(id)) {
     // 多个终端/命令台会话用 `pty:<agentId>#<n>`、`cmd:<agentId>#<n>`，主机 id 是 `#` 前面那段
     const rest = id.slice(id.indexOf(':') + 1).split('#')[0]
     return rest || null
   }
   return null
 }
+export function consoleTabId(agentId: string): TabId { return `console:${agentId}` }
 export function filesTabId(agentId: string): TabId { return `files:${agentId}` }
 export function procsTabId(agentId: string): TabId { return `procs:${agentId}` }
 /**
@@ -161,6 +169,19 @@ type State = {
   toggleHostsDock: () => void
   toggleEventsDock: () => void
   setDockHeights: (hosts: number, events: number) => void
+
+  /** Qt KDDockWidgets 2-zone split workspace (dockTop + dockBottom) */
+  topTabs: TabId[]
+  activeTopTab: TabId | null
+  bottomTabs: TabId[]
+  activeBottomTab: TabId | null
+  dockTopPct: number
+  dockMax: 'none' | 'top' | 'bottom'
+  setActiveTopTab: (id: TabId) => void
+  setActiveBottomTab: (id: TabId) => void
+  setDockTopPct: (pct: number) => void
+  setDockMax: (m: 'none' | 'top' | 'bottom') => void
+  resetDockLayout: () => void
 
   setTab: (t: TabId) => void
   openConsole: (id: string) => void
@@ -268,6 +289,18 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
   const uiTabs = visibleTabs.length ? visibleTabs : (['sessions'] as TabId[])
   const activeUiTab = uiTabs.includes(s.activeUiTab as TabId) ? s.activeUiTab : uiTabs[uiTabs.length - 1]
 
+  const topTabs = s.topTabs.filter((t) => { const a = tabAgentId(t); return !a || !ids.has(a) })
+  const nextTopTabs = topTabs.length ? topTabs : (['sessions'] as TabId[])
+  const activeTopTab = s.activeTopTab && nextTopTabs.includes(s.activeTopTab)
+    ? s.activeTopTab
+    : nextTopTabs[nextTopTabs.length - 1]
+
+  const bottomTabs = s.bottomTabs.filter((t) => { const a = tabAgentId(t); return !a || !ids.has(a) })
+  const nextBottomTabs = bottomTabs.length ? bottomTabs : (['logs'] as TabId[])
+  const activeBottomTab = s.activeBottomTab && nextBottomTabs.includes(s.activeBottomTab)
+    ? s.activeBottomTab
+    : nextBottomTabs[nextBottomTabs.length - 1]
+
   const downloads: Record<string, DownloadItem> = {}
   for (const [k, d] of Object.entries(s.downloads)) {
     if (!ids.has(String((d as any)?.d_agent_id || ''))) downloads[k] = d
@@ -291,6 +324,10 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
     uiTabs,
     activeUiTab: (activeUiTab || 'sessions') as TabId,
     tab: (activeUiTab || 'sessions') as TabId,
+    topTabs: nextTopTabs,
+    activeTopTab: activeTopTab || 'sessions',
+    bottomTabs: nextBottomTabs,
+    activeBottomTab: activeBottomTab || 'logs',
     selectedAgentId: s.selectedAgentId && ids.has(s.selectedAgentId) ? null : s.selectedAgentId,
     tasks: s.tasks.filter((t) => !ids.has(String((t as any)?.a_id || ''))),
     // 勾选集合跟着剪枝：留着已删主机的 id，下次批量删就会把它再发给服务端
@@ -394,49 +431,171 @@ export const useStore = create<State>((set, get) => ({
     set({ hostsDockH: hosts, eventsDockH: events })
   },
 
-  setTab: (t) => set({ tab: t, activeUiTab: t }),
+  topTabs: ['sessions'],
+  activeTopTab: 'sessions',
+  bottomTabs: ['logs'],
+  activeBottomTab: 'logs',
+  dockTopPct: ((): number => {
+    try {
+      const v = Number(localStorage.getItem('adaptix.qt.dockTopPct'))
+      return Number.isFinite(v) && v >= 20 && v <= 80 ? v : 46
+    } catch { return 46 }
+  })(),
+  dockMax: 'none',
+  setActiveTopTab: (id) => set((s) => ({
+    activeTopTab: id,
+    tab: id,
+    activeUiTab: id,
+    dockMax: s.dockMax === 'bottom' ? 'none' : s.dockMax,
+  })),
+  setActiveBottomTab: (id) => set((s) => {
+    const aid = tabAgentId(id)
+    return {
+      activeBottomTab: id,
+      tab: id,
+      activeUiTab: id,
+      activeConsoleTab: isConsoleTab(id) && aid ? aid : s.activeConsoleTab,
+      selectedAgentId: aid || s.selectedAgentId,
+      dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+    }
+  }),
+  setDockTopPct: (pct) => {
+    const clamped = Math.max(18, Math.min(82, Math.round(pct * 10) / 10))
+    try { localStorage.setItem('adaptix.qt.dockTopPct', String(clamped)) } catch { /* ignore */ }
+    set({ dockTopPct: clamped })
+  },
+  setDockMax: (m) => set({ dockMax: m }),
+  resetDockLayout: () => {
+    try { localStorage.setItem('adaptix.qt.dockTopPct', '46') } catch { /* ignore */ }
+    set({
+      topTabs: ['sessions'],
+      activeTopTab: 'sessions',
+      bottomTabs: ['logs'],
+      activeBottomTab: 'logs',
+      dockTopPct: 46,
+      dockMax: 'none',
+    })
+  },
+
+  setTab: (t) => set((s) => {
+    if (isTopDockTab(t)) {
+      const topTabs = s.topTabs.includes(t) ? s.topTabs : [...s.topTabs, t]
+      return {
+        tab: t,
+        activeUiTab: t,
+        topTabs,
+        activeTopTab: t,
+        dockMax: s.dockMax === 'bottom' ? 'none' : s.dockMax,
+      }
+    }
+    const bottomTabs = s.bottomTabs.includes(t) ? s.bottomTabs : [...s.bottomTabs, t]
+    return {
+      tab: t,
+      activeUiTab: t,
+      bottomTabs,
+      activeBottomTab: t,
+      dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+    }
+  }),
   openConsole: (id) => set((s) => {
+    const ctab = consoleTabId(id)
     const tabs = s.openConsoleTabs.includes(id) ? s.openConsoleTabs : [...s.openConsoleTabs, id]
-    const uiTabs = s.uiTabs.includes('terminal') ? s.uiTabs : [...s.uiTabs, 'terminal']
+    const uiTabs: TabId[] = s.uiTabs.includes(ctab) ? s.uiTabs : [...s.uiTabs, ctab]
+    const bottomTabs: TabId[] = s.bottomTabs.includes(ctab) ? s.bottomTabs : [...s.bottomTabs, ctab]
     return {
       openConsoleTabs: tabs,
       activeConsoleTab: id,
       selectedAgentId: id,
       uiTabs,
-      activeUiTab: 'terminal',
-      tab: 'terminal',
+      activeUiTab: ctab,
+      tab: ctab,
+      bottomTabs,
+      activeBottomTab: ctab,
+      dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
     }
   }),
   closeConsoleTab: (id) => set((s) => {
+    const ctab = consoleTabId(id)
     const tabs = s.openConsoleTabs.filter((x) => x !== id)
     const active = s.activeConsoleTab === id ? (tabs[tabs.length - 1] || null) : s.activeConsoleTab
     // 关闭终端页签时清掉该主机的控制台输出，避免下次点开仍残留历史
     const consoleLines = s.consoleLines.filter((l) => l.agentId !== id)
-    if (tabs.length) return { openConsoleTabs: tabs, activeConsoleTab: active, consoleLines }
-    const uiTabs = s.uiTabs.filter((t) => t !== 'terminal')
-    const next = uiTabs.length ? uiTabs[uiTabs.length - 1] : 'sessions'
+    const bottomTabs = s.bottomTabs.filter((t) => t !== ctab)
+    const nextBottomTabs: TabId[] = bottomTabs.length ? bottomTabs : ['logs']
+    const activeBottomTab = s.activeBottomTab === ctab
+      ? nextBottomTabs[nextBottomTabs.length - 1]
+      : s.activeBottomTab
+    const uiTabs = s.uiTabs.filter((t) => t !== ctab && (tabs.length ? true : t !== 'terminal'))
+    const nextUiTabs: TabId[] = uiTabs.length ? uiTabs : ['sessions']
+    const next = nextUiTabs[nextUiTabs.length - 1]
     return {
       openConsoleTabs: tabs,
       activeConsoleTab: active,
       consoleLines,
-      uiTabs: uiTabs.length ? uiTabs : ['sessions'],
-      activeUiTab: next as TabId,
-      tab: next as TabId,
+      bottomTabs: nextBottomTabs,
+      activeBottomTab,
+      uiTabs: nextUiTabs,
+      activeUiTab: s.activeUiTab === ctab ? next : s.activeUiTab,
+      tab: s.tab === ctab ? next : s.tab,
     }
   }),
-  setActiveConsoleTab: (id) => set({ activeConsoleTab: id, selectedAgentId: id }),
+  setActiveConsoleTab: (id) => set((s) => {
+    if (!id) return { activeConsoleTab: null }
+    const ctab = consoleTabId(id)
+    const bottomTabs = s.bottomTabs.includes(ctab) ? s.bottomTabs : [...s.bottomTabs, ctab]
+    return { activeConsoleTab: id, selectedAgentId: id, bottomTabs, activeBottomTab: ctab }
+  }),
   openUiTab: (id) => set((s) => {
-    const tabs = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
-    return { uiTabs: tabs, activeUiTab: id, tab: id }
+    const tabs: TabId[] = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
+    if (isTopDockTab(id)) {
+      const topTabs: TabId[] = s.topTabs.includes(id) ? s.topTabs : [...s.topTabs, id]
+      return {
+        uiTabs: tabs,
+        activeUiTab: id,
+        tab: id,
+        topTabs,
+        activeTopTab: id,
+        dockMax: s.dockMax === 'bottom' ? 'none' : s.dockMax,
+      }
+    }
+    const bottomTabs: TabId[] = s.bottomTabs.includes(id) ? s.bottomTabs : [...s.bottomTabs, id]
+    return {
+      uiTabs: tabs,
+      activeUiTab: id,
+      tab: id,
+      bottomTabs,
+      activeBottomTab: id,
+      dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+    }
   }),
   closeUiTab: (id) => {
     const agentId = tabAgentId(id)
     const needRelease = isInteractTab(id)
+    if (isConsoleTab(id) && agentId) {
+      get().closeConsoleTab(agentId)
+      return
+    }
     set((s) => {
       let tabs = s.uiTabs.filter((x) => x !== id)
       if (!tabs.length) tabs = ['sessions']
       const active = (s.activeUiTab === id ? tabs[tabs.length - 1] : s.activeUiTab) || 'sessions'
-      return { uiTabs: tabs, activeUiTab: active, tab: active }
+
+      if (isTopDockTab(id)) {
+        const idx = s.topTabs.indexOf(id)
+        let topTabs = s.topTabs.filter((x) => x !== id)
+        if (!topTabs.length) topTabs = ['sessions']
+        const activeTopTab = s.activeTopTab === id
+          ? (topTabs[Math.min(idx, topTabs.length - 1)] || topTabs[0])
+          : s.activeTopTab
+        return { uiTabs: tabs, activeUiTab: active, tab: active, topTabs, activeTopTab }
+      }
+
+      const idx = s.bottomTabs.indexOf(id)
+      const bottomTabs = s.bottomTabs.filter((x) => x !== id)
+      const activeBottomTab = s.activeBottomTab === id
+        ? (bottomTabs.length ? bottomTabs[Math.min(idx, bottomTabs.length - 1)] : null)
+        : s.activeBottomTab
+      return { uiTabs: tabs, activeUiTab: active, tab: active, bottomTabs, activeBottomTab }
     })
     // 关闭文件/进程/PTY/VNC 页签后尝试恢复 sleep（仍有同主机其他交互页签则不恢复）
     if (needRelease && agentId) {
@@ -444,7 +603,10 @@ export const useStore = create<State>((set, get) => ({
       get().releaseInteractBoost(agentId).catch(() => {})
     }
   },
-  setActiveUiTab: (id) => set({ activeUiTab: id || 'sessions', tab: id || 'sessions' }),
+  setActiveUiTab: (id) => {
+    if (!id) { set({ activeUiTab: 'sessions', tab: 'sessions' }); return }
+    get().openUiTab(id)
+  },
   openFilesBrowser: (agentId) => {
     if (!agentId) return
     const agent = get().agents[agentId]
@@ -454,10 +616,19 @@ export const useStore = create<State>((set, get) => ({
       return
     }
     const id = filesTabId(agentId)
-    const already = get().uiTabs.includes(id)
+    const already = get().uiTabs.includes(id) || get().bottomTabs.includes(id)
     set((s) => {
       const tabs = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
-      return { uiTabs: tabs, activeUiTab: id, tab: id, selectedAgentId: agentId }
+      const bottomTabs = s.bottomTabs.includes(id) ? s.bottomTabs : [...s.bottomTabs, id]
+      return {
+        uiTabs: tabs,
+        activeUiTab: id,
+        tab: id,
+        bottomTabs,
+        activeBottomTab: id,
+        selectedAgentId: agentId,
+        dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+      }
     })
     // 页签组件挂载时会 acquire；这里仅保证切换到已有页签时也维持加速
     if (already) get().acquireInteractBoost(agentId).catch(() => {})
@@ -470,10 +641,19 @@ export const useStore = create<State>((set, get) => ({
       return
     }
     const id = procsTabId(agentId)
-    const already = get().uiTabs.includes(id)
+    const already = get().uiTabs.includes(id) || get().bottomTabs.includes(id)
     set((s) => {
       const tabs = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
-      return { uiTabs: tabs, activeUiTab: id, tab: id, selectedAgentId: agentId }
+      const bottomTabs = s.bottomTabs.includes(id) ? s.bottomTabs : [...s.bottomTabs, id]
+      return {
+        uiTabs: tabs,
+        activeUiTab: id,
+        tab: id,
+        bottomTabs,
+        activeBottomTab: id,
+        selectedAgentId: agentId,
+        dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+      }
     })
     if (already) get().acquireInteractBoost(agentId).catch(() => {})
   },
@@ -489,13 +669,22 @@ export const useStore = create<State>((set, get) => ({
     let id = ptyTabId(agentId)
     if (opts?.newSession) {
       let n = 1
-      while (get().uiTabs.includes(ptyTabId(agentId, n))) n++
+      while (get().uiTabs.includes(ptyTabId(agentId, n)) || get().bottomTabs.includes(ptyTabId(agentId, n))) n++
       id = ptyTabId(agentId, n)
     }
-    const already = get().uiTabs.includes(id)
+    const already = get().uiTabs.includes(id) || get().bottomTabs.includes(id)
     set((s) => {
       const tabs = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
-      return { uiTabs: tabs, activeUiTab: id, tab: id, selectedAgentId: agentId }
+      const bottomTabs = s.bottomTabs.includes(id) ? s.bottomTabs : [...s.bottomTabs, id]
+      return {
+        uiTabs: tabs,
+        activeUiTab: id,
+        tab: id,
+        bottomTabs,
+        activeBottomTab: id,
+        selectedAgentId: agentId,
+        dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+      }
     })
     if (already) get().acquireInteractBoost(agentId).catch(() => {})
   },
@@ -512,10 +701,19 @@ export const useStore = create<State>((set, get) => ({
       return
     }
     const id = vncTabId(agentId)
-    const already = get().uiTabs.includes(id)
+    const already = get().uiTabs.includes(id) || get().bottomTabs.includes(id)
     set((s) => {
       const tabs = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
-      return { uiTabs: tabs, activeUiTab: id, tab: id, selectedAgentId: agentId }
+      const bottomTabs = s.bottomTabs.includes(id) ? s.bottomTabs : [...s.bottomTabs, id]
+      return {
+        uiTabs: tabs,
+        activeUiTab: id,
+        tab: id,
+        bottomTabs,
+        activeBottomTab: id,
+        selectedAgentId: agentId,
+        dockMax: s.dockMax === 'top' ? 'none' : s.dockMax,
+      }
     })
     if (already) get().acquireInteractBoost(agentId).catch(() => {})
   },
@@ -838,6 +1036,11 @@ export const useStore = create<State>((set, get) => ({
       uiTabs: ['sessions'],
       activeUiTab: 'sessions',
       tab: 'sessions',
+      topTabs: ['sessions'],
+      activeTopTab: 'sessions',
+      bottomTabs: ['logs'],
+      activeBottomTab: 'logs',
+      dockMax: 'none',
     })
 
     // 并行拉取轻量 REST（listeners/downloads，必要时 agents），绝不阻塞 WS 建连
@@ -991,6 +1194,11 @@ export const useStore = create<State>((set, get) => ({
       uiTabs: ['sessions'],
       activeUiTab: 'sessions',
       tab: 'sessions',
+      topTabs: ['sessions'],
+      activeTopTab: 'sessions',
+      bottomTabs: ['logs'],
+      activeBottomTab: 'logs',
+      dockMax: 'none',
     })
   },
 

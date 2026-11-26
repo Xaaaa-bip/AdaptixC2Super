@@ -419,7 +419,7 @@ export function ExtKit() {
       {!err && !loading && !blocks.length && (
         <EmptyState
           icon="❯"
-          title="t('服务端没有 Extension-Kit 命令')"
+          title={t('服务端没有 Extension-Kit 命令')}
           hint="命令树里没有 source=profile 的批次。确认 profile 的 axscripts 指向 extension-kit.axs，且 extender 已重载。"
         />
       )}

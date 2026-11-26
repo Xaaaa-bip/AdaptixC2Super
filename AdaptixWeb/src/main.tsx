@@ -2,11 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { loadDensity, loadTheme } from './utils'
+import { loadDensity } from './utils'
+import { applyQtSettings, loadQtSettings } from './design/qt-themes'
 import './styles.css'
 
-// Theme / density defaults from localStorage
-document.documentElement.setAttribute('data-theme', loadTheme())
+// Apply full Qlementine + Console theme & font preferences before first paint
+applyQtSettings(loadQtSettings())
 document.documentElement.setAttribute('data-density', loadDensity())
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

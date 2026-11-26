@@ -7,6 +7,10 @@ export type FileItem = {
   date: number
   dateText?: string
   sizeText?: string
+  mode?: string
+  user?: string
+  group?: string
+  diskType?: string
 }
 
 export type ProcItem = {
@@ -16,6 +20,7 @@ export type ProcItem = {
   arch?: string
   context?: string
   name: string
+  tty?: string
 }
 
 /**

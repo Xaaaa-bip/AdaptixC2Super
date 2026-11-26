@@ -1008,7 +1008,7 @@ export function Listeners() {
             {isHttpLike ? (
               <>
                 <div className="ax-tabs">
-                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>t('主要设置')</button>
+                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>{t('主要设置')}</button>
                   <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>{t('HTTP 头')}</button>
                   <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>{t('错误页')}</button>
                   <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>{t('载荷页')}</button>

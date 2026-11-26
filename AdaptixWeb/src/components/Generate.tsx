@@ -408,7 +408,7 @@ export function Generate() {
       <div className="gen-layout">
         <div className="gen-main card">
           <div className="card-hd">
-            <h3>t('配置参数')</h3>
+            <h3>{t('配置参数')}</h3>
             <span className="spacer" />
             <span className="gen-hint">{t('必填项按当前 Agent 自动筛选')}</span>
           </div>
@@ -750,7 +750,7 @@ export function Generate() {
 
         <aside className="gen-side card">
           <div className="card-hd">
-            <h3>t('当前选择')</h3>
+            <h3>{t('当前选择')}</h3>
             <span className="gen-side-status">{t('实时')}</span>
           </div>
           <div className="card-bd" style={{ padding: 14 }}>
