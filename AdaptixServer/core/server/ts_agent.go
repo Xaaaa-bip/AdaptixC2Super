@@ -874,6 +874,7 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 				d.LastTick = int(time.Now().Unix())
 				d.Listener = listenerName
 			})
+			agent.Tick.Store(true)
 			updatedAgentData := agent.GetData()
 			packet := CreateSpAgentUpdate(updatedAgentData)
 			ts.TsSyncStateWithCategory(packet, "agent:"+agentId, SyncCategoryAgents)
@@ -882,15 +883,16 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 			agent.UpdateData(func(d *adaptix.AgentData) {
 				d.LastTick = int(time.Now().Unix())
 			})
-			_ = ts.DBMS.DbAgentTick(agent.GetData())
+			// Mark ticked immediately; DbAgentTick is persisted by TsAgentTickUpdate
+			// AFTER WS broadcast so heavy SQLite reads never stall real-time heartbeats.
+			agent.Tick.Store(true)
 		}
-		agent.Tick.Store(true)
 	} else {
 		// Non-async agents (gopher/linux persistent connections) never
 		// ticked before: LastTick froze, so the Web/Qt UI health check
 		// (age > sleep*2+40s) marked live sessions as offline ~60s after
-		// the last task. Update tick + DB here and let TsAgentTickUpdate
-		// broadcast it like async agents.
+		// the last task. Update tick here and let TsAgentTickUpdate
+		// broadcast and persist it like async agents.
 		agent.UpdateData(func(d *adaptix.AgentData) {
 			d.LastTick = int(time.Now().Unix())
 			if listenerChanged {
@@ -898,7 +900,6 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 			}
 		})
 		agent.Tick.Store(true)
-		_ = ts.DBMS.DbAgentTick(agent.GetData())
 		if listenerChanged {
 			updatedAgentData := agent.GetData()
 			packet := CreateSpAgentUpdate(updatedAgentData)
@@ -914,6 +915,7 @@ func (ts *Teamserver) TsAgentSetTick(agentId string, listenerName string) error 
 func (ts *Teamserver) TsAgentTickUpdate() {
 	for {
 		var agentSlice []string
+		var tickedData []adaptix.AgentData
 		ts.Agents.ForEach(func(key string, value interface{}) bool {
 			agent, ok := value.(*Agent)
 			if !ok {
@@ -922,6 +924,7 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 			if agent.Tick.Swap(false) {
 				agentData := agent.GetData()
 				agentSlice = append(agentSlice, agentData.Id)
+				tickedData = append(tickedData, agentData)
 			}
 			return true
 		})
@@ -932,6 +935,12 @@ func (ts *Teamserver) TsAgentTickUpdate() {
 			// during client initial sync a later 800ms batch would overwrite an
 			// earlier batch containing different agents.
 			ts.TsSyncAllClientsWithCategory(packetTick, SyncCategoryAgents)
+
+			// Persist ticks after WS broadcast so SQLite single-conn contention
+			// cannot delay live heartbeats to UI clients.
+			for _, d := range tickedData {
+				_ = ts.DBMS.DbAgentTick(d)
+			}
 		}
 
 		time.Sleep(800 * time.Millisecond)

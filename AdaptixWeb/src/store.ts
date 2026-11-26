@@ -189,10 +189,10 @@ type State = {
   loginAndConnect: (opts: { baseUrl: string; username: string; password: string }) => Promise<void>
   /** F5 后用 localStorage JWT 恢复（无密码） */
   tryRestoreSession: () => Promise<boolean>
-  finishConnect: (api: ApiClient, username: string) => Promise<void>
+  finishConnect: (api: ApiClient, username: string, preloadedAgents?: any[]) => Promise<void>
   disconnect: () => void
   handlePacket: (pkt: Packet) => void
-  refreshRest: () => Promise<void>
+  refreshRest: (opts?: { includeTasks?: boolean; skipAgents?: boolean }) => Promise<void>
   sendCommand: (cmdline: string) => Promise<void>
   /** 删一批主机的**唯一配方**。removeSelected / removeChecked 都是它的薄包装。 */
   removeAgents: (ids: string[]) => Promise<void>
@@ -301,6 +301,7 @@ function purgeAgents(s: State, ids: Set<string>): Partial<State> {
 
 let connectEpoch = 0
 let refreshRestSeq = 0
+let refreshTasksSeq = 0
 let syncStartSeenForEpoch = 0
 let syncWatchdogTimer: ReturnType<typeof setTimeout> | null = null
 let syncFinishTimer: ReturnType<typeof setTimeout> | null = null
@@ -769,10 +770,11 @@ export const useStore = create<State>((set, get) => ({
       }
       get().pushLog('info', `恢复会话 ${snap.username}…`, false)
       const epochAtStart = connectEpoch
-      // 校验 token：listAgents 内部自带一次 401→refresh 重试；
-      // 失败即清会话，不再二次 refresh（避免打爆登录限流）
+      // 校验 token 并直接复用这次 listAgents() 返回的新鲜主机列表，避免 F5 重复拉取和阻塞
+      let initialAgents: any[] = []
       try {
-        await api.listAgents()
+        const res = await api.listAgents()
+        if (Array.isArray(res)) initialAgents = res
       } catch (e: any) {
         if (epochAtStart !== connectEpoch) return false
         clearSession()
@@ -780,7 +782,9 @@ export const useStore = create<State>((set, get) => ({
         return false
       }
       if (epochAtStart !== connectEpoch) return false
-      await get().finishConnect(api, snap.username)
+      // finishConnect 会立即置 connected=true 并写入 initialAgents，REST 补充和 WS 建连在后台并行，
+      // 不再把用户卡在「恢复会话…」长达数十秒导致时间戳过期变离线。
+      void get().finishConnect(api, snap.username, initialAgents)
       get().pushLog('ok', '会话已恢复（F5）', false)
       return true
     })()
@@ -792,13 +796,22 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  // 登录 / 恢复会话共用：进入主界面 + REST + WS
-  finishConnect: async (api: ApiClient, username: string) => {
+  // 登录 / 恢复会话共用：进入主界面 + 并行 REST 与 WS（不阻塞在 20 路 listTasks 上）
+  finishConnect: async (api: ApiClient, username: string, preloadedAgents?: any[]) => {
     const epoch = ++connectEpoch
     clearSyncWatchdog()
     cancelConnectWait?.()
     cancelConnectWait = null
     try { get().socket.close() } catch { /* ignore */ }
+
+    const initAgentMap: Record<string, Agent> = {}
+    const hasPreloaded = Array.isArray(preloadedAgents)
+    if (hasPreloaded) {
+      for (const a of preloadedAgents!) {
+        const n = normAgent(a)
+        if (n.a_id) initAgentMap[n.a_id] = n
+      }
+    }
 
     set({
       api,
@@ -810,7 +823,7 @@ export const useStore = create<State>((set, get) => ({
       lastError: '',
       browserFiles: {},
       browserProcs: {},
-      agents: {},
+      agents: initAgentMap,
       listeners: {},
       tasks: [],
       downloads: {},
@@ -827,14 +840,14 @@ export const useStore = create<State>((set, get) => ({
       tab: 'sessions',
     })
 
-    try {
-      await get().refreshRest()
-      if (epoch !== connectEpoch) return
-      get().pushLog('ok', t('REST 数据已加载'), false)
-    } catch (e: any) {
-      if (epoch !== connectEpoch) return
-      get().pushLog('err', `REST 加载失败: ${e.message || e}`)
-    }
+    // 并行拉取轻量 REST（listeners/downloads，必要时 agents），绝不阻塞 WS 建连
+    void get().refreshRest({ includeTasks: false, skipAgents: hasPreloaded })
+      .then(() => {
+        if (epoch === connectEpoch) get().pushLog('ok', t('REST 数据已加载'), false)
+      })
+      .catch((e: any) => {
+        if (epoch === connectEpoch) get().pushLog('err', `REST 加载失败: ${e?.message || e}`)
+      })
 
     let socket: SyncSocket | null = null
     try {
@@ -1014,8 +1027,9 @@ export const useStore = create<State>((set, get) => ({
         clearSyncWatchdog()
         set({ syncing: false })
         get().pushLog('ok', '实时同步完成')
-        // re-hydrate REST after sync to ensure lists filled
-        get().refreshRest().catch(() => {})
+        // 同步完成后只做轻量 REST 对账（不触发 20 路 SQLite listTasks 阻塞服务端），
+        // 并在后台低并发补齐最近任务列表。
+        get().refreshRest({ includeTasks: true }).catch(() => {})
         break
       case P.NOTIFICATION:
         pushLog('info', String(pkt.message || pkt.Message || ''))
@@ -1309,22 +1323,24 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  refreshRest: async () => {
+  refreshRest: async (opts) => {
+    const includeTasks = !!opts?.includeTasks
+    const skipAgents = !!opts?.skipAgents
     const epoch = connectEpoch
     const seq = ++refreshRestSeq
     const { api } = get()
     const [agentsRes, listenersRes, downloadsRes] = await Promise.allSettled([
-      api.listAgents(),
+      skipAgents ? Promise.resolve(null) : api.listAgents(),
       api.listListeners(),
       api.listDownloads(),
     ])
     if (epoch !== connectEpoch || seq !== refreshRestSeq) return
 
-    const agentsOk = agentsRes.status === 'fulfilled' && Array.isArray(agentsRes.value)
+    const agentsOk = !skipAgents && agentsRes.status === 'fulfilled' && Array.isArray(agentsRes.value)
     const listenersOk = listenersRes.status === 'fulfilled' && Array.isArray(listenersRes.value)
     const downloadsOk = downloadsRes.status === 'fulfilled' && Array.isArray(downloadsRes.value)
 
-    const agentArr = agentsOk ? agentsRes.value : []
+    const agentArr = agentsOk ? (agentsRes.value as any[]) : []
     const agentMap: Record<string, Agent> = {}
     for (const a of agentArr) {
       const n = normAgent(a)
@@ -1345,8 +1361,7 @@ export const useStore = create<State>((set, get) => ({
       }
     }
 
-    // 立即落盘 agents/listeners/downloads：不等后面最多 20 次 listTasks，
-    // 失败时不清空已有列表，且单调保留较新的 WS a_last_tick 防止回滚成离线。
+    // 立即落盘 agents/listeners/downloads：失败时不清空已有列表，且单调保留较新的 WS a_last_tick。
     set((s) => {
       const patch: Partial<State> = {}
       if (agentsOk) {
@@ -1370,18 +1385,47 @@ export const useStore = create<State>((set, get) => ({
       return patch
     })
 
-    // tasks API needs agent_id — pull for known agents (cap concurrent)
-    const agentIds = agentArr.map((a: any) => a.a_id || a.id).filter(Boolean).slice(0, 30)
-    // also include currently known agents not in REST response
-    for (const id of Object.keys(get().agents)) if (!agentIds.includes(id)) agentIds.push(id)
-    const taskLists = await Promise.all(
-      agentIds.slice(0, 20).map((id) => api.listTasks(id).catch(() => [])),
-    )
-    if (epoch !== connectEpoch || seq !== refreshRestSeq) return
-    const tasks = taskLists.flat().filter(Boolean)
-    set({
-      tasks: (Array.isArray(tasks) ? tasks : []).map(normTask).slice(0, 500),
-    })
+    if (!includeTasks) return
+
+    // 任务历史改为后台低并发（最多 2 路、limit=50）分批拉取，不阻塞调用方也不打满服务端 SQLite 单连接。
+    const tSeq = ++refreshTasksSeq
+    const agentIds = agentArr.map((a: any) => a.a_id || a.id).filter(Boolean).slice(0, 20)
+    for (const id of Object.keys(get().agents)) {
+      if (agentIds.length >= 20) break
+      if (!agentIds.includes(id)) agentIds.push(id)
+    }
+    void (async () => {
+      const collected: any[] = []
+      const CONCURRENCY = 2
+      let idx = 0
+      const worker = async () => {
+        while (idx < agentIds.length) {
+          if (epoch !== connectEpoch || tSeq !== refreshTasksSeq) return
+          const id = agentIds[idx++]
+          const list = await api.listTasks(id, 50).catch(() => [])
+          if (Array.isArray(list)) collected.push(...list)
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, agentIds.length) }, () => worker()))
+      if (epoch !== connectEpoch || tSeq !== refreshTasksSeq) return
+      const normalized = collected.filter(Boolean).map(normTask)
+      set((s) => {
+        // 合并实时 WS 任务与历史任务，避免覆盖刚通过 WS 到达的新任务状态
+        const byId = new Map<string, Task>()
+        for (const t of normalized) {
+          if (t.a_task_id) byId.set(t.a_task_id, t)
+        }
+        for (const existing of s.tasks) {
+          if (!existing.a_task_id) continue
+          const prev = byId.get(existing.a_task_id)
+          byId.set(existing.a_task_id, prev ? mergeTask(prev, existing) : existing)
+        }
+        const merged = Array.from(byId.values())
+          .sort((a, b) => Number(b.a_start_time || 0) - Number(a.a_start_time || 0))
+          .slice(0, 500)
+        return { tasks: merged }
+      })
+    })()
   },
 
   sendCommand: async (cmdline) => {

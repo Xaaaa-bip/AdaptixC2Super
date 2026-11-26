@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { copyText, fmtRelative, fmtTime } from '../utils'
@@ -21,6 +21,11 @@ export function Tasks() {
   const [onlyRunning, setOnlyRunning] = useState(false)
   const [onlySelected, setOnlySelected] = useState(!!selected)
   const [detail, setDetail] = useState<any | null>(null)
+
+  useEffect(() => {
+    refreshRest({ includeTasks: true }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const list = useMemo(() => {
     let arr = onlySelected && selected ? tasks.filter((t) => t.a_id === selected) : tasks
@@ -55,7 +60,7 @@ export function Tasks() {
               <span>{list.length}</span>
               <span className="warn">{t('执行中')} {running}</span>
             </div>
-            <button onClick={() => refreshRest().catch((e) => pushLog('err', String(e)))}>{t('刷新')}</button>
+            <button onClick={() => refreshRest({ includeTasks: true }).catch((e) => pushLog('err', String(e)))}>{t('刷新')}</button>
             <PageTips id="tasks">
               <p><b>{t('双击')}</b>{t('任务跳转到对应主机控制台；单击查看详情与输出。')}</p>
               <p>筛选：t('仅当前主机') / t('仅执行中')。</p>

@@ -166,10 +166,10 @@ export class ApiClient {
   listAgents() { return this.get<any[]>('/api/agent/list') }
   listListeners() { return this.get<any[]>('/api/listener/list') }
 
-  listTasks(agentId?: string) {
+  listTasks(agentId?: string, limit = 200) {
     // server requires agent_id; without it returns {ok:false}
     if (!agentId) return Promise.resolve([])
-    const q = `?agent_id=${encodeURIComponent(agentId)}&limit=200&offset=0`
+    const q = `?agent_id=${encodeURIComponent(agentId)}&limit=${limit}&offset=0`
     return this.get<any[]>(`/api/agent/task/list${q}`)
   }
   listDownloads() {
