@@ -73,7 +73,7 @@ jobs:
             output: AdaptixServer
             shell: bash
           - name: macos
-            os: macos-14
+            os: macos-latest
             artifact: AdaptixServer-macos
             output: AdaptixServer
             shell: bash
