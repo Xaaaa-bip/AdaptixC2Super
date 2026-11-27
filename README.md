@@ -1,6 +1,8 @@
-# AdaptixC2 v2.0
+# AdaptixC2 v2.1
 
-[English](README_EN.md)
+[English](README_EN.md) · [Web 控制台图文使用指南](#web-控制台图文使用指南) · [Web Console Visual Guide (EN)](README_EN.md#web-console-visual-usage-guide) · [AdaptixWeb 前端文档](AdaptixWeb/README.md)
+
+![AdaptixC2 Web Console](AdaptixWeb/screenshots/guide/02_workspace_ai_zh.png)
 
 ## 项目介绍
 
@@ -10,7 +12,7 @@ AdaptixC2 是面向红队的 C2 框架（基于 [Adaptix-Framework/AdaptixC2](ht
 |------|------|
 | `AdaptixServer/` | Go 团队服务端（操作员认证、任务/数据持久化、WebSocket 多端协作），插件以 `-buildmode=plugin` 动态加载 |
 | `AdaptixServer/extenders/*` | 监听器与 Agent 插件：HTTP / HTTPS 仿真 / SMB / TCP / WS / DNS / Discord 监听、Kharon、libp2p 中继、Linux eBPF agent、macOS agent、VNC/HVNC 等 |
-| `AdaptixWeb/` | Qt 桌面风格 Web 控制台前端（React + Vite，1:1 复刻 AdaptixClient Qlementine 10 主题 + KDDockWidgets 双区 Dock，产物由服务端托管） |
+| `AdaptixWeb/` | Qt 桌面风格 Web 控制台前端（React 18 + Vite 5 + Zustand，1:1 复刻 AdaptixClient Qlementine 10 主题 + KDDockWidgets 双区 Dock + 中英双语 + 右侧 AI 协作，产物由服务端托管） |
 | `AdaptixApp/` | Android 控制端（**v2.0 新增**，与 Web 控制台同一套 API） |
 | `Extension-Kit/` | BOF / 脚本扩展包（`extension-kit.axs`） |
 
@@ -37,16 +39,72 @@ vim profile.yaml        # 至少改掉 Teamserver.password；监听器按需改 
 
 - 浏览器打开 `https://<ip>:8080<Web.path>/` —— 入口路径见 `profile.yaml` 的 `Web.path`（CI 包里是 `/bf21a14d8b0eb60f8b95ae0df61162b8/`），自签证书点「继续访问」。
 - 登录：默认 `only_password: true`，**任意用户名 + `Teamserver.password`**；改成 `false` 则按 `operators:` 账号表逐个登录。
-- **Qt 客户端风格界面与主题（2026-11-26 重写）**：
-  - 完整复刻 `AdaptixClient` 桌面端交互：顶部 `QMenuBar`（项目 / 扩展 / 设置）+ 分组图文工具栏 + 可拖拽 `KDDockWidgets` 上下双区 Dock + 底部项目状态栏。
-  - 内置全部 **10 套 Qlementine 主题**与 **10 套 Console 主题**（默认 `Adaptix Dark`，含 `Adaptix Dracula`、`Adaptix Light`、`Dark Ice`、`Hacker Tech`、`Fallout Pip-Boy`、`Glass Morphism` 等），右上角或设置弹窗即时切换，自动适配 `VITE_BASE` 资源路径。
-  - 1:1 桌面级功能视图：`DialogConnect` 双栏档案登录弹窗、17 列可配 `Sessions table`（含真实 OS 权限图标与 `Ctrl+F` 折叠搜索）、带官方暗化背景的 `Console` / `Logs`、`Tasks + Task Output` 分屏面板、以及带目录树 / 进程树双栏联动与切页保活的**文件管理**与**进程管理**。
-- **界面语言（中文 / English）**：控制台内置双语，两种切换方式 ——
-  - 打开 `https://<ip>:8080<Web.path>/?lang=en` 即英文版（`?lang=zh` 或去掉参数回中文）；
-  - 或登录后在右上角点 **EN / 中** 按钮即时切换。选择会记住（localStorage），下次打开保持。
-  - 英文覆盖：工具条 / 登录 / 主机 / 监听器 / 载荷 / 任务 / 命令面板 / 状态栏等高频界面；未翻译的长尾页面回退中文，词典在 `AdaptixWeb/src/i18n/dict.en.ts`（键 = 中文原文，缺哪条补哪条，无需改组件）。
+- **Qt 客户端风格界面与统一弹窗**：
+  - 完整复刻 `AdaptixClient` 桌面端交互：顶部 `QMenuBar`（项目 / 扩展 / 设置）+ 分组图文工具栏 + `Extensions Docks` 弹出入口 + 可拖拽 `KDDockWidgets` 上下双区 Dock + 底部项目状态栏；`载荷生成`、`一键投递`、`监听器配置` 与 `拓扑画板` 全部统一为 Qlementine Qt 桌面组件风格。
+  - 内置全部 **10 套 Qlementine 主题**与 **10 套 Console 主题**（默认 `Adaptix Dark`，含 `Adaptix Dracula`、`Adaptix Light`、`Dark Classic`、`Dark Ice`、`Dracula`、`Fallout Pip-Boy`、`Glass Morphism`、`Hacker Tech`、`Light Arc`），自动适配 `VITE_BASE` 资源路径。
+  - **AI 协作助手默认右侧停靠**：点击工具栏 **`AI`** 按钮在右侧展开协作抽屉（同时保留大窗弹窗模式切换），可基于实时主机/任务/日志进行本地上下文梳理，或接入 OpenAI / DeepSeek / Ollama / 自定义兼容接口。
+- **全量中英文一键切换（Chinese / English）**：
+  - 顶部工具栏 **`AI`** 按钮旁新增 **`EN` / `中文`** 快捷切换按钮（中文模式下显示 **`EN`**，切换英文后按钮显示 **`中文`**；亦支持顶部菜单栏、`Settings → Language` 或 URL 参数 `?lang=en` / `?lang=zh`，手动点击按钮时自动清理 URL 参数并持久化至 `localStorage`）。
+  - 英文覆盖率达 **100%**（菜单栏、弹窗、BOF 面板、拓扑节点/连线、一键投递、监听器表单、动态 `.axs` 构建参数表及系统日志全量翻译，无英文界面中文残留）。
 - ★ 换控制台入口路径必须**同时**改前端构建前缀 `VITE_BASE` 并重编 web —— 两边不一致就是整页白屏（资源全 404）。
-- API 与控制台同源同端口：REST 在 `Teamserver.endpoint`（默认 `/api`），协作多端走 WebSocket。
+- API 与控制台同源同端口：REST 在 `Teamserver.endpoint`（默认 `/api`），协作多端走 WebSocket。更多前端构建与开发细节见 [`AdaptixWeb/README.md`](AdaptixWeb/README.md)。
+
+## Web 控制台图文使用指南
+
+#### 1. 登录与历史档案管理 (`DialogConnect`)
+填写用户名、密码与工程名；与服务端同源访问或走 Vite `/api` 代理时 `URL` 留空即可。右侧 `Profiles` 自动保存历史连接档案，支持 JSON 档案导入/导出，右上角可直接切换 Qt 主题。
+
+![登录与档案管理](AdaptixWeb/screenshots/guide/01_login.png)
+
+#### 2. 主工作区与默认右侧 AI 协作面板
+登录后上区默认展示 `Sessions table`（17 列可配、真实 OS 权限图标、`Ctrl+F` 检索），下区承载 `Logs` / `Console` / `Files` / `Processes` 等多标签；点击工具栏 **`AI`** 在右侧展开协作助手，结合实时会话与任务上下文排查异常或生成命令建议。
+
+![主工作区与右侧 AI 协作](AdaptixWeb/screenshots/guide/02_workspace_ai_zh.png)
+
+#### 3. 一键中英文切换 (`EN` ↔ `中文`)
+点击 **`AI`** 旁的 **`EN`** 按钮（或顶部菜单 `Switch to English`），全界面（含菜单、扩展页签、监听器表单、拓扑提示、BOF 库及 `.axs` 动态参数表）立即切换为英文，按钮同步变为 **`中文`**，再次点击可秒切回中文。
+
+![英文界面与中文切换按钮](AdaptixWeb/screenshots/guide/03_workspace_en.png)
+
+#### 4. 新建与管理监听器 (`Listeners & Sites`)
+在 **`监听器`** 页点击 **`新建 HTTP`** / **`新建 WS`**，左侧按协议分组选择（`Beacon HTTP/WS/TCP/SMB/DNS`、`Kharon HTTP`、`Linux TCP`、`Gopher TCP/libp2p`、`Discord`），右侧可点击服务端网卡快速追加回连地址、一键套用流量伪装模板并实时预览诱饵页 HTML。
+
+![新建监听器](AdaptixWeb/screenshots/guide/04_listeners.png)
+
+#### 5. 载荷生成 (`Generate Payload`)
+通过顶部 **`扩展` → `载荷生成`**（快捷键 `G` + `G`）打开。左侧选目标平台自动筛选协议兼容监听器，右侧配置架构、`Exe / Stager / DLL / Shellcode`、`Sleep / Jitter` 与高级免杀参数（支持服务端 `.axs` 参数表与内置兜底），点击右下角 **`生成并下载`**。
+
+![载荷生成](AdaptixWeb/screenshots/guide/05_generate.png)
+
+#### 6. 一键投递与参数混淆 (`Web Delivery & ArgFuscator`)
+通过 **`扩展` → `一键投递`**（`G` + `W`）打开。选定目标 Agent、兼容监听器、`C2 Host URL` 与 `Script / Payload` 路由后点击 **`应用并同步配置`**，即可复制各平台单行上线命令；点击 **`参数混淆`** 可调用服务端 `ArgFuscator` 生成通过 URL 一致性校验的命令行变体。
+
+![一键投递与参数混淆](AdaptixWeb/screenshots/guide/06_web_delivery.png)
+
+#### 7. 会话拓扑图与手工标注 (`Sessions Graph`)
+点击工具栏 **`拓扑`**（`G` + `P`）查看回连与 Pivot 层级；点击 **`添加设备 ▾`** 可在画布中添加防火墙、交换机、路由器、数据库、域控等 14 类基础设施节点，点击 **`画连线`** 后依次点击两个节点即可直接绘制手工连线（支持右键设角色、已控/未控标记、`Esc` 退出与 `适配` 居中）。
+
+![会话拓扑图](AdaptixWeb/screenshots/guide/07_topology_graph.png)
+
+#### 8. 双平台 BOF 模块工作台 (`BOFs`)
+通过 **`扩展` → `BOF 模块`**（`G` + `B`）打开，随所选上线主机自动分流：`Linux` 主机展示 Linux ELF BOF（支持直接拖拽 `.c` 源码自动编译或 `.o` 上传），`Windows` 主机加载服务端 `Extension-Kit` 命令树与参数表单，按 `Ctrl+Enter` 直接执行。
+
+![BOF 工作台](AdaptixWeb/screenshots/guide/08_bof_workbench.png)
+
+#### 9. 外观主题、字体、语言与分屏设置 (`Settings`)
+点击工具栏最右侧齿轮图标或菜单 **`设置` → `打开设置…`**，可在 4 个分类中切换 10 套 Qt 主题、字体字号、界面语言（`中文` / `English`）、`Sessions` 表格列显隐、控制台背景与分屏比例。
+
+![外观主题与设置](AdaptixWeb/screenshots/guide/09_settings_themes.png)
+
+#### 常用快捷键速查
+
+| 快捷键 | 作用 |
+| :--- | :--- |
+| `Ctrl / ⌘ + K` | 打开全局命令面板（搜页面 / 主机 / 操作） |
+| `Ctrl + F` / `Ctrl + L` | 页内查找 / 清空当前终端输出 |
+| `G` 然后 `H / P / T / L / E / O` | 切换 `Sessions` / `拓扑` / `任务` / `监听器` / `日志` / `概览` |
+| `G` 然后 `G / W / B / A / I` | 打开 `载荷生成` / `一键投递` / `BOF` / `参数混淆` / `AI 协作` |
+| `?` / `Esc` | 快捷键帮助 / 收起查找栏、退出画线或关闭弹窗 |
 
 ### MCP 服务（AI 客户端接入，2026-11-09 起）
 
@@ -68,13 +126,10 @@ The teamserver ships a built-in **MCP** server (Model Context Protocol **2025-06
 
 #### Web Console (English)
 
-- Open `https://<ip>:8080<Web.path>/` (the entry path is `Web.path` in `profile.yaml`; the CI package ships `/bf21a14d8b0eb60f8b95ae0df61162b8/`). Accept the self-signed certificate warning.
+- Open `https://<ip>:8080<Web.path>/` (see [`README_EN.md`](README_EN.md) & [`AdaptixWeb/README.md`](AdaptixWeb/README.md) for the full English visual walkthrough with screenshots).
 - Login: by default `only_password: true` — **any username + `Teamserver.password`**; set it to `false` to use the `operators:` account table instead.
-- **UI language (中文 / English)**: the console is bilingual —
-  - open `https://<ip>:8080<Web.path>/?lang=en` for English (`?lang=zh` or no parameter for Chinese);
-  - or click the **EN / 中** button in the top-right corner after login. The choice is remembered (localStorage).
-  - English covers the high-frequency surfaces (toolbar, login, hosts, listeners, payloads, tasks, command palette, status bar); pages not yet translated fall back to Chinese. To extend, add entries to `AdaptixWeb/src/i18n/dict.en.ts` (keys are the Chinese source strings — no component changes needed).
-- Changing the console entry path requires updating the frontend build prefix `VITE_BASE` and rebuilding — a mismatch yields a blank page (all assets 404).
+- **UI language (`EN` / `中文`)**: click the **`EN`** pill directly beside **`AI`** in the top-right toolbar (changes to **`中文`** when active, clearing any `?lang=` URL parameter on switch-back), or visit `?lang=en` / use `Settings → Language`. English now covers 100% of menus, modals, BOFs, Topology, AI drawer, and live server `.axs` build schemas.
+- Changing the console entry path requires updating `VITE_BASE` and rebuilding the frontend — otherwise assets 404.
 - REST API and the console share the same origin/port: REST under `Teamserver.endpoint` (default `/api`), multi-operator collaboration over WebSocket.
 
 ### 3. 使用 Android 控制端（AdaptixApp）
@@ -135,8 +190,10 @@ VITE_BASE=/bf21a14d8b0eb60f8b95ae0df61162b8/ npm run build   # → dist/
   - **会话表（`Sessions table`）**：17 列可配列显隐与排序，真实 OS 蓝/红/灰图标标识在线与提权状态，`Ctrl+F` 呼出折叠过滤条，双击直开下区独立 `Console` 页签。
   - **控制台 & 日志（`Console` / `Logs`）**：纯净 `Hack` 等宽输出 + 可开关背景图 + 官方语法配色 + `Ctrl+F` 查找 + 右键快捷菜单。
   - **任务中心（`Tasks`）**：左任务表 + 右 `Task Output` 实时分屏输出。
-  - **文件管理 & 进程管理（双栏可拖拽 + 切页保活）**：文件管理提供左侧 `Directory Tree` + 右侧文件表（Windows/Linux 跨平台列、数值大小排序、拖拽上传、多编码预览）；进程管理提供左侧 3 列 `Process Tree`（`PID/PPID` 父子树）与右侧进程表双向联动、自身会话 PID 红字防误杀标识与 `SYSTEM/root` 权限高亮。
-- **本地离线预览服务器**：`node scripts/preview_server.mjs [port]` 内置 6 台模拟主机与完整 WebSocket 推包（含文件/进程浏览器实时模拟），无服务端亦可本地验收 UI。
+  - **统一 Qt 弹窗 & 拓扑画线 & 全量中英文双语 & 右侧 AI 协作（2026-11-28）**：
+    - `载荷生成`、`一键投递`、`新建监听器` 统一采用 Qlementine Qt 桌面组件（`--qt-*` Token、`QGroupBox` 分组、原生复选框/标签栏）；
+    - `Sessions graph` 支持工具栏 **添加设备 ▾**（14 类设备图标）与 **画连线** 点击式直连（`Esc` 退出）；
+    - **AI 协作默认贴靠屏幕右侧**，并在工具栏 `AI` 旁新增 **`EN` / `中文`** 快捷切换按钮（100% 英文界面覆盖，同步清理 URL `?lang=` 覆盖并更新中英图文教程）。
 
 ### 2. 服务端 & 前端 WebSocket 并发与 F5 恢复稳定性修复
 
