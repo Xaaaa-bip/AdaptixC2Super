@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
-import { bytesToB64, copyText, fileToB64, isAgentOnline, isLinuxAgent } from '../utils'
+import { loadCmdTree } from '../api/cmdTree'
+import type { CmdArgDef, CmdBatch, CmdDef } from '../api/types'
+import { bytesToB64, copyText, fileToB64, isAgentOnline, isLinuxAgent, useOnlineClock5s } from '../utils'
 import { clearCompletionCache } from '../lib/completions'
 import { EmptyState } from './ui'
 import { PageTips } from './PageTips'
+import { qtAsset } from '../design/qt-themes'
 
 /* BOF 模块页。
  *
@@ -423,7 +426,411 @@ export function packBofArgs(items: BofArg[]): Uint8Array {
   return new Uint8Array(out)
 }
 
-export function Bofs() {
+const RECENT_KEY = 'adaptix.bofs.recent.v1'
+const RECENT_EXT_KEY = 'adaptix.bofs.recent_ext.v1'
+const FAV_KEY = 'adaptix.bofs.favs.v1'
+const FAV_EXT_KEY = 'adaptix.bofs.favs_ext.v1'
+const SPLIT_KEY = 'adaptix.bofs.split.v1'
+type StatusFilter = 'all' | 'ready' | 'stale' | 'uncompiled' | 'unregistered' | 'recent' | 'fav'
+type PlatformKind = 'linux' | 'windows' | 'macos'
+
+const CAT_LABEL: Record<Cat, string> = {
+  recon: t('侦察'),
+  priv: '提权',
+  cred: t('凭据'),
+  persist: '维持',
+  stealth: '隐匿 · 撤离',
+  exec: t('执行'),
+  other: '其他',
+}
+
+const CAT_COLOR: Record<Cat, string> = {
+  recon: '#38bdf8',
+  priv: '#f59e0b',
+  cred: '#a855f7',
+  persist: '#ef4444',
+  stealth: '#10b981',
+  exec: '#6366f1',
+  other: '#94a3b8',
+}
+
+const PURPOSE_OF_LC: Record<string, string> = {
+  'ad-bof': t('域渗透'),
+  'adcs-bof': t('域渗透'),
+  'kerbeus-bof': t('域渗透'),
+  'sql-bof': t('域渗透'),
+  'ldap-bof': t('域渗透'),
+  'ad relayinformer': t('域渗透'),
+  'mimikatz': t('凭据获取'),
+  'creds-bof': t('凭据获取'),
+  'cookie-monster': t('凭据获取'),
+  'nanodump': t('凭据获取'),
+  'elevation-bof': t('提权'),
+  'execution-bof': t('执行与注入'),
+  'no-consolation': t('执行与注入'),
+  'injection-bof': t('执行与注入'),
+  'lateralmovement-bof': t('横向移动'),
+  'lateralmovement-bof-x': t('横向移动'),
+  'postex-bof': t('后渗透'),
+  'sal-bof': t('侦察与态势'),
+  'sar-bof': t('侦察与态势'),
+  'process-bof': t('侦察与态势'),
+  'process-bof-x': t('侦察与态势'),
+}
+const PURPOSE_ORDER = [t('侦察与态势'), t('域渗透'), t('凭据获取'), t('提权'), t('执行与注入'), t('横向移动'), t('后渗透'), t('其他')]
+const PURPOSE_COLOR: Record<string, string> = {
+  [t('侦察与态势')]: '#38bdf8',
+  [t('域渗透')]: '#60a5fa',
+  [t('凭据获取')]: '#a855f7',
+  [t('提权')]: '#f59e0b',
+  [t('执行与注入')]: '#6366f1',
+  [t('横向移动')]: '#ec4899',
+  [t('后渗透')]: '#10b981',
+  [t('其他')]: '#94a3b8',
+}
+const purposeOf = (kit: string) => PURPOSE_OF_LC[kit.trim().toLowerCase()] || t('其他')
+
+function detectPlatform(a?: any): PlatformKind {
+  if (!a) return 'windows'
+  if (isLinuxAgent(a)) return 'linux'
+  const desc = String(a.a_os_desc || '').toLowerCase()
+  const name = String(a.a_name || '').toLowerCase()
+  if (a.a_os === 3 || desc.includes('mac') || desc.includes('darwin') || name.startsWith('macos')) return 'macos'
+  return 'windows'
+}
+
+function platformLabel(p: PlatformKind): string {
+  if (p === 'linux') return 'Linux'
+  if (p === 'macos') return 'macOS'
+  return 'Windows'
+}
+
+function bofUnsupportedReason(a?: any): string {
+  if (!a) return ''
+  const name = String(a.a_name || '').toLowerCase()
+  if (name === 'gopher' && a.a_os !== 1) {
+    return '当前主机为非 Windows 的 gopher agent，服务端无 BOF 加载器，无法执行 execute bof。'
+  }
+  if (detectPlatform(a) === 'macos') {
+    return '当前主机为 macOS agent，服务端无 BOF 加载器，暂不支持 execute bof。'
+  }
+  return ''
+}
+
+function loadStringList(storageKey: string, limit = 20): string[] {
+  try {
+    const raw = localStorage.getItem(storageKey)
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string').slice(0, limit) : []
+  } catch {
+    return []
+  }
+}
+
+type ExtBofItem = {
+  key: string
+  suite: string
+  scriptName: string
+  purpose: string
+  batchAgent: string
+  cmd: CmdDef
+}
+
+function requiredExtArgs(c: CmdDef): CmdArgDef[] {
+  return (c.args || []).filter((a) => a.required && !(a.flag && !a.name))
+}
+
+function extArgDisplayValue(vals: Record<string, string>, baseKey: string, a: CmdArgDef, idx: number): string {
+  const k = `${baseKey}.${idx}`
+  if (k in vals) return vals[k]
+  return a.default_used && a.default_value != null ? String(a.default_value) : ''
+}
+
+function buildExtCmdline(
+  item: ExtBofItem,
+  subName: string,
+  vals: Record<string, string>,
+): string {
+  const subs = item.cmd.subcommands || []
+  const sub = subs.length ? (subs.find((s) => s.name === subName) || subs[0]) : null
+  const active = sub || item.cmd
+  const parts = [item.cmd.name]
+  if (sub) parts.push(sub.name)
+  const baseKey = `${item.key}:${sub ? sub.name : ''}`
+  const args = active.args || []
+  args.forEach((a, idx) => {
+    const k = `${baseKey}.${idx}`
+    if (a.flag && !a.name) {
+      if (vals[k] === '1') {
+        const flagTok = (a.mark || '').trim()
+        if (flagTok) parts.push(flagTok)
+      }
+      return
+    }
+    const raw = extArgDisplayValue(vals, baseKey, a, idx).trim()
+    if (!raw) return
+    const formatted = /\s/.test(raw) && !/^".*"$/.test(raw) ? `"${raw}"` : raw
+    if (a.flag && a.name) {
+      const m = (a.mark || `--${a.name}`).trim()
+      if (m) parts.push(m)
+      parts.push(formatted)
+    } else {
+      parts.push(formatted)
+    }
+  })
+  return parts.join(' ')
+}
+
+type ExtListPaneProps = {
+  grouped: Array<{ purpose: string; items: ExtBofItem[] }>
+  selectedKey: string
+  selectedSubName: string
+  searchQuery: string
+  recentSet: Set<string>
+  favSet: Set<string>
+  collapsedSet: Set<string>
+  expandedSet: Set<string>
+  splitPct: number
+  hasAny: boolean
+  platform: PlatformKind
+  onSelect: (key: string) => void
+  onSelectSub: (key: string, subName: string) => void
+  onToggleCollapse: (group: string) => void
+  onToggleExpand: (key: string) => void
+  onToggleFav: (key: string) => void
+  onContext: (x: number, y: number, item: ExtBofItem) => void
+  onResetFilters: () => void
+}
+
+const ExtBofListPane = memo(function ExtBofListPane({
+  grouped, selectedKey, selectedSubName, searchQuery, recentSet, favSet,
+  collapsedSet, expandedSet, splitPct, hasAny, platform,
+  onSelect, onSelectSub, onToggleCollapse, onToggleExpand, onToggleFav, onContext, onResetFilters,
+}: ExtListPaneProps) {
+  const cmdTotal = grouped.reduce((n, g) => n + g.items.length, 0)
+  const leafTotal = grouped.reduce((n, g) => n + g.items.reduce((m, it) => m + Math.max(1, (it.cmd.subcommands || []).length), 0), 0)
+  const q = searchQuery.trim().toLowerCase()
+  return (
+    <div className="qt-bof-list-pane" style={{ width: `${splitPct}%` }}>
+      <div className="qt-bof-list-hd">
+        <span>{platformLabel(platform)} BOF 插件清单</span>
+        <span className="mono">{cmdTotal} 命令{leafTotal > cmdTotal ? ` · ${leafTotal} 项` : ''}</span>
+      </div>
+      <div className="qt-bof-list-scroll">
+        {grouped.map((g) => {
+          const isCollapsed = !q && collapsedSet.has(`ext:${g.purpose}`)
+          const gLeafCount = g.items.reduce((m, it) => m + Math.max(1, (it.cmd.subcommands || []).length), 0)
+          return (
+            <div key={g.purpose}>
+              <button
+                type="button"
+                className="qt-bof-cat-hd"
+                onClick={() => onToggleCollapse(`ext:${g.purpose}`)}
+                title="点击折叠 / 展开该分类"
+              >
+                <span className="qt-bof-cat-left">
+                  <span className="qt-bof-cat-dot" style={{ background: PURPOSE_COLOR[g.purpose] || '#94a3b8' }} />
+                  <span>{isCollapsed ? '▸' : '▾'}</span>
+                  <span>{g.purpose}</span>
+                </span>
+                <span>{g.items.length}{gLeafCount > g.items.length ? ` (${gLeafCount})` : ''}</span>
+              </button>
+              {!isCollapsed && g.items.map((it) => {
+                const isSel = it.key === selectedKey
+                const isRecent = recentSet.has(it.key)
+                const isFav = favSet.has(it.key)
+                const subs = it.cmd.subcommands || []
+                const subCount = subs.length
+                const matchingSubs = q
+                  ? subs.filter((s) => `${s.name} ${s.description || ''} ${s.example || ''}`.toLowerCase().includes(q))
+                  : subs
+                const showSubs = subCount > 0 && (expandedSet.has(it.key) || (!!q && matchingSubs.length > 0))
+                return (
+                  <div key={it.key}>
+                    <div
+                      role="button"
+                      tabIndex={-1}
+                      data-bof-name={it.key}
+                      className={`qt-bof-row ${isSel ? 'selected' : ''}`}
+                      onClick={() => onSelect(it.key)}
+                      onContextMenu={(e) => { e.preventDefault(); onSelect(it.key); onContext(e.clientX, e.clientY, it) }}
+                    >
+                      <div className="qt-bof-row-top">
+                        {subCount > 0 && (
+                          <button
+                            type="button"
+                            className="qt-bof-expand-btn"
+                            title={showSubs ? '收起子命令' : `展开 ${subCount} 个子命令`}
+                            onClick={(e) => { e.stopPropagation(); onToggleExpand(it.key) }}
+                          >
+                            {showSubs ? '▾' : '▸'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={`qt-bof-star ${isFav ? 'on' : ''}`}
+                          title={isFav ? '取消收藏' : '收藏常用 BOF'}
+                          onClick={(e) => { e.stopPropagation(); onToggleFav(it.key) }}
+                        >
+                          {isFav ? '★' : '☆'}
+                        </button>
+                        {isRecent && !isFav && <span className="qt-bof-row-recent" title="最近执行">●</span>}
+                        <span className="qt-bof-row-name">{it.cmd.name}</span>
+                        <div className="qt-bof-row-right">
+                          {subCount > 0 && <span className="qt-bof-badge warn">{subCount} 子命令</span>}
+                          <span className="qt-bof-badge">{it.suite}</span>
+                        </div>
+                      </div>
+                      <div className="qt-bof-row-desc">{it.cmd.description || it.cmd.message || it.cmd.example}</div>
+                    </div>
+                    {showSubs && matchingSubs.map((sub) => (
+                      <button
+                        key={sub.name}
+                        type="button"
+                        className={`qt-bof-subrow ${isSel && selectedSubName === sub.name ? 'selected' : ''}`}
+                        onClick={() => onSelectSub(it.key, sub.name)}
+                      >
+                        <span className="qt-bof-subrow-name">{sub.name}</span>
+                        <span className="qt-bof-subrow-desc">{sub.description || sub.example}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+        {cmdTotal === 0 && (
+          <div style={{ padding: 16 }}>
+            <EmptyState
+              icon="⎔"
+              title={hasAny ? t('无匹配插件') : `当前无可用的 ${platformLabel(platform)} BOF 插件`}
+              hint={hasAny
+                ? t('请尝试切换用途分类、套件筛选或清空搜索词')
+                : '请确认团队端 profile 已加载 Extension-Kit（.axs 脚本与 *_bin/*.o 产物），点击右上角「刷新」重新拉取命令树'}
+              action={hasAny ? (
+                <button type="button" className="ghost" onClick={onResetFilters}>重置筛选</button>
+              ) : undefined}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
+type BofListPaneProps = {
+  grouped: Array<{ cat: Cat; label: string; items: BofRow[] }>
+  selectedName: string
+  searchQuery: string
+  recentSet: Set<string>
+  favSet: Set<string>
+  collapsedSet: Set<string>
+  offline: boolean
+  splitPct: number
+  hasRows: boolean
+  onSelect: (name: string) => void
+  onQuickRun: (row: BofRow) => void
+  onToggleCollapse: (group: string) => void
+  onToggleFav: (name: string) => void
+  onContext: (x: number, y: number, row: BofRow) => void
+  onResetFilters: () => void
+}
+
+const BofListPane = memo(function BofListPane({
+  grouped, selectedName, searchQuery, recentSet, favSet, collapsedSet,
+  offline, splitPct, hasRows,
+  onSelect, onQuickRun, onToggleCollapse, onToggleFav, onContext, onResetFilters,
+}: BofListPaneProps) {
+  const totalShown = grouped.reduce((n, g) => n + g.items.length, 0)
+  const q = searchQuery.trim().toLowerCase()
+  return (
+    <div className="qt-bof-list-pane" style={{ width: `${splitPct}%` }}>
+      <div className="qt-bof-list-hd">
+        <span>Linux ELF BOF 清单</span>
+        <span className="mono">{totalShown} 项</span>
+      </div>
+      <div className="qt-bof-list-scroll">
+        {grouped.map((g) => {
+          const isCollapsed = !q && collapsedSet.has(`lin:${g.cat}`)
+          return (
+            <div key={g.cat}>
+              <button
+                type="button"
+                className="qt-bof-cat-hd"
+                onClick={() => onToggleCollapse(`lin:${g.cat}`)}
+                title="点击折叠 / 展开该分类"
+              >
+                <span className="qt-bof-cat-left">
+                  <span className="qt-bof-cat-dot" style={{ background: CAT_COLOR[g.cat] }} />
+                  <span>{isCollapsed ? '▸' : '▾'}</span>
+                  <span>{g.label}</span>
+                </span>
+                <span>{g.items.length}</span>
+              </button>
+              {!isCollapsed && g.items.map((b) => {
+                const isSel = b.name === selectedName
+                const isRecent = recentSet.has(b.name)
+                const isFav = favSet.has(b.name)
+                const pCnt = (b.meta.params || []).length
+                return (
+                  <div
+                    key={b.name}
+                    role="button"
+                    tabIndex={-1}
+                    data-bof-name={b.name}
+                    className={`qt-bof-row ${isSel ? 'selected' : ''}`}
+                    onClick={() => onSelect(b.name)}
+                    onDoubleClick={() => { if (!(b.meta.params || []).some((p) => p.required)) onQuickRun(b) }}
+                    onContextMenu={(e) => { e.preventDefault(); onSelect(b.name); onContext(e.clientX, e.clientY, b) }}
+                  >
+                    <div className="qt-bof-row-top">
+                      <button
+                        type="button"
+                        className={`qt-bof-star ${isFav ? 'on' : ''}`}
+                        title={isFav ? '取消收藏' : '收藏常用 BOF'}
+                        onClick={(e) => { e.stopPropagation(); onToggleFav(b.name) }}
+                      >
+                        {isFav ? '★' : '☆'}
+                      </button>
+                      {isRecent && !isFav && <span className="qt-bof-row-recent" title="最近执行">●</span>}
+                      <span className="qt-bof-row-name">{b.name}</span>
+                      <div className="qt-bof-row-right">
+                        <span className="qt-bof-badge">{pCnt ? `${pCnt} 参` : '无参'}</span>
+                        {!b.known && <span className="qt-bof-badge info">{t('未登记')}</span>}
+                        {!offline && !b.obj && <span className="qt-bof-badge err">{t('未编译')}</span>}
+                        {!offline && b.obj && b.stale && <span className="qt-bof-badge warn">{t('源码已改')}</span>}
+                        {!offline && b.obj && !b.stale && <span className="qt-bof-badge ok">就绪</span>}
+                        {!offline && b.obj && b.obj_size > 0 && (
+                          <span className="qt-bof-row-size">{fmtSize(b.obj_size)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="qt-bof-row-desc">{b.meta.desc}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+        {totalShown === 0 && (
+          <div style={{ padding: 16 }}>
+            <EmptyState
+              icon="⎔"
+              title={hasRows ? t('无匹配 BOF') : t('服务端还没有 BOF')}
+              hint={hasRows ? t('请尝试切换分类、状态或清空搜索词') : t('支持直接拖拽 .c / .o 到此处或点击上方「上传 BOF」')}
+              action={hasRows ? (
+                <button type="button" className="ghost" onClick={onResetFilters}>重置筛选</button>
+              ) : undefined}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
+export const Bofs = memo(function Bofs() {
   const agents = useStore((s) => s.agents) || {}
   const api = useStore((s) => s.api)
   const selectedAgentId = useStore((s) => s.selectedAgentId)
@@ -432,37 +839,100 @@ export function Bofs() {
   const pushToast = useStore((s) => s.pushToast)
   const pushLog = useStore((s) => s.pushLog)
 
+  const onlineClock = useOnlineClock5s()
   const onlineAgents = useMemo(
-    () => Object.values(agents).filter((a: any) => isAgentOnline(a)),
-    [agents],
+    () => {
+      void onlineClock
+      return Object.values(agents).filter((a: any) => isAgentOnline(a))
+    },
+    [agents, onlineClock],
   )
   const [agentId, setAgentId] = useState('')
   const effectiveAgent = agentId || (selectedAgentId && isAgentOnline(agents[selectedAgentId]) ? selectedAgentId : '') || (onlineAgents[0]?.a_id as string) || ''
 
+  const [platformOverride, setPlatformOverride] = useState<'linux' | 'windows' | null>(null)
   const [rows, setRows] = useState<BofRow[]>([])
+  const [cmdTree, setCmdTree] = useState<CmdBatch[]>([])
   const [serverBase, setServerBase] = useState('')
   const [offline, setOffline] = useState(false)
   const [loading, setLoading] = useState(false)
   const [listErr, setListErr] = useState('')
   const [base, setBase] = useState(() => { try { return localStorage.getItem(BASE_KEY) || '' } catch { return '' } })
+  const [baseOpen, setBaseOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [catFilter, setCatFilter] = useState<Cat | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [selectedName, setSelectedName] = useState('')
+  const [recentNames, setRecentNames] = useState<string[]>(() => loadStringList(RECENT_KEY, 6))
+  const [favNames, setFavNames] = useState<string[]>(() => loadStringList(FAV_KEY, 50))
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(() => new Set())
+
+  // Windows / Extension-Kit state
+  const [extPurpose, setExtPurpose] = useState<string>('all')
+  const [extSuite, setExtSuite] = useState<string>('all')
+  const [extRecentOnly, setExtRecentOnly] = useState(false)
+  const [extFavOnly, setExtFavOnly] = useState(false)
+  const [extSelectedKey, setExtSelectedKey] = useState('')
+  const [extSubByKey, setExtSubByKey] = useState<Record<string, string>>({})
+  const [expandedExtKeys, setExpandedExtKeys] = useState<Set<string>>(() => new Set())
+  const [subFilter, setSubFilter] = useState('')
+  const [customBofOpen, setCustomBofOpen] = useState(false)
+  const [customBofPath, setCustomBofPath] = useState('')
+  const [customBofArgs, setCustomBofArgs] = useState('')
+  const [customBofAsync, setCustomBofAsync] = useState(false)
+  const [winExecEntries, setWinExecEntries] = useState<Array<{ name: string; label?: string; path: string; size?: number; stale?: boolean }>>([])
+  const [winExecBase, setWinExecBase] = useState('')
+  const [winExecNote, setWinExecNote] = useState('')
+  const [extArgVals, setExtArgVals] = useState<Record<string, string>>({})
+  const [extCustomCmd, setExtCustomCmd] = useState<Record<string, string>>({})
+  const [recentExtKeys, setRecentExtKeys] = useState<string[]>(() => loadStringList(RECENT_EXT_KEY, 6))
+  const [favExtKeys, setFavExtKeys] = useState<string[]>(() => loadStringList(FAV_EXT_KEY, 50))
+  const [extCtx, setExtCtx] = useState<{ x: number; y: number; item: ExtBofItem } | null>(null)
+
   const [paramVals, setParamVals] = useState<Record<string, string>>({})
+  const [missingKey, setMissingKey] = useState<string | null>(null)
   const [asyncOn, setAsyncOn] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [compiling, setCompiling] = useState<string | null>(null)
   const [compileAll, setCompileAll] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const [out, setOut] = useState<{ title: string; text: string; bad: boolean } | null>(null)
+  const [ctx, setCtx] = useState<{ x: number; y: number; row: BofRow } | null>(null)
+  const [splitPct, setSplitPct] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem(SPLIT_KEY))
+      return Number.isFinite(n) && n >= 26 && n <= 64 ? n : 44
+    } catch { return 44 }
+  })
+  const [draggingSplit, setDraggingSplit] = useState(false)
+
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const splitRef = useRef<HTMLDivElement | null>(null)
+  const paramRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const effectiveBase = base.trim() || serverBase
+  const recentSet = useMemo(() => new Set(recentNames), [recentNames])
+  const favSet = useMemo(() => new Set(favNames), [favNames])
+  const recentExtSet = useMemo(() => new Set(recentExtKeys), [recentExtKeys])
+  const favExtSet = useMemo(() => new Set(favExtKeys), [favExtKeys])
 
-  const load = useCallback(async () => {
+  const selectedAgent = effectiveAgent ? agents[effectiveAgent] : null
+  const targetPlatform: PlatformKind = selectedAgent ? detectPlatform(selectedAgent) : (platformOverride || 'windows')
+  const activePlatform: PlatformKind = platformOverride ?? targetPlatform
+  const unsupportedReason = bofUnsupportedReason(selectedAgent)
+
+  const load = useCallback(async (forceTree = false) => {
     if (!api) return
     setLoading(true)
     setListErr('')
-    try {
-      const d = await api.get<any>('/api/bofs/list')
+    const [bofRes, treeRes] = await Promise.allSettled([
+      api.get<any>('/api/bofs/list'),
+      loadCmdTree(api, forceTree),
+    ])
+    if (bofRes.status === 'fulfilled') {
+      const d = bofRes.value
       const entries: BofEntry[] = Array.isArray(d?.entries) ? d.entries : []
       setRows(entries.map((e) => {
         const meta = META[e.name]
@@ -470,33 +940,78 @@ export function Bofs() {
       }))
       if (typeof d?.base === 'string' && d.base) setServerBase(d.base)
       setOffline(false)
-    } catch (e: any) {
-      // 服务端拿不到就退回离线清单，但**必须显式说出来**——
-      // 悄悄退回硬编码列表 = 让操作员以为看到的就是全部，正是本次要修的毛病。
+    } else {
       setOffline(true)
       setRows(OFFLINE_ROWS)
-      setListErr(String(e?.message || e))
-    } finally {
-      setLoading(false)
+      setListErr(String(bofRes.reason?.message || bofRes.reason || ''))
     }
+    if (treeRes.status === 'fulfilled') {
+      setCmdTree(Array.isArray(treeRes.value) ? treeRes.value : [])
+    }
+    setLoading(false)
   }, [api])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(false) }, [load])
 
-  /**
-   * 告诉命令补全：服务端的 BOF 目录刚变过，别再拿旧清单。
-   *
-   * ★ 这是缺陷 B 的正解。入口其实一直都在（本页的上传 / 单编 / 全编 / 刷新），
-   *   缺的只是「编译完要让补全知道」—— 而 `clearCompletionCache()` 在这之前是
-   *   **全仓死代码**（唯一出现就是它自己的定义），所以从代码上完全看不出
-   *   补全从不失效。现象就是用户报的那句：「新写好的 BOF 用不上」。
-   *
-   * 只清缓存不够、还要让**已经挂着的**控制台重取：那由 useCompletion 的
-   * `refresh()` 负责（弹层里的「刷新候选」按钮），这里做的是让下一次取数
-   * 一定打到服务端而不是缓存。
-   */
+  // 拉取 Windows COFF .o 候选清单与服务端沙箱根目录（供「自定义 .o」自动补全及 FILE 参数提示）
+  useEffect(() => {
+    if (!api || activePlatform === 'linux') return
+    let cancelled = false
+    const reqAgent = selectedAgent && detectPlatform(selectedAgent) === 'windows' ? (selectedAgent.a_name || 'beacon') : 'beacon'
+    const reqArch = selectedAgent?.a_arch || 'x64'
+    api.post<any>('/api/bofs/exec', { agent: reqAgent, os: 1, arch: reqArch })
+      .then((res) => {
+        if (cancelled || !res) return
+        setWinExecEntries(Array.isArray(res.entries) ? res.entries : [])
+        setWinExecBase(typeof res.base === 'string' ? res.base : '')
+        setWinExecNote(typeof res.note === 'string' ? res.note : '')
+      })
+      .catch(() => { /* optional endpoint */ })
+    return () => { cancelled = true }
+  }, [api, activePlatform, selectedAgent?.a_name, selectedAgent?.a_os, selectedAgent?.a_arch])
+
+  // Close row context menu on outside click / scroll
+  useEffect(() => {
+    if (!ctx && !extCtx) return
+    const close = () => { setCtx(null); setExtCtx(null) }
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [ctx, extCtx])
+
+  // Vertical splitter drag between left list pane and right detail inspector
+  useEffect(() => {
+    if (!draggingSplit) return
+    const onMove = (e: MouseEvent) => {
+      const box = splitRef.current?.getBoundingClientRect()
+      if (!box || box.width <= 0) return
+      const pct = ((e.clientX - box.left) / box.width) * 100
+      const clamped = Math.max(26, Math.min(64, Math.round(pct)))
+      setSplitPct(clamped)
+      try { localStorage.setItem(SPLIT_KEY, String(clamped)) } catch { /* ignore */ }
+    }
+    const onUp = () => setDraggingSplit(false)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [draggingSplit])
+
   function invalidateCompletions() {
     clearCompletionCache()
+  }
+
+  function recordRecent(name: string) {
+    setRecentNames((prev) => {
+      const next = [name, ...prev.filter((x) => x !== name)].slice(0, 6)
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
   }
 
   function saveBase() {
@@ -504,45 +1019,34 @@ export function Bofs() {
     pushToast('ok', base.trim() ? 'BOF 基路径已保存' : '已改为跟随服务端')
   }
 
-  function fullPath(b: BofRow) {
+  const fullPath = useCallback((b: BofRow) => {
     const bstr = effectiveBase.trim()
     if (!bstr) return b.file
     return (bstr.endsWith('/') ? bstr : bstr + '/') + b.file
-  }
+  }, [effectiveBase])
 
   const val = (b: BofRow, key: string) => (paramVals[`${b.name}.${key}`] || '').trim()
 
-  /** 表单 → 该 BOF 真正会收到的参数序列。
-   *  这里只做「一个输入框 → 几个字段」的展开，编码交给 packBofArgs。 */
   function collectArgs(b: BofRow): BofArg[] {
-    const out: BofArg[] = []
+    const outArgs: BofArg[] = []
     for (const p of b.meta.params || []) {
       if (p.flag) {
-        // 勾选框：勾上才把 placeholder 原样发出去（--unlink / --keep 这类开关）
-        if (paramVals[`${b.name}.${p.key}`]) out.push({ kind: 'str', value: p.placeholder })
+        if (paramVals[`${b.name}.${p.key}`]) outArgs.push({ kind: 'str', value: p.placeholder })
         continue
       }
       const v = val(b, p.key)
       if (!v) continue
       if (p.multi) {
-        // 一个框里敲多个值 → N 个字段（hide_add / hide_del 的名字列表）
-        for (const t of v.split(/\s+/).filter(Boolean)) out.push({ kind: 'str', value: t })
+        for (const tok of v.split(/\s+/).filter(Boolean)) outArgs.push({ kind: 'str', value: tok })
       } else if (p.nulJoin) {
-        // 多个值 → **一个**字段，值之间用 NUL 连接（ebpf_load 的 names）
-        out.push({ kind: 'str', value: v.split(/\s+/).filter(Boolean).join('\0') })
+        outArgs.push({ kind: 'str', value: v.split(/\s+/).filter(Boolean).join('\0') })
       } else {
-        out.push({ kind: p.kind === 'int' ? 'int' : 'str', value: v })
+        outArgs.push({ kind: p.kind === 'int' ? 'int' : 'str', value: v })
       }
     }
-    return out
+    return outArgs
   }
 
-  /** 控制台那行的等价写法。
-   *  异步开关的**标记名随 agent 变**：linux_agent 的 ax_config 是
-   *  `addArgBool("async")`，beacon/gopher 是 `addArgBool("-a")`。写错的后果不是
-   *  「开关没生效」而是**它会被 AxScript 归并进前一个位置参数**（parser.go 的
-   *  isWideArgs 分支把剩下的 token 用空格接到 lastKey 上），也就是悄悄污染
-   *  param_data。所以这里按 agent 判，不写死。 */
   function asyncMark() {
     return isLinuxAgent(agents[effectiveAgent] as any) ? 'async' : '-a'
   }
@@ -551,7 +1055,6 @@ export function Bofs() {
     const parts = [`execute bof ${fullPath(b)}`]
     for (const a of collectArgs(b)) {
       if (a.kind === 'int') { parts.push(a.value); continue }
-      // 含空格或 NUL 的值必须引起来：Tokenize 支持双引号，且引号本身会被吃掉
       if (/[\s\0]/.test(a.value)) parts.push(`"${a.value.replace(/\0/g, ' ')}"`)
       else parts.push(a.value)
     }
@@ -563,9 +1066,15 @@ export function Bofs() {
     const id = effectiveAgent
     if (!id) { pushToast('warn', '没有在线主机可选'); return }
     if (!api) { pushToast('err', t('API 未就绪')); return }
+    if (unsupportedReason) { pushToast('warn', unsupportedReason); return }
+    if (targetPlatformMismatch) { pushToast('warn', '当前所选主机不是 Linux，请先切到对应主机'); return }
     if (!b.obj && !offline) { pushToast('warn', `${b.name}.o 在服务端不存在，先编译或上传`); return }
     for (const p of b.meta.params || []) {
       if (p.required && !p.flag && !val(b, p.key)) {
+        const k = `${b.name}.${p.key}`
+        setSelectedName(b.name)
+        setMissingKey(k)
+        setTimeout(() => paramRefs.current[k]?.focus(), 0)
         pushToast('warn', `缺少必填参数：${p.label}`)
         return
       }
@@ -573,10 +1082,6 @@ export function Bofs() {
 
     const cmdline = buildCmdline(b)
     const args = collectArgs(b)
-    // 参数打包成 BeaconDataParse 认识的那种 blob（含 4 字节字段个数头）再 base64。
-    // 之所以必须 base64：服务端拿到 param_data 会**先试 base64 解码**，解不开才走
-    // 「按空格切分纯文本」的兜底 —— 纯文本里的 base64 字符会被那条兜底误解。
-    // 解不开或解出来是空 → 走兜底；兜底只认字符串，所以整数参数只能走这条路（本页）。
     let paramData = ''
     if (args.length) {
       try {
@@ -599,9 +1104,9 @@ export function Bofs() {
       try {
         await api.commandExecute(id, cmdline, argObj, false)
       } catch {
-        // 结构化路径失败（旧服务器等）：回退控制台原始命令
         await sendCommand(cmdline)
       }
+      recordRecent(b.name)
       pushLog('info', `BOF ${b.name} 已下发 → ${cmdline}`, false)
       openConsole(id)
     } catch {
@@ -616,10 +1121,8 @@ export function Bofs() {
     pushToast(ok ? 'ok' : 'err', ok ? '命令已复制' : t('复制失败'))
   }
 
-  async function onPickFile(ev: React.ChangeEvent<HTMLInputElement>) {
-    const f = ev.target.files?.[0]
-    ev.target.value = '' // 允许再次选同一个文件
-    if (!f || !api) return
+  async function uploadFile(f: File) {
+    if (!api) return
     const m = /^(.+)\.(c|o)$/i.exec(f.name)
     if (!m) { pushToast('err', '只接受 .c（源码）或 .o（产物）'); return }
     const name = m[1]
@@ -637,13 +1140,12 @@ export function Bofs() {
         name, kind, content_b64: b64, overwrite: true, compile: kind === 'c',
       })
       if (kind === 'c' && res?.compiled === false) {
-        // 201：文件写进去了但没编过。必须把 gcc 输出摊开给操作员看，
-        // 否则「上传成功」这四个字会把人骗过去。
         setOut({ title: `${name}.c 已上传，但编译失败`, text: String(res?.compile?.output || res?.compile?.error || ''), bad: true })
         pushToast('warn', `${name}.c 已上传，但编译失败（见下方输出）`)
       } else {
         pushToast('ok', kind === 'c' ? `${name}.c 已上传并编译` : `${name}.o 已上传`)
       }
+      setSelectedName(name)
       await load()
       invalidateCompletions()
     } catch (e: any) {
@@ -651,6 +1153,12 @@ export function Bofs() {
     } finally {
       setUploading(false)
     }
+  }
+
+  async function onPickFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const f = ev.target.files?.[0]
+    ev.target.value = ''
+    if (f) await uploadFile(f)
   }
 
   async function compileOne(b: BofRow) {
@@ -666,7 +1174,6 @@ export function Bofs() {
       await load()
       invalidateCompletions()
     } catch (e: any) {
-      // 服务端现在把错因 + gcc 输出一起放进 message（见 bofsCompileErrText）
       setOut({ title: `${b.name} 编译失败`, text: String(e?.message || e), bad: true })
       pushToast('err', `${b.name} 编译失败`)
     } finally {
@@ -700,218 +1207,1593 @@ export function Bofs() {
     }
   }
 
-  const filtered = rows.filter((b) => {
-    const q = search.trim().toLowerCase()
-    if (!q) return true
-    // notes 也进搜索：「哪个模块提到 pin / 表满了 / 需要异步」是实际会去搜的东西
-    return [b.name, b.file, b.meta.desc, ...(b.meta.notes || [])]
-      .some((s) => s.toLowerCase().includes(q))
-  })
+  // Counts & filtering
+  const catCounts = useMemo(() => {
+    const m: Record<Cat, number> = { recon: 0, priv: 0, cred: 0, persist: 0, stealth: 0, exec: 0, other: 0 }
+    for (const r of rows) m[r.meta.category] = (m[r.meta.category] || 0) + 1
+    return m
+  }, [rows])
 
-  const nObj = rows.filter((r) => r.obj).length
-  const nStale = rows.filter((r) => r.stale).length
-  const nOther = rows.filter((r) => !r.known).length
+  const nReady = useMemo(() => rows.filter((r) => r.obj && !r.stale).length, [rows])
+  const nObj = useMemo(() => rows.filter((r) => r.obj).length, [rows])
+  const nStale = useMemo(() => rows.filter((r) => r.stale).length, [rows])
+  const nUncompiled = useMemo(() => rows.filter((r) => !offline && !r.obj).length, [rows, offline])
+  const nOther = useMemo(() => rows.filter((r) => !r.known).length, [rows])
+  const nRecent = useMemo(() => rows.filter((r) => recentSet.has(r.name)).length, [rows, recentSet])
+  const nFav = useMemo(() => rows.filter((r) => favSet.has(r.name)).length, [rows, favSet])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rows.filter((b) => {
+      if (catFilter !== 'all' && b.meta.category !== catFilter) return false
+      if (statusFilter === 'ready' && !b.obj) return false
+      if (statusFilter === 'stale' && !b.stale) return false
+      if (statusFilter === 'uncompiled' && (offline || b.obj)) return false
+      if (statusFilter === 'unregistered' && b.known) return false
+      if (statusFilter === 'recent' && !recentSet.has(b.name)) return false
+      if (statusFilter === 'fav' && !favSet.has(b.name)) return false
+      if (!q) return true
+      return [b.name, b.file, b.meta.desc, ...(b.meta.notes || [])]
+        .some((s) => s.toLowerCase().includes(q))
+    })
+  }, [rows, search, catFilter, statusFilter, offline, recentSet, favSet])
+
+  const grouped = useMemo(() => {
+    const byCat = new Map<Cat, BofRow[]>()
+    for (const b of filtered) {
+      const list = byCat.get(b.meta.category) || []
+      list.push(b)
+      byCat.set(b.meta.category, list)
+    }
+    return CATS
+      .map((c) => ({ cat: c.key, label: c.label, items: byCat.get(c.key) || [] }))
+      .filter((g) => g.items.length > 0)
+  }, [filtered])
+
+  const flatOrder = useMemo(() => grouped.flatMap((g) => g.items), [grouped])
+
+  // Keep valid active selection whenever rows or filter list changes
+  const selected = useMemo(
+    () => flatOrder.find((r) => r.name === selectedName) || flatOrder[0] || null,
+    [flatOrder, selectedName],
+  )
+
+  useEffect(() => {
+    if (selected && selected.name !== selectedName) setSelectedName(selected.name)
+  }, [selected, selectedName])
+
+  const onSelectRow = useCallback((name: string) => {
+    setSelectedName(name)
+    setMissingKey(null)
+  }, [])
+
+  const onSelectExtRow = useCallback((key: string) => {
+    setExtSelectedKey(key)
+    setSubFilter('')
+    setMissingKey(null)
+  }, [])
+
+  const onSelectExtSub = useCallback((key: string, subName: string) => {
+    setExtSelectedKey(key)
+    setExtSubByKey((p) => ({ ...p, [key]: subName }))
+    setExpandedExtKeys((prev) => {
+      const n = new Set(prev)
+      n.add(key)
+      return n
+    })
+    setMissingKey(null)
+  }, [])
+
+  const onToggleCollapse = useCallback((groupKey: string) => {
+    setCollapsedCats((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
+  }, [])
+
+  const onToggleExpandExt = useCallback((key: string) => {
+    setExpandedExtKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const onToggleFavLinux = useCallback((name: string) => {
+    setFavNames((prev) => {
+      const next = prev.includes(name) ? prev.filter((x) => x !== name) : [name, ...prev].slice(0, 50)
+      try { localStorage.setItem(FAV_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
+  const onToggleFavExt = useCallback((key: string) => {
+    setFavExtKeys((prev) => {
+      const next = prev.includes(key) ? prev.filter((x) => x !== key) : [key, ...prev].slice(0, 50)
+      try { localStorage.setItem(FAV_EXT_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
+  const onRowContext = useCallback((x: number, y: number, row: BofRow) => {
+    setCtx({ x, y, row })
+  }, [])
+
+  const onExtRowContext = useCallback((x: number, y: number, item: ExtBofItem) => {
+    setExtCtx({ x, y, item })
+  }, [])
+
+  const onResetFilters = useCallback(() => {
+    setSearch('')
+    setCatFilter('all')
+    setStatusFilter('all')
+    setExtPurpose('all')
+    setExtSuite('all')
+    setExtRecentOnly(false)
+    setExtFavOnly(false)
+    setSubFilter('')
+  }, [])
+
+  const onQuickRun = useCallback((row: BofRow) => {
+    void runBof(row)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveAgent, api, offline, effectiveBase, asyncOn])
+
+  function onSelectAgent(nextId: string) {
+    setAgentId(nextId)
+    setPlatformOverride(null)
+    setMissingKey(null)
+    setOut(null)
+  }
+
+  function switchPlatform(nextPlat: 'linux' | 'windows') {
+    setPlatformOverride(nextPlat)
+    setMissingKey(null)
+    setOut(null)
+    if (selectedAgent && detectPlatform(selectedAgent) === nextPlat) return
+    const match = onlineAgents.find((a: any) => detectPlatform(a) === nextPlat)
+    if (match?.a_id) setAgentId(match.a_id)
+  }
+
+  function recordRecentExt(key: string) {
+    setRecentExtKeys((prev) => {
+      const next = [key, ...prev.filter((x) => x !== key)].slice(0, 6)
+      try { localStorage.setItem(RECENT_EXT_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  // ── Windows / macOS Extension-Kit 动态 BOF 目录解析（source=1 / source=2，按 agent + os 去重） ──
+  const extCatalog = useMemo(() => {
+    if (activePlatform === 'linux') return { items: [] as ExtBofItem[], agentMismatch: false, batchAgent: '' }
+    const osCode = activePlatform === 'macos' ? 3 : 1
+    const allExtBatches = cmdTree.filter((b) => (b.source === 1 || b.source === 2) && (b.groups || []).some((g) => (g.commands || []).length > 0))
+    const byOs = allExtBatches.filter((b) => b.os === osCode || !b.os)
+
+    let chosen: CmdBatch[] = []
+    let agentMismatch = false
+    const targetAgentMatched = selectedAgent && detectPlatform(selectedAgent) === activePlatform ? selectedAgent : null
+    if (targetAgentMatched?.a_name) {
+      chosen = byOs.filter((b) => b.agent === targetAgentMatched.a_name)
+      if (!chosen.length && byOs.length) {
+        agentMismatch = true
+        chosen = byOs
+      }
+    } else {
+      const preferredAgent = byOs.find((b) => b.agent === 'beacon')?.agent || byOs[0]?.agent || ''
+      chosen = preferredAgent ? byOs.filter((b) => b.agent === preferredAgent) : byOs
+    }
+
+    const seen = new Set<string>()
+    const items: ExtBofItem[] = []
+    for (const batch of chosen) {
+      for (const grp of batch.groups || []) {
+        const suite = grp.group_name || grp.script_name || 'Extension-Kit'
+        const purpose = purposeOf(suite)
+        for (const cmd of grp.commands || []) {
+          const key = `${suite}::${cmd.name}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          items.push({
+            key,
+            suite,
+            scriptName: grp.script_name || '',
+            purpose,
+            batchAgent: batch.agent || '',
+            cmd,
+          })
+        }
+      }
+    }
+    return {
+      items,
+      agentMismatch,
+      batchAgent: items[0]?.batchAgent || chosen[0]?.agent || '',
+    }
+  }, [activePlatform, cmdTree, selectedAgent])
+
+  const extPurposeCounts = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const it of extCatalog.items) m.set(it.purpose, (m.get(it.purpose) || 0) + 1)
+    return m
+  }, [extCatalog.items])
+
+  const extSuites = useMemo(() => {
+    const s = new Set<string>()
+    for (const it of extCatalog.items) s.add(it.suite)
+    return Array.from(s)
+  }, [extCatalog.items])
+
+  const nExtRecent = useMemo(
+    () => extCatalog.items.filter((it) => recentExtSet.has(it.key)).length,
+    [extCatalog.items, recentExtSet],
+  )
+  const nExtFav = useMemo(
+    () => extCatalog.items.filter((it) => favExtSet.has(it.key)).length,
+    [extCatalog.items, favExtSet],
+  )
+  const extLeafCountTotal = useMemo(
+    () => extCatalog.items.reduce((n, it) => n + Math.max(1, (it.cmd.subcommands || []).length), 0),
+    [extCatalog.items],
+  )
+
+  const extFiltered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return extCatalog.items.filter((it) => {
+      if (extPurpose !== 'all' && it.purpose !== extPurpose) return false
+      if (extSuite !== 'all' && it.suite !== extSuite) return false
+      if (extRecentOnly && !recentExtSet.has(it.key)) return false
+      if (extFavOnly && !favExtSet.has(it.key)) return false
+      if (!q) return true
+      const c = it.cmd
+      const hay = [
+        c.name, c.description, c.message, c.example, it.suite, it.purpose,
+        ...(c.args || []).flatMap((a) => [a.name, a.mark, a.description]),
+        ...(c.subcommands || []).flatMap((s) => [s.name, s.description, s.example]),
+      ]
+      return hay.some((v) => (v || '').toLowerCase().includes(q))
+    })
+  }, [extCatalog.items, extPurpose, extSuite, extRecentOnly, extFavOnly, recentExtSet, favExtSet, search])
+
+  const extGrouped = useMemo(() => {
+    const byPurpose = new Map<string, ExtBofItem[]>()
+    for (const it of extFiltered) {
+      const list = byPurpose.get(it.purpose) || []
+      list.push(it)
+      byPurpose.set(it.purpose, list)
+    }
+    return PURPOSE_ORDER
+      .filter((p) => byPurpose.has(p))
+      .map((p) => ({ purpose: p, items: byPurpose.get(p)! }))
+  }, [extFiltered])
+
+  const extFlatOrder = useMemo(() => extGrouped.flatMap((g) => g.items), [extGrouped])
+  const selectedExt = useMemo(
+    () => extFlatOrder.find((it) => it.key === extSelectedKey) || extFlatOrder[0] || null,
+    [extFlatOrder, extSelectedKey],
+  )
+
+  useEffect(() => {
+    if (activePlatform !== 'linux' && selectedExt && selectedExt.key !== extSelectedKey) {
+      setExtSelectedKey(selectedExt.key)
+    }
+  }, [activePlatform, selectedExt, extSelectedKey])
+
+  // 搜索命中某个子命令（例如 asktgt / get-users）时，自动选中对应子命令
+  useEffect(() => {
+    const q = search.trim().toLowerCase()
+    if (!q || activePlatform === 'linux' || !selectedExt) return
+    const subs = selectedExt.cmd.subcommands || []
+    if (!subs.length) return
+    const exactOrMatch = subs.find((s) => s.name.toLowerCase() === q)
+      || subs.find((s) => `${s.name} ${s.description || ''}`.toLowerCase().includes(q))
+    if (exactOrMatch && extSubByKey[selectedExt.key] !== exactOrMatch.name) {
+      setExtSubByKey((p) => ({ ...p, [selectedExt.key]: exactOrMatch.name }))
+    }
+  }, [search, activePlatform, selectedExt, extSubByKey])
+
+  const selectedArgs = selected ? collectArgs(selected) : []
+  const selectedCmdline = selected ? buildCmdline(selected) : ''
+  const hasAnyParamValue = !!(selected && (selected.meta.params || []).some((p) => !!paramVals[`${selected.name}.${p.key}`]))
+
+  const extSubs = selectedExt?.cmd.subcommands || []
+  const activeExtSub = extSubs.length
+    ? (extSubs.find((s) => s.name === extSubByKey[selectedExt!.key]) || extSubs[0])
+    : null
+  const activeExtCmd = activeExtSub || selectedExt?.cmd || null
+  const extBaseArgKey = selectedExt ? `${selectedExt.key}:${activeExtSub ? activeExtSub.name : ''}` : ''
+  const autoExtCmdline = selectedExt
+    ? buildExtCmdline(selectedExt, activeExtSub?.name || '', extArgVals)
+    : ''
+  const finalExtCmdline = extBaseArgKey && extBaseArgKey in extCustomCmd
+    ? extCustomCmd[extBaseArgKey]
+    : autoExtCmdline
+  const hasAnyExtArgVal = !!(selectedExt && activeExtCmd && (
+    (extBaseArgKey in extCustomCmd) ||
+    (activeExtCmd.args || []).some((_, idx) => !!extArgVals[`${extBaseArgKey}.${idx}`])
+  ))
+  const targetPlatformMismatch = !!(selectedAgent && detectPlatform(selectedAgent) !== activePlatform)
+  const extAgentBatchMismatch = !!(
+    activePlatform !== 'linux' &&
+    selectedExt &&
+    selectedAgent &&
+    selectedExt.batchAgent &&
+    selectedAgent.a_name !== selectedExt.batchAgent
+  )
+
+  async function runExtBof(it: ExtBofItem, customOverride?: string) {
+    if (!effectiveAgent || !selectedAgent) { pushToast('warn', '没有在线主机可选'); return }
+    if (!api) { pushToast('err', t('API 未就绪')); return }
+    if (unsupportedReason) { pushToast('warn', unsupportedReason); return }
+    if (detectPlatform(selectedAgent) !== activePlatform) {
+      pushToast('warn', `当前目标主机是 ${platformLabel(detectPlatform(selectedAgent))}，请先切换匹配的在线主机`)
+      return
+    }
+    if (it.batchAgent && selectedAgent.a_name !== it.batchAgent) {
+      pushToast('warn', `当前插件属于 ${it.batchAgent}，与所选主机 ${selectedAgent.a_name} 不匹配`)
+      return
+    }
+
+    const subs = it.cmd.subcommands || []
+    const sub = subs.length ? (subs.find((s) => s.name === extSubByKey[it.key]) || subs[0]) : null
+    const act = sub || it.cmd
+    const baseKey = `${it.key}:${sub ? sub.name : ''}`
+    const cmdText = (customOverride ?? (baseKey in extCustomCmd ? extCustomCmd[baseKey] : buildExtCmdline(it, sub?.name || '', extArgVals))).trim()
+
+    if (!(baseKey in extCustomCmd) && customOverride === undefined) {
+      const argsList = act.args || []
+      for (let i = 0; i < argsList.length; i++) {
+        const a = argsList[i]
+        if (!a.required || (a.flag && !a.name)) continue
+        if (!extArgDisplayValue(extArgVals, baseKey, a, i).trim()) {
+          const k = `ext:${baseKey}.${i}`
+          setExtSelectedKey(it.key)
+          setMissingKey(k)
+          setTimeout(() => paramRefs.current[k]?.focus(), 0)
+          pushToast('warn', `缺少必填参数：${a.name || a.description || '参数'}`)
+          return
+        }
+      }
+    }
+    if (/<[^>]+>|\{[^}]+\}/.test(cmdText)) {
+      pushToast('warn', '命令行中仍存在未替换的占位符（<...> / {...}），请填写参数后执行')
+      return
+    }
+
+    setBusy(it.key)
+    try {
+      await api.commandRaw(effectiveAgent, cmdText)
+      recordRecentExt(it.key)
+      pushLog('info', `${platformLabel(activePlatform)} BOF ${it.cmd.name} 已下发 → ${cmdText}`, false)
+      openConsole(effectiveAgent)
+    } catch (e: any) {
+      pushToast('err', `${it.cmd.name} 下发失败: ${e?.message || e}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function clearSelectedParams() {
+    if (activePlatform === 'linux') {
+      if (!selected) return
+      setParamVals((prev) => {
+        const next = { ...prev }
+        for (const p of selected.meta.params || []) delete next[`${selected.name}.${p.key}`]
+        return next
+      })
+      setMissingKey(null)
+      return
+    }
+    if (!selectedExt || !activeExtCmd) return
+    setExtArgVals((prev) => {
+      const next = { ...prev }
+      for (let i = 0; i < (activeExtCmd.args || []).length; i++) delete next[`${extBaseArgKey}.${i}`]
+      return next
+    })
+    setExtCustomCmd((prev) => {
+      const next = { ...prev }
+      delete next[extBaseArgKey]
+      return next
+    })
+    setMissingKey(null)
+  }
+
+  function onPanelKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault()
+      searchRef.current?.focus()
+      searchRef.current?.select()
+      return
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (activePlatform === 'linux' && selected) {
+        e.preventDefault()
+        void runBof(selected)
+      } else if (activePlatform !== 'linux' && selectedExt) {
+        e.preventDefault()
+        void runExtBof(selectedExt)
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      if (ctx) { setCtx(null); return }
+      if (extCtx) { setExtCtx(null); return }
+      if (baseOpen) { setBaseOpen(false); return }
+      if (out) { setOut(null); return }
+    }
+    const tag = (e.target as HTMLElement | null)?.tagName
+    const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (!inField || e.altKey)) {
+      if (activePlatform === 'linux' && flatOrder.length > 0) {
+        e.preventDefault()
+        const idx = selected ? flatOrder.findIndex((x) => x.name === selected.name) : -1
+        const nextIdx = e.key === 'ArrowDown'
+          ? Math.min(flatOrder.length - 1, idx + 1)
+          : Math.max(0, (idx < 0 ? 0 : idx - 1))
+        const target = flatOrder[nextIdx]
+        if (target) {
+          onSelectRow(target.name)
+          const btn = splitRef.current?.querySelector(`[data-bof-name="${CSS.escape(target.name)}"]`) as HTMLElement | null
+          btn?.scrollIntoView({ block: 'nearest' })
+        }
+      } else if (activePlatform !== 'linux' && extFlatOrder.length > 0) {
+        e.preventDefault()
+        const idx = selectedExt ? extFlatOrder.findIndex((x) => x.key === selectedExt.key) : -1
+        const nextIdx = e.key === 'ArrowDown'
+          ? Math.min(extFlatOrder.length - 1, idx + 1)
+          : Math.max(0, (idx < 0 ? 0 : idx - 1))
+        const target = extFlatOrder[nextIdx]
+        if (target) {
+          onSelectExtRow(target.key)
+          const btn = splitRef.current?.querySelector(`[data-bof-name="${CSS.escape(target.key)}"]`) as HTMLElement | null
+          btn?.scrollIntoView({ block: 'nearest' })
+        }
+      }
+    }
+  }
 
   return (
-    <div className="page">
-      <div className="toolbar">
-        <h2>{t('BOF 模块')}</h2>
-        <span className="dim" style={{ fontSize: 12 }}>
-          {offline
-            ? `离线兜底：${rows.length} 个（未与服务端核对）`
-            : `Server ${rows.length} · executable ${nObj}${nStale ? ` · src-changed ${nStale}` : ''}${nOther ? ` · unregistered ${nOther}` : ''}`}
-        </span>
+    <div
+      className="qt-bof"
+      tabIndex={-1}
+      onKeyDown={onPanelKeyDown}
+      onDragOver={(e) => {
+        if (activePlatform === 'linux' && e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault()
+          if (!dragOver) setDragOver(true)
+        }
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+      }}
+      onDrop={(e) => {
+        if (activePlatform !== 'linux') return
+        e.preventDefault()
+        setDragOver(false)
+        const f = e.dataTransfer?.files?.[0]
+        if (f) void uploadFile(f)
+      }}
+    >
+      {/* ── 1. Top Command Bar ── */}
+      <div className="qt-bof-bar">
+        <div className="qt-bof-title">
+          <img className="qt-ico qt-ico-mono" src={qtAsset('icons/code_blocks_64dp.png')} alt="" />
+          <span>{t('BOF 模块')}</span>
+        </div>
+
+        <div className="qt-bof-target" title={t('目标主机（仅在线）；切换主机自动匹配对应平台 BOF 插件')}>
+          <span className={`qt-bof-target-dot ${effectiveAgent ? 'on' : ''}`} />
+          <select value={effectiveAgent} onChange={(e) => onSelectAgent(e.target.value)}>
+            {onlineAgents.length === 0 && <option value="">{t('无在线主机')}</option>}
+            {onlineAgents.map((a: any) => (
+              <option key={a.a_id} value={a.a_id}>
+                {a.a_computer || a.a_id} ({a.a_username || '-'} · {platformLabel(detectPlatform(a))})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="qt-bof-plat-seg" title="按目标平台切换 BOF 插件库（选主机时默认自动跟随）">
+          <button
+            type="button"
+            className={`qt-bof-plat-btn ${activePlatform === 'linux' ? 'active' : ''}`}
+            onClick={() => switchPlatform('linux')}
+          >
+            Linux BOF
+          </button>
+          <button
+            type="button"
+            className={`qt-bof-plat-btn ${activePlatform === 'windows' ? 'active' : ''}`}
+            onClick={() => switchPlatform('windows')}
+          >
+            Windows BOF
+          </button>
+          {activePlatform === 'macos' && (
+            <span className="qt-bof-plat-btn active" style={{ cursor: 'default' }}>macOS</span>
+          )}
+        </div>
+
+        <div className="qt-bof-search-wrap">
+          <input
+            ref={searchRef}
+            className="qt-bof-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={activePlatform === 'linux' ? t('搜索 Linux BOF、用途或注意事项… (Ctrl+F)') : t('搜索 Windows 插件、命令或示例… (Ctrl+F)')}
+          />
+          {search && (
+            <button
+              type="button"
+              className="qt-bof-search-clear"
+              title="清空搜索"
+              onClick={() => setSearch('')}
+            >×</button>
+          )}
+        </div>
+
         <span style={{ flex: 1 }} />
-        <select
-          value={effectiveAgent}
-          onChange={(e) => setAgentId(e.target.value)}
-          title={t('目标主机（仅在线）')}
-        >
-          {onlineAgents.length === 0 && <option value="">{t('无在线主机')}</option>}
-          {onlineAgents.map((a: any) => (
-            <option key={a.a_id} value={a.a_id}>
-              {a.a_computer || a.a_id} ({a.a_username || '-'})
-            </option>
-          ))}
-        </select>
-        <button type="button" className="ghost" onClick={() => { void load(); invalidateCompletions() }} disabled={loading || !api} title={t('重新拉取服务端 BOF 清单（并让命令补全同步失效）')}>
-          {loading ? '…' : t('刷新')}
-        </button>
-        <input
-          className="bof-base"
-          value={base}
-          onChange={(e) => setBase(e.target.value)}
-          onBlur={saveBase}
-          placeholder={serverBase || '/root/cc/run/extenders/linux_agent/bofs/'}
-          title={t('BOF .o 文件在团队服务器上的目录；留空 = 跟随服务端返回的 base')}
-          style={{ width: 200, fontFamily: 'var(--mono)', fontSize: 12 }}
-        />
-        {base.trim() && (
-          <button type="button" className="ghost" onClick={() => { setBase(''); try { localStorage.removeItem(BASE_KEY) } catch { /* ignore */ } pushToast('ok', '已改为跟随服务端') }} title={t('清空本地覆盖，改用服务端返回的 base')}>
-            跟随服务端
+
+        {activePlatform === 'linux' && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".c,.o"
+              style={{ display: 'none' }}
+              onChange={(e) => void onPickFile(e)}
+            />
+            <button
+              type="button"
+              className="qt-bof-btn"
+              disabled={uploading || !api}
+              onClick={() => fileRef.current?.click()}
+              title={t('上传 .c（自动编译）或 .o（直接投递），也支持拖拽到界面')}
+            >
+              <img className="qt-ico qt-ico-mono" src={qtAsset('icons/upload_file_64dp.png')} alt="" />
+              <span>{uploading ? '上传中…' : t('上传 BOF')}</span>
+            </button>
+
+            <button
+              type="button"
+              className="qt-bof-btn"
+              disabled={compileAll || !api}
+              onClick={() => void compileEvery()}
+              title={t('把服务端 src_agent/bofs/*.c 全部重编一遍')}
+            >
+              <img className="qt-ico qt-ico-mono" src={qtAsset('icons/restart_64dp.png')} alt="" />
+              <span>{compileAll ? '重编中…' : '全部重编'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`qt-bof-btn ${baseOpen || base.trim() ? 'active' : ''}`}
+              onClick={() => setBaseOpen((v) => !v)}
+              title={t('配置服务端 BOF 基路径')}
+            >
+              <span>基路径</span>
+            </button>
+          </>
+        )}
+
+        {activePlatform !== 'linux' && (
+          <button
+            type="button"
+            className={`qt-bof-btn ${customBofOpen ? 'active' : ''}`}
+            onClick={() => setCustomBofOpen((v) => !v)}
+            title="直接按服务端路径运行自定义 COFF .o（无需经过 Extension-Kit .axs）"
+          >
+            <span>自定义 .o</span>
           </button>
         )}
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('搜索 BOF…')}
-          style={{ width: 130 }}
-        />
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".c,.o"
-          style={{ display: 'none' }}
-          onChange={(e) => void onPickFile(e)}
-        />
-        <button type="button" className="ghost" disabled={uploading || !api} onClick={() => fileRef.current?.click()} title={t('上传 .c（自动编译）或 .o（直接投递）')}>
-          {uploading ? '上传中…' : t('上传 BOF')}
+
+        <button
+          type="button"
+          className="qt-bof-btn"
+          onClick={() => { void load(true); invalidateCompletions() }}
+          disabled={loading || !api}
+          title={t('重新拉取服务端 BOF 清单与 AxScript 命令树')}
+        >
+          <img className="qt-ico qt-ico-mono" src={qtAsset('icons/autorenew_64dp.png')} alt="" />
+          <span>{loading ? '…' : t('刷新')}</span>
         </button>
-        <button type="button" className="ghost" disabled={compileAll || !api} onClick={() => void compileEvery()} title={t('把服务端 src_agent/bofs/*.c 全部重编一遍')}>
-          {compileAll ? '重编中…' : '全部重编'}
-        </button>
+
         <PageTips id="bofs">
-          <p>{t('BOF 在')} <b>agent 进程内</b>{t('执行（内存加载 .o，无 execve 痕迹）。')}</p>
-          <p>{t('列表')}<b>{t('由服务端')} <code>/api/bofs/list</code> {t('动态给出')}</b>{t('——服务端有几个就显示几个，新增或上传的会自动出现。')}</p>
-          <p><code>{t('基路径')}</code>{t('默认跟随服务端；')}<code>memfd_exec / ld_preload_install / ko_load / ebpf_load</code> {t('的路径参数则是')}<b>{t('目标机')}</b>{t('上的路径。')}</p>
-          <p>{t('上传')} <code>.c</code> {t('会')}<b>{t('自动编译')}</b>{t('：配方与')} <code>tools/deploy.sh</code> {t('的 gcc 命令行逐字同源，所以重编未改动的源码产物字节不变。')}</p>
-          <p><b>{t('执行')}</b>{t('后自动打开该主机的控制台查看输出；勾选')}<b>{t('异步')}</b>{t('适合长任务（ebpf_load / suid_scan 建议异步）。')}</p>
-          <p>{t('卡上的')} <b>{t('▸ 用法')}</b>{t('是各模块')} <code>.c</code> {t('头注释里的实战约束；带')} <span className="bof-hot-mark">★</span> {t('的那条忽略了会静默出错或不可逆。')}</p>
-          <p>{t('控制台等价命令：')}<code>execute bof &lt;server path&gt; [参数...] [async]</code>{t('。开关标记名随 agent 变（linux 是')} <code>async</code>{t('，beacon 是')} <code>-a</code>{t('）；写错不会报错，而会被并进前一个参数里。')}</p>
+          <p><b>双平台自动分流：</b>{t('选中')} <b>Linux</b> {t('主机时展示 Linux ELF BOF（')}<code>/api/bofs/list</code>{t('）；选中')} <b>Windows</b> {t('主机时自动展示 Windows Extension-Kit BOF（')}<code>POST /api/axscript/commands</code> {t('中的')} <code>SAL-BOF / AD-BOF / Creds-BOF</code> {t('等全套套件）。')}</p>
+          <p><b>Linux ELF BOF：</b>{t('支持上传')} <code>.c</code> {t('（服务端自动 gcc 编译）或')} <code>.o</code>{t('，支持按')} <code>BeaconDataInt</code> {t('与长字串精准打包。')}</p>
+          <p><b>Windows BOF：</b>{t('命令经服务端 AxScript 预钩子自动展开为')} <code>execute bof …_bin/&lt;name&gt;.&lt;arch&gt;.o</code>{t('；多子命令套件（如 kerbeus/ldap/mssql）支持左侧树展开与右侧筛选；也可用「自定义 .o」直跑任意 COFF 文件。')}</p>
+          <p>{t('快捷键：')}<code>Ctrl+F</code> {t('搜索 · ')}<code>↑/↓</code> {t('切换模块 · ')}<code>Ctrl+Enter</code> {t('立即执行 · 点击 ☆ 收藏常用插件。')}</p>
         </PageTips>
       </div>
 
-      {offline && (
-        <div className="banner warn" style={{ marginBottom: 10 }}>
-          拿不到服务端 BOF 清单（{listErr || '未知原因'}）。下面是<b>{t('离线兜底列表')}</b>{t('，每条都假定')} <code>.o</code> {t('已存在且')}<b>{t('未经核对')}</b>；
-          执行前请先确认服务器上确有该文件。
-          <button type="button" className="ghost" style={{ marginLeft: 8 }} onClick={() => void load()}>{t('重试')}</button>
+      {/* ── Collapsible Base Path Config Strip (Linux only) ── */}
+      {activePlatform === 'linux' && baseOpen && (
+        <div className="qt-bof-base-bar">
+          <label>服务端 BOF 目录</label>
+          <input
+            className="qt-bof-base-input"
+            value={base}
+            onChange={(e) => setBase(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveBase() }}
+            placeholder={serverBase || '/root/cc/run/extenders/linux_agent/bofs/'}
+          />
+          <button type="button" className="qt-bof-btn primary" onClick={saveBase}>保存</button>
+          {base.trim() && (
+            <button
+              type="button"
+              className="qt-bof-btn"
+              onClick={() => {
+                setBase('')
+                try { localStorage.removeItem(BASE_KEY) } catch { /* ignore */ }
+                pushToast('ok', '已改为跟随服务端')
+              }}
+            >
+              跟随服务端
+            </button>
+          )}
+          <button type="button" className="qt-bof-btn ghost" onClick={() => setBaseOpen(false)}>收起</button>
         </div>
       )}
 
-      {out && (
-        <div className={`banner ${out.bad ? 'warn' : ''}`} style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <b>{out.title}</b>
-            <span style={{ flex: 1 }} />
-            <button type="button" className="ghost" onClick={() => void copyText(out.text).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '已复制' : t('复制失败')))}>{t('复制')}</button>
-            <button type="button" className="ghost" onClick={() => setOut(null)}>{t('关闭')}</button>
+      {/* ── Collapsible Standalone Custom COFF .o Strip (Windows/macOS) ── */}
+      {activePlatform !== 'linux' && customBofOpen && (
+        <div className="qt-bof-base-bar">
+          <label title={winExecNote || '仅允许读取服务端 Extenders / AxScripts 沙箱目录内的 .o 文件'}>服务端 COFF .o 路径</label>
+          <input
+            className="qt-bof-base-input"
+            list="qt-bof-win-o-list"
+            value={customBofPath}
+            onChange={(e) => setCustomBofPath(e.target.value)}
+            placeholder={winExecBase ? `${winExecBase.replace(/\/+$/, '')}/custom.x64.o` : 'Extenders/Extension-Kit/.../custom.x64.o'}
+          />
+          {winExecEntries.length > 0 && (
+            <datalist id="qt-bof-win-o-list">
+              {winExecEntries.slice(0, 150).map((e) => (
+                <option key={e.path} value={e.path}>{e.label || e.name}</option>
+              ))}
+            </datalist>
+          )}
+          <input
+            className="qt-bof-base-input"
+            style={{ flex: '0 1 200px', minWidth: 120 }}
+            value={customBofArgs}
+            onChange={(e) => setCustomBofArgs(e.target.value)}
+            placeholder="参数（可选）"
+          />
+          <label className="qt-bof-async-chk" title="异步标志 -a（拼在 .o 路径之前，遵循 execute bof [-a] &lt;bof&gt; [param_data]）">
+            <input type="checkbox" checked={customBofAsync} onChange={(e) => setCustomBofAsync(e.target.checked)} />
+            <span>-a</span>
+          </label>
+          <span
+            className="qt-bof-badge"
+            style={{ flexShrink: 0 }}
+            title={winExecNote || '服务端 FILE 参数沙箱仅允许读取 Extenders / AxScripts 目录内的文件'}
+          >
+            {winExecEntries.length > 0 ? `已扫描 ${winExecEntries.length} 个 .o` : '沙箱: Extenders/AxScripts'}
+          </span>
+          <button
+            type="button"
+            className="qt-bof-btn primary"
+            disabled={!effectiveAgent || targetPlatformMismatch || !!unsupportedReason || !customBofPath.trim()}
+            onClick={() => {
+              if (unsupportedReason) { pushToast('warn', unsupportedReason); return }
+              if (!api || !effectiveAgent || !customBofPath.trim()) return
+              const p = customBofPath.trim()
+              const qPath = /\s/.test(p) && !/^".*"$/.test(p) ? `"${p}"` : p
+              const rawCmd = ['execute bof', customBofAsync ? '-a' : '', qPath, customBofArgs.trim()].filter(Boolean).join(' ')
+              void api.commandRaw(effectiveAgent, rawCmd)
+                .then(() => { pushLog('info', `自定义 COFF BOF 已下发 → ${rawCmd}`, false); openConsole(effectiveAgent) })
+                .catch((err: any) => pushToast('err', err?.message || String(err)))
+            }}
+          >
+            执行 .o
+          </button>
+          <button type="button" className="qt-bof-btn ghost" onClick={() => setCustomBofOpen(false)}>收起</button>
+        </div>
+      )}
+
+      {/* ── 2. Category & Status Filter Strip ── */}
+      {activePlatform === 'linux' ? (
+        <div className="qt-bof-filter-bar">
+          <div className="qt-bof-pills">
+            <button
+              type="button"
+              className={`qt-bof-pill ${catFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setCatFilter('all')}
+            >
+              <span>全部</span>
+              <span className="qt-bof-pill-cnt">{rows.length}</span>
+            </button>
+            {CATS.map((c) => {
+              const cnt = catCounts[c.key] || 0
+              if (cnt === 0) return null
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  className={`qt-bof-pill ${catFilter === c.key ? 'active' : ''}`}
+                  onClick={() => setCatFilter(catFilter === c.key ? 'all' : c.key)}
+                >
+                  <span>{c.label}</span>
+                  <span className="qt-bof-pill-cnt">{cnt}</span>
+                </button>
+              )
+            })}
           </div>
-          <pre className="mono" style={{ margin: '6px 0 0', maxHeight: 220, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>{out.text || '(空)'}</pre>
+
+          <div className="qt-bof-pills">
+            <span className="qt-bof-filter-sep" />
+            <button
+              type="button"
+              className={`qt-bof-pill ${statusFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('all')}
+            >
+              <span>不限状态</span>
+            </button>
+            {!offline && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${statusFilter === 'ready' ? 'active' : ''}`}
+                onClick={() => setStatusFilter(statusFilter === 'ready' ? 'all' : 'ready')}
+              >
+                <span>就绪</span>
+                <span className="qt-bof-pill-cnt">{nReady}</span>
+              </button>
+            )}
+            {nStale > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${statusFilter === 'stale' ? 'active' : ''}`}
+                onClick={() => setStatusFilter(statusFilter === 'stale' ? 'all' : 'stale')}
+              >
+                <span>源码已改</span>
+                <span className="qt-bof-pill-cnt">{nStale}</span>
+              </button>
+            )}
+            {nUncompiled > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${statusFilter === 'uncompiled' ? 'active' : ''}`}
+                onClick={() => setStatusFilter(statusFilter === 'uncompiled' ? 'all' : 'uncompiled')}
+              >
+                <span>未编译</span>
+                <span className="qt-bof-pill-cnt">{nUncompiled}</span>
+              </button>
+            )}
+            {nOther > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${statusFilter === 'unregistered' ? 'active' : ''}`}
+                onClick={() => setStatusFilter(statusFilter === 'unregistered' ? 'all' : 'unregistered')}
+              >
+                <span>未登记</span>
+                <span className="qt-bof-pill-cnt">{nOther}</span>
+              </button>
+            )}
+            {nRecent > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${statusFilter === 'recent' ? 'active' : ''}`}
+                onClick={() => setStatusFilter(statusFilter === 'recent' ? 'all' : 'recent')}
+              >
+                <span>最近</span>
+                <span className="qt-bof-pill-cnt">{nRecent}</span>
+              </button>
+            )}
+            {nFav > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${statusFilter === 'fav' ? 'active' : ''}`}
+                onClick={() => setStatusFilter(statusFilter === 'fav' ? 'all' : 'fav')}
+              >
+                <span>★ 收藏</span>
+                <span className="qt-bof-pill-cnt">{nFav}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="qt-bof-filter-bar">
+          <div className="qt-bof-pills">
+            <button
+              type="button"
+              className={`qt-bof-pill ${extPurpose === 'all' ? 'active' : ''}`}
+              onClick={() => setExtPurpose('all')}
+            >
+              <span>全部</span>
+              <span className="qt-bof-pill-cnt">{extCatalog.items.length}</span>
+            </button>
+            {PURPOSE_ORDER.map((p) => {
+              const cnt = extPurposeCounts.get(p) || 0
+              if (!cnt) return null
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  className={`qt-bof-pill ${extPurpose === p ? 'active' : ''}`}
+                  onClick={() => setExtPurpose(extPurpose === p ? 'all' : p)}
+                >
+                  <span>{p}</span>
+                  <span className="qt-bof-pill-cnt">{cnt}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="qt-bof-pills">
+            <span className="qt-bof-filter-sep" />
+            {extSuites.length > 0 && (
+              <select
+                className="qt-bof-suite-sel"
+                value={extSuite}
+                onChange={(e) => setExtSuite(e.target.value)}
+                title="按 Extension-Kit 套件过滤"
+              >
+                <option value="all">全部套件 ({extSuites.length})</option>
+                {extSuites.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+            {nExtRecent > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${extRecentOnly ? 'active' : ''}`}
+                onClick={() => setExtRecentOnly((v) => !v)}
+              >
+                <span>最近</span>
+                <span className="qt-bof-pill-cnt">{nExtRecent}</span>
+              </button>
+            )}
+            {nExtFav > 0 && (
+              <button
+                type="button"
+                className={`qt-bof-pill ${extFavOnly ? 'active' : ''}`}
+                onClick={() => setExtFavOnly((v) => !v)}
+              >
+                <span>★ 收藏</span>
+                <span className="qt-bof-pill-cnt">{nExtFav}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      <div className="bof-wrap">
-        {CATS.map((cat) => {
-          const list = filtered.filter((b) => b.meta.category === cat.key)
-          if (!list.length) return null
-          return (
-            <div key={cat.key} className="bof-group">
-              <div className="bof-cat">{cat.label} <span className="dim" style={{ fontWeight: 400 }}>({list.length})</span></div>
-              <div className="bof-grid">
-                {list.map((b) => (
-                  <div key={b.name} className="bof-card">
-                    <div className="bof-card-head">
-                      <span className="bof-name">{b.name}</span>
-                      <span className="dim mono" style={{ fontSize: 11 }}>{b.file}</span>
-                      <span style={{ flex: 1 }} />
-                      {!offline && !b.obj && <span className="dim" style={{ fontSize: 11, color: 'var(--warn, #d08770)' }} title={t('服务端 bofs/ 下没有这个 .o，无法执行')}>{t('未编译')}</span>}
-                      {!offline && b.obj && !b.src && <span className="dim" style={{ fontSize: 11 }} title={t('服务端没有对应 .c，只能执行不能重编')}>{t('无源码')}</span>}
-                      {!offline && b.stale && <span className="dim" style={{ fontSize: 11, color: 'var(--warn, #d08770)' }} title={t('.c 比 .o 新，产物可能已过期')}>{t('源码已改')}</span>}
-                      <label className="bof-async" title={t('异步执行（长任务）：走 COMMAND_EXEC_BOF_ASYNC，不阻塞 agent 的命令循环')}>
-                        <input
-                          type="checkbox"
-                          checked={!!asyncOn[b.name]}
-                          onChange={(e) => setAsyncOn((s) => ({ ...s, [b.name]: e.target.checked }))}
-                        />
-                        异步 {asyncMark()}
-                      </label>
+      {activePlatform === 'linux' && offline && (
+        <div className="qt-bof-offline-strip">
+          <span>
+            拿不到服务端 BOF 清单（{listErr || '未知原因'}）。当前为<b>{t('离线兜底列表')}</b>（未与服务端核对 .o 文件是否存在）。
+          </span>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="qt-bof-btn" onClick={() => void load(true)}>{t('重试')}</button>
+        </div>
+      )}
+
+      {unsupportedReason && selectedAgent && (
+        <div className="qt-bof-offline-strip">
+          <span>
+            <b>不支持执行 BOF：</b>{unsupportedReason}
+          </span>
+        </div>
+      )}
+
+      {targetPlatformMismatch && selectedAgent && (
+        <div className="qt-bof-offline-strip">
+          <span>
+            当前展示 <b>{platformLabel(activePlatform)} BOF</b>，但选中主机 <b>{selectedAgent.a_computer || selectedAgent.a_id}</b> 属于 <b>{platformLabel(detectPlatform(selectedAgent))}</b>；执行已锁定，请切换到对应系统主机。
+          </span>
+          <span style={{ flex: 1 }} />
+          {onlineAgents.some((a: any) => detectPlatform(a) === activePlatform) && (
+            <button
+              type="button"
+              className="qt-bof-btn"
+              onClick={() => {
+                const m = onlineAgents.find((a: any) => detectPlatform(a) === activePlatform)
+                if (m?.a_id) onSelectAgent(m.a_id)
+              }}
+            >
+              切到 {platformLabel(activePlatform)} 主机
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── 3. Dual-Pane QSplitter Workspace (Master List + Detail Inspector) ── */}
+      {activePlatform === 'linux' ? (
+        <div className="qt-bof-split" ref={splitRef}>
+          <BofListPane
+            grouped={grouped}
+            selectedName={selected?.name || ''}
+            searchQuery={search}
+            recentSet={recentSet}
+            favSet={favSet}
+            collapsedSet={collapsedCats}
+            offline={offline}
+            splitPct={splitPct}
+            hasRows={rows.length > 0}
+            onSelect={onSelectRow}
+            onQuickRun={onQuickRun}
+            onToggleCollapse={onToggleCollapse}
+            onToggleFav={onToggleFavLinux}
+            onContext={onRowContext}
+            onResetFilters={onResetFilters}
+          />
+
+          <div
+            className={`qt-vsplit ${draggingSplit ? 'dragging' : ''}`}
+            role="separator"
+            aria-orientation="vertical"
+            title="拖拽调整左右栏宽度，双击还原"
+            onMouseDown={() => setDraggingSplit(true)}
+            onDoubleClick={() => {
+              setSplitPct(44)
+              try { localStorage.setItem(SPLIT_KEY, '44') } catch { /* ignore */ }
+            }}
+          />
+
+          {/* Right Detail Inspector & Execution Dock (Linux ELF BOFs) */}
+          <div className="qt-bof-detail-pane">
+          {selected ? (
+            <>
+              <div className="qt-bof-detail-scroll">
+                <div className="qt-bof-detail-hd">
+                  <div className="qt-bof-detail-title-row">
+                    <span className="qt-bof-detail-name">{selected.name}</span>
+                    <span className="qt-bof-badge">{selected.file}</span>
+                    <span className="qt-bof-badge">{CAT_LABEL[selected.meta.category]}</span>
+                    {!selected.known && (
+                      <span className="qt-bof-badge info" title={t('服务端有这个 .o，但本地 META 表里没有描述/参数表')}>{t('未登记')}</span>
+                    )}
+                    {!offline && !selected.obj && (
+                      <span className="qt-bof-badge err" title={t('服务端 bofs/ 下没有这个 .o，无法执行')}>{t('未编译')}</span>
+                    )}
+                    {!offline && selected.obj && !selected.src && (
+                      <span className="qt-bof-badge" title={t('服务端没有对应 .c，只能执行不能重编')}>{t('无源码')}</span>
+                    )}
+                    {!offline && selected.stale && (
+                      <span className="qt-bof-badge warn" title={t('.c 比 .o 新，产物可能已过期')}>{t('源码已改')}</span>
+                    )}
+                    {!offline && selected.obj && !selected.stale && (
+                      <span className="qt-bof-badge ok">就绪</span>
+                    )}
+                    <span style={{ flex: 1 }} />
+                    <button
+                      type="button"
+                      className="qt-bof-btn"
+                      disabled={compiling === selected.name || !api || (!selected.src && !offline)}
+                      onClick={() => void compileOne(selected)}
+                      title={selected.src || offline ? '用服务端源码重编这个 BOF' : '服务端没有 .c，无法重编'}
+                    >
+                      <img className="qt-ico qt-ico-mono" src={qtAsset('icons/restart_64dp.png')} alt="" />
+                      <span>{compiling === selected.name ? '重编中…' : '重编'}</span>
+                    </button>
+                  </div>
+
+                  <div className="qt-bof-detail-desc">{selected.meta.desc}</div>
+
+                  {!offline && (
+                    <div className="qt-bof-artifact-row">
+                      <span>
+                        .o {fmtSize(selected.obj_size)} · {fmtTime(selected.obj_mtime)}
+                      </span>
+                      {selected.obj_sha256 && (
+                        <button
+                          type="button"
+                          className="qt-bof-sha"
+                          title="点击复制完整 SHA256"
+                          onClick={() => void copyText(selected.obj_sha256).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? 'SHA256 已复制' : t('复制失败')))}
+                        >
+                          sha256:{selected.obj_sha256.slice(0, 12)}
+                        </button>
+                      )}
+                      {selected.src && (
+                        <span>.c {fmtSize(selected.src_size)} · {fmtTime(selected.src_mtime)}</span>
+                      )}
                     </div>
-                    {/* 「未登记」是**每张卡自己的状态**（服务端有这个 .o、本地 META 没有条目），
-                        不该靠分类名去表达 —— 分类名说的事跟它无关。 */}
-                    {!b.known && <span className="bof-unknown" title={t('服务端有这个 .o，但本地 META 表里没有它的描述/参数表。下面显示的参数框是空的，本页只会把「路径」发出去。')}>{t('未登记')}</span>}
-                    <div className="bof-desc">{b.meta.desc}</div>
-                    {(b.meta.notes || []).length > 0 && (
-                      <ul className="bof-notes">
-                        {(b.meta.notes || []).map((t, i) => (
-                          <li key={i} className={t.startsWith('★') ? 'hot' : undefined}>{t}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {!offline && (
-                      <div className="bof-meta">
-                        <span>.o {fmtSize(b.obj_size)} · {fmtTime(b.obj_mtime)}{b.obj_sha256 ? ` · ${b.obj_sha256.slice(0, 12)}` : ''}</span>
-                        {b.src ? <span>.c {fmtSize(b.src_size)} · {fmtTime(b.src_mtime)}</span> : null}
-                      </div>
-                    )}
-                    {(b.meta.params || []).map((p) => p.flag ? (
-                      // 开关参数用独立类名：`.bof-param input` 是 flex:1 的暗色文本框，
-                      // 套在复选框上会把 13px 的方框拉满整行。
-                      <label key={p.key} className="bof-flag" title={`勾上则原样发出 ${p.placeholder}`}>
-                        <input
-                          type="checkbox"
-                          checked={!!paramVals[`${b.name}.${p.key}`]}
-                          onChange={(e) => setParamVals((s) => ({ ...s, [`${b.name}.${p.key}`]: e.target.checked ? '1' : '' }))}
-                        />
-                        {p.label} <code>{p.placeholder}</code>
-                      </label>
-                    ) : (
-                      <div key={p.key} className="bof-param">
-                        <label>
-                          {p.label}{p.required ? ' *' : ''}
-                          {p.multi ? <span className="bof-hint" title={t('空格分隔，每个值发成一个独立字段')}>{t('多个')}</span>
-                            : p.nulJoin ? <span className="bof-hint" title={t('空格分隔，合并成一个字段、值之间用 NUL 连接')}>{t('NUL 连接')}</span>
-                              : p.kind === 'int' ? <span className="bof-hint" title={t('按裸 4 字节整数编码（BeaconDataInt），不是字符串')}>{t('整数')}</span> : null}
-                        </label>
-                        <input
-                          value={paramVals[`${b.name}.${p.key}`] || ''}
-                          onChange={(e) => setParamVals((s) => ({ ...s, [`${b.name}.${p.key}`]: e.target.value }))}
-                          placeholder={p.placeholder}
-                        />
-                      </div>
-                    ))}
-                    <div className="bof-card-foot">
-                      <code className="bof-usage">{buildCmdline(b)}</code>
-                      <span style={{ flex: 1 }} />
-                      <button type="button" className="ghost" onClick={() => void copyCmd(b)}>{t('复制命令')}</button>
+                  )}
+                </div>
+
+                {/* Parameters Form Section */}
+                <div className="qt-bof-sec">
+                  <div className="qt-bof-sec-hd">
+                    <span>
+                      运行参数
+                      {(selected.meta.params || []).length > 0
+                        ? ` (${(selected.meta.params || []).length})`
+                        : '（无参数）'}
+                    </span>
+                    {hasAnyParamValue && (
                       <button
                         type="button"
-                        className="ghost"
-                        disabled={compiling === b.name || !api || (!b.src && !offline)}
-                        onClick={() => void compileOne(b)}
-                        title={b.src || offline ? '用服务端源码重编这个 BOF' : '服务端没有 .c，无法重编'}
+                        className="qt-bof-pill"
+                        onClick={clearSelectedParams}
                       >
-                        {compiling === b.name ? '…' : '重编'}
+                        清空参数
                       </button>
+                    )}
+                  </div>
+
+                  {(selected.meta.params || []).length === 0 ? (
+                    <div style={{ fontSize: 11.5, color: 'var(--qt-text-muted)' }}>
+                      {selected.known
+                        ? '该模块无需任何参数，可直接下发执行。'
+                        : '未在本地 META 登记参数表：本页面将只发送 .o 路径（若需传参，请按该 .c 的 Usage 在控制台手敲 execute bof）。'}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="qt-bof-param-grid">
+                        {(selected.meta.params || []).map((p) => {
+                          const key = `${selected.name}.${p.key}`
+                          if (p.flag) {
+                            return (
+                              <label key={p.key} className="qt-bof-flag-row" title={`勾上则原样发出 ${p.placeholder}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!paramVals[key]}
+                                  onChange={(e) => setParamVals((s) => ({ ...s, [key]: e.target.checked ? '1' : '' }))}
+                                />
+                                <span>{p.label}</span>
+                                <code>{p.placeholder}</code>
+                              </label>
+                            )
+                          }
+                          return (
+                            <div key={p.key} style={{ display: 'contents' }}>
+                              <label className="qt-bof-param-lbl" htmlFor={`bof-arg-${key}`}>
+                                <span>
+                                  {p.label}
+                                  {p.required && <span className="qt-bof-req"> *</span>}
+                                </span>
+                                {p.multi ? (
+                                  <span className="qt-bof-badge" title={t('空格分隔，每个值发成一个独立字段')}>{t('多个')}</span>
+                                ) : p.nulJoin ? (
+                                  <span className="qt-bof-badge info" title={t('空格分隔，合并成一个字段、值之间用 NUL 连接')}>NUL</span>
+                                ) : p.kind === 'int' ? (
+                                  <span className="qt-bof-badge warn" title={t('按裸 4 字节整数编码（BeaconDataInt），不是字符串')}>int32</span>
+                                ) : null}
+                              </label>
+                              <input
+                                id={`bof-arg-${key}`}
+                                ref={(el) => { paramRefs.current[key] = el }}
+                                className={`qt-bof-input ${missingKey === key ? 'invalid' : ''}`}
+                                inputMode={p.kind === 'int' ? 'numeric' : undefined}
+                                value={paramVals[key] || ''}
+                                onChange={(e) => {
+                                  if (missingKey === key) setMissingKey(null)
+                                  setParamVals((s) => ({ ...s, [key]: e.target.value }))
+                                }}
+                                placeholder={p.placeholder}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {selectedArgs.length > 0 && (
+                        <div className="qt-bof-pack-strip" title="按 BeaconDataParse 二进制协议编码后的字段序列预览">
+                          <span>打包序列 ({selectedArgs.length} 字段):</span>
+                          {selectedArgs.map((arg, idx) => (
+                            <span
+                              key={idx}
+                              className={`qt-bof-badge ${arg.kind === 'int' ? 'warn' : ''}`}
+                            >
+                              #{idx + 1} {arg.kind === 'int' ? 'int32' : 'str'}: {arg.value.replace(/\0/g, ' \\0 ')}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Operational Notes & Warnings */}
+                {(selected.meta.notes || []).length > 0 && (
+                  <div className="qt-bof-sec">
+                    <div className="qt-bof-sec-hd">
+                      <span>实战约束与注意事项</span>
+                    </div>
+                    <div className="qt-bof-notes">
+                      {(selected.meta.notes || []).filter((n) => n.startsWith('★')).map((n, i) => (
+                        <div key={`hot-${i}`} className="qt-bof-note-hot">{n}</div>
+                      ))}
+                      {(selected.meta.notes || []).some((n) => !n.startsWith('★')) && (
+                        <ul className="qt-bof-note-list">
+                          {(selected.meta.notes || []).filter((n) => !n.startsWith('★')).map((n, i) => (
+                            <li key={`n-${i}`}>{n}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Anchored Compile Output Drawer */}
+              {out && (
+                <div className={`qt-bof-drawer ${out.bad ? 'bad' : ''}`}>
+                  <div className="qt-bof-drawer-hd">
+                    <span>{out.title}</span>
+                    <span style={{ flex: 1 }} />
+                    <button
+                      type="button"
+                      className="qt-bof-pill"
+                      onClick={() => void copyText(out.text).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '已复制' : t('复制失败')))}
+                    >
+                      {t('复制')}
+                    </button>
+                    <button type="button" className="qt-bof-pill" onClick={() => setOut(null)}>{t('关闭')}</button>
+                  </div>
+                  <pre className="qt-bof-drawer-pre">{out.text || '(空)'}</pre>
+                </div>
+              )}
+
+              {/* Sticky Execution Dock */}
+              <div className="qt-bof-exec-dock">
+                <div className="qt-bof-cmd-preview">
+                  <code className="qt-bof-cmd-code" title={selectedCmdline}>{selectedCmdline}</code>
+                  <button
+                    type="button"
+                    className="qt-bof-btn"
+                    onClick={() => void copyCmd(selected)}
+                  >
+                    {t('复制命令')}
+                  </button>
+                </div>
+
+                <div className="qt-bof-exec-actions">
+                  <label
+                    className="qt-bof-async-chk"
+                    title={t('异步执行（长任务）：走 COMMAND_EXEC_BOF_ASYNC，不阻塞 agent 的命令循环')}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!asyncOn[selected.name]}
+                      onChange={(e) => setAsyncOn((s) => ({ ...s, [selected.name]: e.target.checked }))}
+                    />
+                    <span>异步模式</span>
+                    <code>{asyncMark()}</code>
+                  </label>
+
+                  <span style={{ fontSize: 11, color: 'var(--qt-text-muted)' }}>
+                    {selectedAgent
+                      ? `目标: ${selectedAgent.a_computer || selectedAgent.a_id} (${selectedAgent.a_username || '-'})`
+                      : '当前无在线主机，无法下发'}
+                  </span>
+
+                  <span style={{ flex: 1 }} />
+
+                  <button
+                    type="button"
+                    className="qt-bof-btn primary"
+                    disabled={busy === selected.name || !effectiveAgent || targetPlatformMismatch || !!unsupportedReason}
+                    onClick={() => void runBof(selected)}
+                    title={unsupportedReason || (!effectiveAgent ? '没有在线主机' : targetPlatformMismatch ? '当前所选主机不是 Linux，请切换目标主机' : `在 ${effectiveAgent} 上执行 (Ctrl+Enter)`)}
+                  >
+                    <img className="qt-ico" src={qtAsset('icons/start_64dp.png')} alt="" style={{ filter: 'brightness(10)' }} />
+                    <span>{busy === selected.name ? '下发中…' : `${t('执行')} BOF (Ctrl+↵)`}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <EmptyState
+                icon="⎔"
+                title={rows.length ? t('未选中模块') : t('服务端还没有 BOF')}
+                hint={t('从左侧列表选择一个 BOF 模块，或拖拽 .c / .o 文件到此处上传')}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+      ) : (
+      <div className="qt-bof-split" ref={splitRef}>
+        <ExtBofListPane
+          grouped={extGrouped}
+          selectedKey={selectedExt?.key || ''}
+          selectedSubName={activeExtSub?.name || ''}
+          searchQuery={search}
+          recentSet={recentExtSet}
+          favSet={favExtSet}
+          collapsedSet={collapsedCats}
+          expandedSet={expandedExtKeys}
+          splitPct={splitPct}
+          hasAny={extCatalog.items.length > 0}
+          platform={activePlatform}
+          onSelect={onSelectExtRow}
+          onSelectSub={onSelectExtSub}
+          onToggleCollapse={onToggleCollapse}
+          onToggleExpand={onToggleExpandExt}
+          onToggleFav={onToggleFavExt}
+          onContext={onExtRowContext}
+          onResetFilters={onResetFilters}
+        />
+
+        <div
+          className={`qt-vsplit ${draggingSplit ? 'dragging' : ''}`}
+          role="separator"
+          aria-orientation="vertical"
+          title="拖拽调整左右栏宽度，双击还原"
+          onMouseDown={() => setDraggingSplit(true)}
+          onDoubleClick={() => {
+            setSplitPct(44)
+            try { localStorage.setItem(SPLIT_KEY, '44') } catch { /* ignore */ }
+          }}
+        />
+
+        {/* Right Detail Inspector & Execution Dock (Windows / macOS Extension-Kit BOFs) */}
+        <div className="qt-bof-detail-pane">
+          {selectedExt && activeExtCmd ? (
+            <>
+              <div className="qt-bof-detail-scroll">
+                <div className="qt-bof-detail-hd">
+                  <div className="qt-bof-detail-title-row">
+                    <span className="qt-bof-detail-name">{selectedExt.cmd.name}</span>
+                    <span className="qt-bof-badge info">{selectedExt.suite}</span>
+                    <span className="qt-bof-badge">{selectedExt.purpose}</span>
+                    {selectedExt.batchAgent && <span className="qt-bof-badge">{selectedExt.batchAgent}</span>}
+                    {selectedExt.scriptName && <span className="qt-bof-badge">{selectedExt.scriptName}</span>}
+                    {selectedExt.cmd.has_pre_hook && <span className="qt-bof-badge ok">COFF · AxScript Hook</span>}
+                  </div>
+                  <div className="qt-bof-detail-desc">
+                    {selectedExt.cmd.description || selectedExt.cmd.message || 'Windows Extension-Kit BOF 命令'}
+                  </div>
+                </div>
+
+                {/* Subcommand Selector with live sub-filter for large suites (e.g. ldap 51, mssql 28, kerbeus 16) */}
+                {extSubs.length > 0 && (() => {
+                  const sf = subFilter.trim().toLowerCase()
+                  const shownSubs = sf
+                    ? extSubs.filter((s) => `${s.name} ${s.description || ''}`.toLowerCase().includes(sf))
+                    : extSubs
+                  return (
+                    <div className="qt-bof-sec">
+                      <div className="qt-bof-sec-hd">
+                        <span>子命令 ({shownSubs.length}/{extSubs.length})</span>
+                        {extSubs.length > 8 && (
+                          <input
+                            className="qt-bof-sub-filter"
+                            value={subFilter}
+                            onChange={(e) => setSubFilter(e.target.value)}
+                            placeholder="筛选子命令…"
+                          />
+                        )}
+                      </div>
+                      <div className="qt-bof-sub-strip">
+                        <div className="qt-bof-pills" style={{ flexWrap: 'wrap', flexShrink: 1, maxWidth: '100%' }}>
+                          {shownSubs.map((sub) => (
+                            <button
+                              key={sub.name}
+                              type="button"
+                              className={`qt-bof-pill ${activeExtSub?.name === sub.name ? 'active' : ''}`}
+                              onClick={() => {
+                                setExtSubByKey((p) => ({ ...p, [selectedExt.key]: sub.name }))
+                                setMissingKey(null)
+                              }}
+                              title={sub.description || sub.name}
+                            >
+                              {sub.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {activeExtSub?.description && (
+                        <div style={{ fontSize: 11.5, color: 'var(--qt-text-muted)' }}>{activeExtSub.description}</div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                {/* Parameters Form */}
+                <div className="qt-bof-sec">
+                  <div className="qt-bof-sec-hd">
+                    <span>
+                      运行参数
+                      {(activeExtCmd.args || []).length > 0
+                        ? ` (${(activeExtCmd.args || []).length})`
+                        : '（无参数）'}
+                    </span>
+                    {hasAnyExtArgVal && (
+                      <button type="button" className="qt-bof-pill" onClick={clearSelectedParams}>清空参数</button>
+                    )}
+                  </div>
+
+                  {(activeExtCmd.args || []).length === 0 ? (
+                    <div style={{ fontSize: 11.5, color: 'var(--qt-text-muted)' }}>
+                      该 Windows BOF 命令无需额外参数，可直接执行。
+                    </div>
+                  ) : (
+                    <div className="qt-bof-param-grid">
+                      {(activeExtCmd.args || []).map((a, idx) => {
+                        const argKey = `${extBaseArgKey}.${idx}`
+                        if (a.flag && !a.name) {
+                          return (
+                            <label key={argKey} className="qt-bof-flag-row" title={a.description || a.mark}>
+                              <input
+                                type="checkbox"
+                                checked={extArgVals[argKey] === '1'}
+                                onChange={(e) => {
+                                  setExtCustomCmd((p) => { const n = { ...p }; delete n[extBaseArgKey]; return n })
+                                  setExtArgVals((p) => ({ ...p, [argKey]: e.target.checked ? '1' : '' }))
+                                }}
+                              />
+                              <span>{a.description || a.mark || '启用开关'}</span>
+                              {a.mark && <code>{a.mark}</code>}
+                            </label>
+                          )
+                        }
+                        const inputId = `bof-ext-arg-${argKey}`
+                        const missId = `ext:${argKey}`
+                        const desc = (a.description || '').trim()
+                        const isFileArg = String(a.type || '').toLowerCase() === 'file'
+                        const isLongDesc = desc.length > 36 || desc.includes('\n')
+                        const fileHint = isFileArg
+                          ? `提示：FILE 参数由服务端读取，文件须位于 Extenders / AxScripts 沙箱目录内${winExecBase ? `（如 ${winExecBase}）` : ''}。`
+                          : ''
+                        const helpLines = [isLongDesc ? desc : '', fileHint].filter(Boolean).join('\n')
+                        const placeholder = !isLongDesc && desc
+                          ? desc
+                          : (isFileArg
+                              ? '服务端沙箱路径（Extenders / AxScripts 内）'
+                              : ((a.default_used && a.default_value != null ? String(a.default_value) : '') || (desc.split('\n')[0] || a.name || a.mark)))
+                        return (
+                          <div key={argKey} style={{ display: 'contents' }}>
+                            <label className="qt-bof-param-lbl" htmlFor={inputId} title={desc || a.name}>
+                              <span>
+                                {a.name || a.mark}
+                                {a.required && <span className="qt-bof-req"> *</span>}
+                              </span>
+                              <span style={{ display: 'inline-flex', gap: 4 }}>
+                                {a.flag && a.mark && <span className="qt-bof-badge info">{a.mark}</span>}
+                                {a.type && <span className={`qt-bof-badge ${a.type === 'int' ? 'warn' : isFileArg ? 'info' : ''}`}>{a.type}</span>}
+                              </span>
+                            </label>
+                            <input
+                              id={inputId}
+                              ref={(el) => { paramRefs.current[missId] = el }}
+                              className={`qt-bof-input ${missingKey === missId ? 'invalid' : ''}`}
+                              value={extArgDisplayValue(extArgVals, extBaseArgKey, a, idx)}
+                              onChange={(e) => {
+                                if (missingKey === missId) setMissingKey(null)
+                                const v = e.target.value
+                                setExtCustomCmd((p) => { const n = { ...p }; delete n[extBaseArgKey]; return n })
+                                setExtArgVals((p) => ({ ...p, [argKey]: v }))
+                              }}
+                              placeholder={placeholder}
+                            />
+                            {helpLines && <div className="qt-bof-arg-help">{helpLines}</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Authoritative Example */}
+                {activeExtCmd.example && (
+                  <div className="qt-bof-sec">
+                    <div className="qt-bof-sec-hd">
+                      <span>权威示例（由服务端 .axs 预钩子展开为 BOF 调用）</span>
                       <button
                         type="button"
-                        className="primary"
-                        disabled={busy === b.name || !effectiveAgent}
-                        onClick={() => void runBof(b)}
-                        title={!effectiveAgent ? '没有在线主机' : `在 ${effectiveAgent} 上执行`}
+                        className="qt-bof-pill"
+                        onClick={() => setExtCustomCmd((p) => ({ ...p, [extBaseArgKey]: activeExtCmd.example }))}
                       >
-                        {busy === b.name ? '…' : t('执行')}
+                        填入命令框
+                      </button>
+                    </div>
+                    <div className="qt-bof-example-box">
+                      <code>{activeExtCmd.example}</code>
+                      <button
+                        type="button"
+                        className="qt-bof-btn"
+                        onClick={() => void copyText(activeExtCmd.example).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '示例已复制' : t('复制失败')))}
+                      >
+                        复制示例
                       </button>
                     </div>
                   </div>
-                ))}
+                )}
+
+                {extAgentBatchMismatch && selectedAgent && (
+                  <div className="qt-bof-note-hot">
+                    ★ 当前主机类型是 <b>{selectedAgent.a_name}</b>，但仅检测到 <b>{selectedExt.batchAgent}</b> 注册了该 Windows Extension-Kit；请切到对应类型主机或检查该 agent 的 `.axs` 加载状态。
+                  </div>
+                )}
               </div>
+
+              {/* Sticky Windows / Ext Execution Dock */}
+              <div className="qt-bof-exec-dock">
+                <div className="qt-bof-cmd-preview">
+                  <input
+                    className="qt-bof-cmd-input"
+                    value={finalExtCmdline}
+                    onChange={(e) => setExtCustomCmd((p) => ({ ...p, [extBaseArgKey]: e.target.value }))}
+                    placeholder={autoExtCmdline}
+                    spellCheck={false}
+                    aria-label="Command preview"
+                  />
+                  {extBaseArgKey in extCustomCmd && (
+                    <button
+                      type="button"
+                      className="qt-bof-pill"
+                      onClick={() => setExtCustomCmd((p) => { const n = { ...p }; delete n[extBaseArgKey]; return n })}
+                      title="恢复为上方参数自动拼接的命令"
+                    >
+                      还原
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="qt-bof-btn"
+                    onClick={() => void copyText(finalExtCmdline).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '命令已复制' : t('复制失败')))}
+                  >
+                    {t('复制命令')}
+                  </button>
+                </div>
+
+                <div className="qt-bof-exec-actions">
+                  <span style={{ fontSize: 11, color: 'var(--qt-text-muted)' }}>
+                    {selectedAgent
+                      ? `目标: ${selectedAgent.a_computer || selectedAgent.a_id} (${selectedAgent.a_username || '-'} · ${platformLabel(detectPlatform(selectedAgent))})`
+                      : '当前无在线主机，仅支持预览/复制命令'}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    className="qt-bof-btn primary"
+                    disabled={busy === selectedExt.key || !effectiveAgent || targetPlatformMismatch || extAgentBatchMismatch || !!unsupportedReason}
+                    onClick={() => void runExtBof(selectedExt)}
+                    title={unsupportedReason || (!effectiveAgent ? '没有在线主机' : targetPlatformMismatch ? '当前主机系统与插件平台不匹配' : `在 ${effectiveAgent} 上执行 (Ctrl+Enter)`)}
+                  >
+                    <img className="qt-ico" src={qtAsset('icons/start_64dp.png')} alt="" style={{ filter: 'brightness(10)' }} />
+                    <span>{busy === selectedExt.key ? '下发中…' : `${t('执行')} BOF (Ctrl+↵)`}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              <EmptyState
+                icon="⎔"
+                title={activePlatform === 'macos' ? '当前暂无 macOS BOF 插件' : `未找到 ${platformLabel(activePlatform)} BOF 插件`}
+                hint={activePlatform === 'macos'
+                  ? 'macOS 暂未加载 Extension-Kit BOF 套件；可切回 Windows 或 Linux 主机使用对应平台的 BOF。'
+                  : '请确认团队端 profile 已加载 Extension-Kit，或点击右上角「刷新」重新拉取命令树。'}
+                action={(
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="qt-bof-btn primary" onClick={() => switchPlatform('windows')}>切到 Windows BOF</button>
+                    <button type="button" className="qt-bof-btn" onClick={() => switchPlatform('linux')}>切到 Linux BOF</button>
+                  </div>
+                )}
+              />
             </div>
-          )
-        })}
-        {filtered.length === 0 && (
-          <EmptyState
-            icon="⎔"
-            title={rows.length ? t('无匹配 BOF') : t('服务端还没有 BOF')}
-            hint={rows.length ? t('换个搜索词') : t('用上方「上传 BOF」投递一个 .c（会自动编译）或 .o')}
-          />
-        )}
-        {onlineAgents.length === 0 && (
-          <div className="banner warn" style={{ marginTop: 12 }}>
-            当前没有在线主机——先到「主机」页确认 agent 已上线，再回来执行 BOF。
-          </div>
-        )}
+          )}
+        </div>
       </div>
+      )}
+
+      {/* ── 4. Compact Qt Status Footer ── */}
+      {activePlatform === 'linux' ? (
+        <div className="qt-bof-foot">
+          <span
+            className="qt-bof-foot-base"
+            title="点击修改服务端 BOF 基路径"
+            onClick={() => setBaseOpen((v) => !v)}
+          >
+            Base: {effectiveBase || '(自动/文件名直传)'}
+          </span>
+          <span style={{ flex: 1 }} />
+          <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+            {offline
+              ? `离线兜底 ${rows.length}`
+              : `Linux ELF ${rows.length} · 可执行 ${nObj}${nStale ? ` · 源码已改 ${nStale}` : ''}${nOther ? ` · 未登记 ${nOther}` : ''}`}
+          </span>
+          <span style={{ whiteSpace: 'nowrap' }}>· 拖拽 .c/.o 上传</span>
+        </div>
+      ) : (
+        <div className="qt-bof-foot">
+          <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+            {platformLabel(activePlatform)} Extension-Kit
+            {extCatalog.batchAgent ? ` (${extCatalog.batchAgent})` : ''}
+          </span>
+          <span style={{ flex: 1 }} />
+          <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+            套件 {extSuites.length} · 命令 {extCatalog.items.length} · 含子命令 {extLeafCountTotal} 项 · AxScript PreHook 执行
+          </span>
+        </div>
+      )}
+
+      {/* Linux Row Context Menu */}
+      {ctx && (
+        <div
+          className="ctx"
+          style={{ left: Math.min(ctx.x, window.innerWidth - 210), top: Math.min(ctx.y, window.innerHeight - 220) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button type="button" disabled={!effectiveAgent || targetPlatformMismatch || !!unsupportedReason} onClick={() => { void runBof(ctx.row); setCtx(null) }}>
+            <span>{t('执行')} {ctx.row.name}</span>
+          </button>
+          <button type="button" onClick={() => { void copyCmd(ctx.row); setCtx(null) }}>
+            <span>{t('复制命令')}</span>
+          </button>
+          <button
+            type="button"
+            disabled={!api || (!ctx.row.src && !offline)}
+            onClick={() => { void compileOne(ctx.row); setCtx(null) }}
+          >
+            <span>重编 .o</span>
+          </button>
+          <div className="sep" />
+          <button
+            type="button"
+            onClick={() => {
+              void copyText(fullPath(ctx.row)).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '路径已复制' : t('复制失败')))
+              setCtx(null)
+            }}
+          >
+            <span>复制服务端路径</span>
+          </button>
+          {ctx.row.obj_sha256 && (
+            <button
+              type="button"
+              onClick={() => {
+                void copyText(ctx.row.obj_sha256).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? 'SHA256 已复制' : t('复制失败')))
+                setCtx(null)
+              }}
+            >
+              <span>复制 SHA256</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Windows / Extension-Kit Row Context Menu */}
+      {extCtx && (
+        <div
+          className="ctx"
+          style={{ left: Math.min(extCtx.x, window.innerWidth - 210), top: Math.min(extCtx.y, window.innerHeight - 160) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            disabled={!effectiveAgent || targetPlatformMismatch || !!unsupportedReason || (!!extCtx.item.batchAgent && selectedAgent?.a_name !== extCtx.item.batchAgent)}
+            onClick={() => { void runExtBof(extCtx.item); setExtCtx(null) }}
+          >
+            <span>{t('执行')} {extCtx.item.cmd.name}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const txt = buildExtCmdline(extCtx.item, extSubByKey[extCtx.item.key] || '', extArgVals)
+              void copyText(txt).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '命令已复制' : t('复制失败')))
+              setExtCtx(null)
+            }}
+          >
+            <span>{t('复制命令')}</span>
+          </button>
+          {extCtx.item.cmd.example && (
+            <button
+              type="button"
+              onClick={() => {
+                void copyText(extCtx.item.cmd.example).then((ok) => pushToast(ok ? 'ok' : 'err', ok ? '示例已复制' : t('复制失败')))
+                setExtCtx(null)
+              }}
+            >
+              <span>复制示例</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Drag & Drop Upload Overlay */}
+      {dragOver && activePlatform === 'linux' && (
+        <div className="qt-drop-overlay">
+          <div>释放鼠标以上传 BOF (.c 自动编译 / .o 直接投递)</div>
+        </div>
+      )}
     </div>
   )
-}
+})

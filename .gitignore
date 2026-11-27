@@ -66,7 +66,9 @@ AdaptixServer/server.rsa.crt
 AdaptixServer/server.rsa.key
 
 # Web local artifacts (regenerable: shot_client_shell.mjs / review agent output)
-AdaptixWeb/screenshots/
+# Track only curated README guide screenshots under screenshots/guide/
+AdaptixWeb/screenshots/*
+!AdaptixWeb/screenshots/guide/
 AdaptixWeb/REVIEW_UI_SCORE.md
 
 # Web：只跟源码（src/ public/ 根配置）。dist 是本地产物（CI 的完整包自己 npm run build，

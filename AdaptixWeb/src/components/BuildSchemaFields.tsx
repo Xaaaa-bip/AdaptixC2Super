@@ -2,106 +2,327 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { groupFields, visibleFields } from '../api/buildSchema'
 import type { BuildSchema, BuildSchemaField } from '../api/types'
 
-/**
- * 按插件声明的字段表渲染生成参数。
- *
- * ★ 这里只认契约里那几个键（key/label/type/options/min/max/placeholder/hint/
- *   accept/group/show_if），多的一律忽略 —— 表是插件作者写的，前端不能因为多了个
- *   不认识的键就渲染出个半成品控件。
- *
- * ★ **值的存储不在这里**。read/write 由调用方给：Generate.tsx 里有一批 key
- *   （format/arch/os/sleep/jitter/stager_ts_*）控制台自己就有 state，摘要栏、提示条、
- *   监听器兼容性都长在上面，所以不另开一份。**每个 key 只有一处存储**，
- *   不存在"表里选了 Stager、isStager 还是 false"这种分叉。
- *
- * 样式只沿用载荷页既有的 .field / .chip-row / .check-inline / .hint，加上
- * styles.css 里一小段 .bs-* 新类名（见那里的注释：全是新类名，不覆盖任何既有选择器）。
- */
 type Props = {
   schema: BuildSchema
-  /** 显隐判据之一：当前选中的输出格式 */
   format: string
-  /** 显隐判据之二：当前监听器的**注册名**（l_reg_name），没选就是空串 */
   listenerType: string
   read: (key: string) => unknown
   write: (key: string, v: unknown) => void
+  isBuiltin?: boolean
+  onResetAdvanced?: () => void
 }
 
-export function BuildSchemaFields({ schema, format, listenerType, read, write }: Props) {
+const SLEEP_PRESETS = ['0s', '5s', '15s', '60s']
+
+const CURATED_HINTS: Record<string, string> = {
+  iat_hiding: '剥离 CRT 依赖并隐藏导入表（部分启发式查杀较敏感）',
+  exe_pseudo_sign: '为产物附加随机自签 Authenticode 签名（默认关闭）',
+  pe_header_mod: '覆写 PE Rich Header 与编译时间戳特征',
+  diversify: '每次构建注入独立代码块与诱饵导入，避免特征收敛',
+  disguise: '嵌入常见系统组件风格的版本资源与文件描述',
+  svcname: 'Windows 服务可执行文件注册的服务名称',
+  is_killdate: '到达指定日期时间后自动停止上线并退出',
+  is_workingtime: '仅在每日指定工作时间段内保持回连活动',
+  icon_random: '为 EXE/DLL 自动生成随机应用程序图标',
+  icon_content: '上传自定义 .ico 文件作为可执行文件图标',
+  is_sideloading: '基于合法 DLL 导出表构造白加黑侧载载荷',
+  sideloading_content: '上传用于转发导出函数的参考合法 DLL',
+  use_proxy: '使 Beacon 经企业 HTTP/HTTPS 代理服务器出口回连',
+  opsec_enabled: '启用反调试、常见沙箱特征探测与敏感字符串混淆',
+  opsec_vm_exit: '检测到虚拟机环境时放弃上线（云主机目标慎用）',
+  bof_api_proxy: '经代理跳板解析并执行 BOF 动态 API 调用',
+  mask_heap: '休眠期间对进程堆内存执行混淆加密防护',
+  win7_support: '兼容旧版 Windows 7 / Server 2008 R2 系统 API',
+  stager_ts_ssl: '按 Teamserver 端口 HTTPS 配置加密拉取二阶段载荷',
+  reconn_timeout: '断线后尝试重连的等待间隔（纯数字按秒计算）',
+  reconn_count: '最大重连重试次数（填 0 表示无限持久化重连）',
+}
+
+function formatHint(key: string, raw?: string): string {
+  if (CURATED_HINTS[key]) return CURATED_HINTS[key]
+  if (!raw) return ''
+  const s = raw
+    .replace(/★\s*/g, '')
+    .replace(/默认跟随\s*buildenv\.mk\s*的\s*[A-Z0-9_]+(?:=\w+)?[；;，,\s]*/g, '')
+    .replace(/插件默认值来自\s*buildenv\.mk\s*的\s*[A-Z0-9_]+[；;，,\s]*/g, '')
+    .replace(/（[^）]*pl_[\w.]+\.go:\d+[^）]*）/g, '')
+    .replace(/\([^)]*pl_[\w.]+\.go:\d+[^)]*\)/g, '')
+    .replace(/^[;；:：,，\s]+/, '')
+    .trim()
+  return s.length > 52 ? `${s.slice(0, 50).trimEnd()}…` : s
+}
+
+function isFieldActive(f: BuildSchemaField, val: unknown): boolean {
+  if (f.type === 'bool') return val === true
+  if (val === undefined || val === null) return false
+  if (typeof val === 'string') return val.trim().length > 0 && val !== 'None'
+  return true
+}
+
+export function BuildSchemaFields({
+  schema,
+  format,
+  listenerType,
+  read,
+  write,
+}: Props) {
   const shown = useMemo(
     () => visibleFields(schema, format, listenerType),
     [schema, format, listenerType],
   )
   const groups = useMemo(() => groupFields(shown), [shown])
 
-  // 折叠状态按组名记。默认只展开第一组：载荷页的主控件（格式/架构/系统/Sleep）都在
-  // 第一组，展开它才和改动前的界面等价；其余组默认收起，免得二十多个控件一次铺开，
-  // 把「生成并下载」按钮顶到屏幕外。
-  const [closed, setClosed] = useState<Record<string, boolean>>({})
-  const isClosed = (name: string, i: number) => (name in closed ? closed[name] : i > 0)
+  const coreGroup = groups[0]
+  const advGroups = useMemo(() => groups.slice(1), [groups])
 
-  // ★ 某个组「多出一个可见字段」时必须自动展开。否则操作员把格式切成 Stager，该填的
-  //   下载地址藏在一个刚出现的折叠块里 —— 界面上看不出任何变化，只会觉得"选了 Stager
-  //   什么都没发生"。只对**新增**的字段生效：收起某个组之后切格式，只要没有新字段落
-  //   进去，它就还是收着的。首次挂载不算（那正是"默认收起"的时刻）。
+  const [activeGroup, setActiveGroup] = useState<string>(() => advGroups[0]?.name || '')
+  const [showAll, setShowAll] = useState(false)
+
+  useEffect(() => {
+    if (!advGroups.length) {
+      setActiveGroup('')
+      return
+    }
+    if (!advGroups.some((g) => g.name === activeGroup)) {
+      setActiveGroup(advGroups[0].name)
+    }
+  }, [advGroups, activeGroup])
+
+  // Auto-focus newly revealed group (e.g. Stager endpoint or DNS options)
   const prevKeys = useRef<Set<string> | null>(null)
   useEffect(() => {
     const now = new Set(shown.map((f) => f.key))
     const prev = prevKeys.current
     prevKeys.current = now
     if (prev === null) return
-    const grew = new Set<string>()
-    for (const f of shown) if (!prev.has(f.key)) grew.add(f.group || '基础')
-    if (!grew.size) return
-    setClosed((c) => {
-      let changed = false
-      const next = { ...c }
-      // 判据是 `!== false` 而不是 `=== true`：默认开着的第一组在表里没有条目，
-      // 显式写一个 false 进去不改变结果（幂等），却省掉一套"它现在到底开没开"的推算 ——
-      // 那套推算正是最容易和上面的 isClosed 走岔的地方。
-      for (const g of grew) {
-        if (next[g] !== false) {
-          next[g] = false
-          changed = true
+    for (const f of shown) {
+      if (!prev.has(f.key)) {
+        const grpName = f.group || '基础'
+        if (grpName !== coreGroup?.name && advGroups.some((g) => g.name === grpName)) {
+          setActiveGroup(grpName)
+          break
         }
       }
-      return changed ? next : c
-    })
-  }, [shown])
+    }
+  }, [shown, coreGroup?.name, advGroups])
+
+  const displayedAdvGroups = showAll
+    ? advGroups
+    : advGroups.filter((g) => g.name === activeGroup)
+
+  const coreHasSleep = !!coreGroup?.fields.some((f) => f.key === 'sleep')
+  const coreHasJitter = !!coreGroup?.fields.some((f) => f.key === 'jitter')
 
   return (
-    <>
-      {groups.map((g, i) => {
-        const shut = isClosed(g.name, i)
-        return (
-          <section className="bs-group" key={g.name} data-group={g.name}>
-            <button
-              type="button"
-              className="bs-head"
-              onClick={() => setClosed((c) => ({ ...c, [g.name]: !shut }))}
-              aria-expanded={!shut}
-              title={shut ? '展开' : '收起'}
-            >
-              <span className="bs-caret">{shut ? '▸' : '▾'}</span>
-              <span>{g.name}</span>
-              {/* 收起时也报个数：否则"这组里有没有我要的东西"只能靠点开试 */}
-              <span className="bs-count">{g.fields.length} 项</span>
-            </button>
-            {!shut && (
-              <div className="bs-body">
-                {g.fields.map((f) => (
-                  <Field key={f.key} field={f} value={read(f.key)} write={write} />
-                ))}
+    <div className="ax-schema-wrap">
+      {coreGroup && (
+        <section className="ax-group-card" data-group={coreGroup.name}>
+          <div className="ax-group-card-hd">
+            <b>核心编译参数</b>
+            <span className="mono">{format}{read('arch') ? ` · ${String(read('arch'))}` : ''}</span>
+          </div>
+
+          <div className="ax-core-row">
+            {coreGroup.fields.map((f) => {
+              if ((f.key === 'sleep' || f.key === 'jitter') && coreHasSleep && coreHasJitter) {
+                return null
+              }
+              if (f.key === 'os' && f.type === 'select' && (f.options?.length || 0) <= 1) {
+                return null
+              }
+              return (
+                <CoreField
+                  key={f.key}
+                  field={f}
+                  value={read(f.key)}
+                  write={write}
+                />
+              )
+            })}
+          </div>
+
+          {coreHasSleep && coreHasJitter && (
+            <div className="ax-ctrl-grp">
+              <div className="ax-ctrl-lbl">
+                <span>回连周期 Sleep 与随机抖动</span>
+                <span className="ax-ctrl-sub">支持单位 h / m / s</span>
               </div>
-            )}
-          </section>
-        )
-      })}
-    </>
+              <div className="ax-sleep-line">
+                <input
+                  className="mono ax-sleep-in"
+                  value={String(read('sleep') ?? '')}
+                  onChange={(e) => write('sleep', e.target.value)}
+                  placeholder="5s / 10s / 1m"
+                />
+                <div className="ax-seg-track">
+                  {SLEEP_PRESETS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`ax-seg-btn mono ${read('sleep') === s ? 'active' : ''}`}
+                      onClick={() => write('sleep', s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <label className="ax-jit-wrap">
+                  <span>Jitter</span>
+                  <div className="ax-unit-input">
+                    <input
+                      type="number"
+                      className="mono"
+                      min={0}
+                      max={100}
+                      value={Number(read('jitter') ?? 0)}
+                      onChange={(e) => write('jitter', Number(e.target.value))}
+                    />
+                    <span className="ax-unit">%</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {advGroups.length > 0 && (
+        <section className="ax-group-card ax-adv-wrap">
+          <div className="ax-tabs-bar">
+            <div className="ax-tabs-list" role="tablist">
+              {advGroups.map((g) => {
+                const active = !showAll && activeGroup === g.name
+                const activeCount = g.fields.filter((f) => isFieldActive(f, read(f.key))).length
+                return (
+                  <button
+                    key={g.name}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`ax-tab ${active ? 'active' : ''}`}
+                    onClick={() => {
+                      setShowAll(false)
+                      setActiveGroup(g.name)
+                    }}
+                  >
+                    <span>{g.name}</span>
+                    <span className="ax-tab-cnt mono">{g.fields.length}</span>
+                    {activeCount > 0 && <i className="ax-tab-dot" title={`已开启 ${activeCount} 项`} />}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="ax-tabs-acts">
+              <button
+                type="button"
+                className={`ax-btn-ghost ax-btn-sm ${showAll ? 'active' : ''}`}
+                onClick={() => setShowAll((v) => !v)}
+                title={showAll ? '切换回分组标签视图' : '同屏展开所有高级选项'}
+              >
+                {showAll ? '分组视图' : '全部展开'}
+              </button>
+            </div>
+          </div>
+
+          <div className="ax-adv-sections">
+            {displayedAdvGroups.map((g) => {
+              const boolFields = g.fields.filter((f) => f.type === 'bool')
+              const otherFields = g.fields.filter((f) => f.type !== 'bool')
+              return (
+                <div className="ax-group-sec" key={g.name} data-group={g.name}>
+                  {showAll && (
+                    <div className="ax-group-sec-hd">
+                      <span>{g.name}</span>
+                      <span className="mono">{g.fields.length} 项</span>
+                    </div>
+                  )}
+
+                  {boolFields.length > 0 && (
+                    <div className="ax-setting-list">
+                      {boolFields.map((f) => {
+                        const checked = read(f.key) === true
+                        const note = formatHint(f.key, f.hint)
+                        return (
+                          <label
+                            key={f.key}
+                            className={`ax-setting-row ${checked ? 'checked' : ''}`}
+                            title={f.hint || f.key}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => write(f.key, e.target.checked)}
+                            />
+                            <div className="ax-setting-info">
+                              <b>{f.label}</b>
+                              {note && <span>{note}</span>}
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {otherFields.length > 0 && (
+                    <div className="ax-field-grid">
+                      {otherFields.map((f) => (
+                        <AdvField
+                          key={f.key}
+                          field={f}
+                          value={read(f.key)}
+                          write={write}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+    </div>
   )
 }
 
-function Field({
+function CoreField({
+  field,
+  value,
+  write,
+}: {
+  field: BuildSchemaField
+  value: unknown
+  write: (key: string, v: unknown) => void
+}) {
+  if (field.type === 'select') {
+    const opts = field.options || []
+    const cur = typeof value === 'string' ? value : undefined
+    const extra = cur !== undefined && !opts.includes(cur) ? [cur] : []
+    return (
+      <div className="ax-ctrl-grp">
+        <div className="ax-ctrl-lbl" title={field.hint || field.key}>
+          <span>{field.label}</span>
+        </div>
+        <div className="ax-seg-track">
+          {[...extra, ...opts].map((o) => (
+            <button
+              key={o}
+              type="button"
+              className={`ax-seg-btn ${cur === o ? 'active' : ''}`}
+              onClick={() => write(field.key, o)}
+              title={o}
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  return <AdvField field={field} value={value} write={write} />
+}
+
+function AdvField({
   field,
   value,
   write,
@@ -111,37 +332,36 @@ function Field({
   write: (key: string, v: unknown) => void
 }) {
   const { key, label } = field
-  const hint = field.hint ? <div className="hint muted-hint">{field.hint}</div> : null
-
-  // 复选框走 .field-flat（单列），跟载荷页既有的 OPSEC / stager_ts_ssl 两处一致。
-  // 两列网格会把 14px 的复选框摆到 x=110，跟左边 0~60 的标签中间空一大格。
-  if (field.type === 'bool') {
-    return (
-      <div className="field field-flat">
-        <label className="check-inline" style={{ color: 'var(--text)' }} title={key}>
-          <input
-            type="checkbox"
-            checked={value === true}
-            onChange={(e) => write(key, e.target.checked)}
-          />
-          {label}
-        </label>
-        {hint}
-      </div>
-    )
-  }
-
+  const note = formatHint(key, field.hint)
+  const full = field.type === 'file'
   return (
-    <div className="field">
-      {/* 线名（= GenerateConfig 的 json tag）放 title：对照服务端日志和插件源码时要用 */}
-      <label title={key}>{label}</label>
+    <div className={`ax-field ${full ? 'ax-field-full' : ''}`} title={field.hint || `参数键: ${key}`}>
+      <span className="ax-field-lbl">{label}</span>
+
       {field.type === 'select' ? (
-        <SelectRow field={field} value={value} write={write} />
+        <div className="ax-seg-track">
+          {(field.options || []).map((o) => {
+            const cur = typeof value === 'string' ? value : undefined
+            const isSel = cur === o
+            return (
+              <button
+                key={o}
+                type="button"
+                className={`ax-seg-btn ${isSel ? 'active' : ''}`}
+                onClick={() => write(key, isSel ? undefined : o)}
+                title={isSel ? '再次点击恢复默认' : o}
+              >
+                {o}
+              </button>
+            )
+          })}
+        </div>
       ) : field.type === 'file' ? (
         <FileRow field={field} write={write} />
       ) : field.type === 'number' ? (
         <input
           type="number"
+          className="mono"
           min={field.min}
           max={field.max}
           value={value === undefined || value === null ? '' : String(value)}
@@ -150,76 +370,20 @@ function Field({
         />
       ) : (
         <input
+          className="mono"
           value={value === undefined || value === null ? '' : String(value)}
           placeholder={field.placeholder}
           onChange={(e) => write(key, e.target.value === '' ? undefined : e.target.value)}
         />
       )}
-      {hint}
+
+      {note && <div className="ax-field-hint">{note}</div>}
     </div>
   )
 }
 
-/**
- * 取值域来自插件，所以这里**只做展示，绝不增删** —— 多一个操作员就能选到一个插件
- * 不认的值，少一个就是插件认的值选不到（Qt 那份 combo 漏掉 "Stager" 就是这么来的，
- * 而 pl_main.go 有 `Format == "Stager"` 的真分支）。
- *
- * 「默认」这一项是**不下发这个键**，不是某个具体取值。★ 必须有它：表里没有 default
- * 字段，前端无从知道"插件默认是什么"，而"默认选第一项"是会错的 ——
- * rotation_mode 的选项是 ["random","sequential"]（推导顺序把 `== "random"` 这个特例
- * 分支排在了前面），可插件默认是 sequential（pl_main.go:756 只判 "random"），
- * 默认选第一项等于把默认值静默改成 random。
- */
-function SelectRow({
-  field,
-  value,
-  write,
-}: {
-  field: BuildSchemaField
-  value: unknown
-  write: (key: string, v: unknown) => void
-}) {
-  const opts = field.options || []
-  const cur = typeof value === 'string' ? value : undefined
-  // 当前值不在表里时（插件改了取值域、界面还留着旧值）照样把它画出来并标成选中 ——
-  // 否则界面上一个都不亮，看着像没选，实际却会把这个值发出去。
-  const extra = cur !== undefined && !opts.includes(cur) ? [cur] : []
-  return (
-    <div className="chip-row bs-chips">
-      {/* 原来这里有一个「默认」按钮（点它 = 这个键不下发、交给插件默认值）。
-          按用户要求去掉 —— 它长得像取值项、又和取值项并排，看着像"待勾选的大框"。
-          ★ 去掉的只是"能回到未选状态"这个动作，**初始语义没变**：字段在操作员动它
-          之前仍然是 undefined ⇒ 不下发这个键 ⇒ 插件按自己的默认值走。
-          （这条很要紧：rotation_mode 的插件默认是 sequential 而不是选项里的第一项
-          random，前端一旦"默认选第一项"就会把默认行为静默改掉。） */}
-      {[...extra, ...opts].map((o) => (
-        <button
-          key={o}
-          type="button"
-          className={cur === o ? 'primary' : ''}
-          onClick={() => write(field.key, o)}
-          title={o}
-        >
-          {o}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// 请求体没有服务端上限（只有 /api/otp 那条有 2GB 护栏），base64 之后还要乘 4/3，
-// 所以客户端自己拦一道，免得手滑选了个几百兆的文件把页面卡死。
 const MAX_FILE = 16 << 20
 
-/**
- * 文件字段。**线格式是 base64**，不是文件内容本身 —— 插件那边是
- * `base64.StdEncoding.DecodeString(generateConfig.SideloadingContent / IconContent)`
- * （pl_main.go:1060、:1104）。
- *
- * 选中的文件名只留在本地 state：值列里存的是 base64，从它反推不出文件名，
- * 而操作员需要看见"我到底选没选、选的是哪个文件"。
- */
 function FileRow({
   field,
   write,
@@ -238,7 +402,7 @@ function FileRow({
       return
     }
     if (file.size > MAX_FILE) {
-      setErr(`文件 ${fmtBytes(file.size)} 超过上限 ${fmtBytes(MAX_FILE)}，没有读入`)
+      setErr(`文件 ${fmtBytes(file.size)} 超过上限 ${fmtBytes(MAX_FILE)}`)
       return
     }
     try {
@@ -251,8 +415,8 @@ function FileRow({
   }
 
   return (
-    <div>
-      <div className="bs-file-row">
+    <div className="ax-file-box">
+      <div className="ax-file-row">
         <input
           type="file"
           accept={field.accept || undefined}
@@ -261,21 +425,20 @@ function FileRow({
         />
         {picked && (
           <>
-            <span className="dim bs-file-meta">
+            <span className="ax-pill mono">
               {picked.name} · {fmtBytes(picked.size)}
             </span>
-            <button type="button" className="ghost" onClick={() => pick(undefined)}>
+            <button type="button" className="ax-btn ax-btn-sm" onClick={() => pick(undefined)}>
               清除
             </button>
           </>
         )}
       </div>
-      {err && <div className="hint warn-hint">{err}</div>}
+      {err && <div className="ax-warn-callout">{err}</div>}
     </div>
   )
 }
 
-/** 分块拼 base64：`String.fromCharCode(...bytes)` 在几兆的数组上会把调用栈撑爆。 */
 function toBase64(buf: ArrayBuffer): string {
   const b = new Uint8Array(buf)
   let s = ''

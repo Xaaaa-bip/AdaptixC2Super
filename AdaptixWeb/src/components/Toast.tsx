@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useStore } from '../store'
-import { t } from '../i18n'
 
 export function ToastHost() {
   const toasts = useStore((s) => s.toasts)
@@ -15,9 +14,10 @@ export function ToastHost() {
   }, [toasts, dismissToast])
 
   if (!toasts.length) return null
+  const visible = toasts.slice(-2)
   return (
     <div className="toast-host" aria-live="polite">
-      {toasts.map((t) => (
+      {visible.map((t) => (
         <div key={t.id} className={`toast ${t.level}`} onClick={() => dismissToast(t.id)}>
           <span className="toast-ico">
             {t.level === 'ok' ? '✓' : t.level === 'err' ? '!' : t.level === 'warn' ? '⚠' : 'i'}

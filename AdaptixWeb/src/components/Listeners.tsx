@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { LISTENER_TYPES, defaultListenerConfig, randomEncryptKey } from '../api/listeners'
@@ -43,17 +43,45 @@ function linesToArr(s: string) {
  * 而在 Web 这边把候选摆出来，缺省值才不是「看着对其实是错的」那种陷阱。
  * 服务端还没报（同步未到）时整条不渲染，不占位。
  */
-function ServerAddrHint() {
+function ServerAddrHint({
+  onPick,
+  port,
+  current,
+}: {
+  onPick?: (addr: string) => void
+  port?: number
+  current?: string[]
+}) {
   const ifaces = useStore((s) => s.serverInterfaces)
-  // 用 dialableInterfaces 而不是原始列表：原始列表**恒定**含着通配地址 "0.0.0.0"，
-  // 摆给操作员看等于推荐一个拨不通的地址（见 lib/callbackHost.ts 顶部）。
+  // 用 dialableInterfaces 而不是原始列表：原始列表恒定含通配地址 "0.0.0.0"。
   const list = dialableInterfaces(ifaces)
   if (!list.length) return null
+  const p = Number(port) || 443
   return (
-    <div className="hint muted-hint">
-      回连地址要填<b>{t('目标机能拨到')}</b>的服务端地址（缺省是按你访问控制台时用的地址推的）。
-      服务端自报的其他地址：
-      <div className="mono">{list.join('  ')}</div>
+    <div className="qt-lst-addr-hint">
+      <span className="qt-lst-hint-txt">
+        回连地址须为<b>{t('目标机能拨到')}</b>的地址；点击服务端网卡可快速追加：
+      </span>
+      <div className="qt-lst-addr-chips">
+        {list.map((ip) => {
+          const addr = `${ip}:${p}`
+          const added = Array.isArray(current) && current.includes(addr)
+          return onPick ? (
+            <button
+              key={ip}
+              type="button"
+              disabled={added}
+              className={`qt-lst-addr-chip mono ${added ? 'added' : ''}`}
+              onClick={() => onPick(addr)}
+              title={added ? '已在回连地址中' : `追加 ${addr}`}
+            >
+              {added ? '✓ ' : '+ '}{addr}
+            </button>
+          ) : (
+            <span key={ip} className="qt-lst-addr-chip mono static">{ip}</span>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -80,54 +108,86 @@ function suggestName(type: string) {
   return map[type] || type.toLowerCase()
 }
 
+const LISTENER_GROUPS = [
+  { label: 'HTTP / Web 协议', types: ['BeaconHTTP', 'BeaconHTTPS', 'BeaconWS', 'KharonHTTP'] },
+  { label: '内网 / DNS / 隧道', types: ['BeaconTCP', 'BeaconSMB', 'BeaconDNS'] },
+  { label: 'Linux / 跨平台 / 其他', types: ['LinuxTCP', 'GopherTCP', 'BeaconDiscord'] },
+]
+
+function ListenerEmblem() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="11" r="1.8" fill="currentColor" />
+      <path d="M5.2 9.2a4 4 0 0 1 5.6 0M3 7a7.1 7.1 0 0 1 10 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M8 12.8v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 /** 可编辑列表（对齐 ax form.create_list + setButtonsEnabled） */
 function EditableList({
   value,
   onChange,
   placeholder,
   disabled,
+  compact,
 }: {
   value: string[]
   onChange: (v: string[]) => void
   placeholder?: string
   disabled?: boolean
+  compact?: boolean
 }) {
   const [draft, setDraft] = useState('')
   return (
-    <div className="elist">
-      <div className="elist-items">
-        {value.length === 0 && <div className="dim empty-sm" style={{ padding: 8 }}>{t('空列表')}</div>}
+    <div className={`qt-elist ${compact ? 'compact' : ''}`}>
+      <div className="qt-elist-items">
+        {value.length === 0 && <div className="qt-elist-empty">{t('空列表')}</div>}
         {value.map((item, i) => (
-          <div key={`${item}-${i}`} className="elist-row">
+          <div key={`${item}-${i}`} className="qt-elist-row">
             <span className="mono">{item}</span>
             {!disabled && (
-              <button type="button" className="ghost ico" title={t('删除')} onClick={() => onChange(value.filter((_, j) => j !== i))}>×</button>
+              <button
+                type="button"
+                className="qt-elist-del"
+                title={t('删除')}
+                onClick={() => onChange(value.filter((_, j) => j !== i))}
+              >
+                ×
+              </button>
             )}
           </div>
         ))}
       </div>
       {!disabled && (
-        <div className="elist-add">
+        <div className="qt-elist-add">
           <input
+            className="mono"
             value={draft}
             placeholder={placeholder || t('添加一项后回车')}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
-                const t = draft.trim()
-                if (!t) return
-                onChange([...value, t])
+                const val = draft.trim()
+                if (!val) return
+                onChange([...value, val])
                 setDraft('')
               }
             }}
           />
-          <button type="button" onClick={() => {
-            const t = draft.trim()
-            if (!t) return
-            onChange([...value, t])
-            setDraft('')
-          }}>{t('添加')}</button>
+          <button
+            type="button"
+            className="qt-elist-add-btn"
+            onClick={() => {
+              const val = draft.trim()
+              if (!val) return
+              onChange([...value, val])
+              setDraft('')
+            }}
+          >
+            + {t('添加')}
+          </button>
         </div>
       )}
     </div>
@@ -171,6 +231,18 @@ export function Listeners() {
   // 硬猜一个会让操作员以为「这套是模板 X」而实际不是。
   const [tplId, setTplId] = useState('official')
 
+  useEffect(() => {
+    if (!show) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        e.preventDefault()
+        e.stopPropagation()
+        setShow(false)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [show, busy])
 
   const filtered = useMemo(() => {
     if (!q.trim()) return list
@@ -221,9 +293,7 @@ export function Listeners() {
     if (!tpl) return
     setTplId(id)
     setForm((f) => ({ ...f, config: applyTrafficTemplate(f.config, f.type, tpl) }))
-    // 套完直接切到「错误页」—— 模板换掉的八个键里，错误页是唯一一眼能看出
-    // 「现在长得像哪家」的一个（URI/UA/头 都只是一行文本，看不出效果）。
-    setTab('error')
+    pushToast('ok', `已套用「${tpl.label}」流量模板（URI / UA / 心跳头 / 诱饵页已同步）`)
   }
 
   /**
@@ -287,417 +357,567 @@ export function Listeners() {
     const c = form.config
     const ltype = form.type
 
-    // ★ 三个类型共用这一套表单（t('主要设置') / HTTP 头 / 错误页 / 页面模板），BeaconHTTPS
-    //   必须在这里。本函数是一串**独立的 `if … return`**：谁都不命中就落到底返回
-    //   undefined，而 `{tab === 'main' && renderMain()}` 的 undefined 渲染成空白 ——
-    //   现象是「标签栏在、主面板整个空」，不是「少几个字段」，很容易误判成后端坏了。
-    //   同族的第四个写死类型清单（前三个见 doc §6.20）。列类型别再手抄枚举。
     if (ltype === 'BeaconHTTP' || ltype === 'BeaconWS' || ltype === 'BeaconHTTPS') {
+      const cbArr = Array.isArray(c.callback_addresses) ? c.callback_addresses : linesToArr(String(c.callback_addresses || ''))
+      const uriArr = Array.isArray(c.uri) ? c.uri : linesToArr(String(c.uri || ''))
+      const uaArr = Array.isArray(c.user_agent) ? c.user_agent : linesToArr(String(c.user_agent || ''))
+      const tpls = templatesFor(ltype)
+      const activeTpl = tpls.find((x) => x.id === tplId)
+
       return (
-        <>
-          <div className="field"><label>{t('绑定地址与端口')}</label>
-            <div className="field-inline">
-              <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} placeholder="0.0.0.0" />
-              <input type="number" style={{ width: 110 }} value={c.port_bind || 443}
-                onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd">
+              <b>网络绑定与回连</b>
+              <span className="mono">{ltype}</span>
             </div>
-          </div>
-          <div className="field field-top"><label>{t('回连地址')}</label>
-            <EditableList
-              value={Array.isArray(c.callback_addresses) ? c.callback_addresses : linesToArr(String(c.callback_addresses || ''))}
-              onChange={(v) => setCfg('callback_addresses', v)}
-              placeholder="host:port"
-            />
-            <ServerAddrHint />
-          </div>
-          {/* ── 流量模板 ────────────────────────────────────────────────
-              一键把**传输外观**的八个键换成某类真实业务的形态（方法 / URI / UA /
-              心跳头 / 请求头 / 响应头 / 错误页 / 页面模板），绑定地址、回连地址、
-              加密密钥、SSL 一律不碰 —— 覆盖它们会把刚填好的回连地址冲掉。
-              选中态只表示「最近套用的是哪套」，之后手动改字段不会取消选中，
-              所以别把它当"当前配置等于该模板"的证据。 */}
-          {templatesFor(ltype).length > 0 && (
-            <div className="field field-top"><label>{t('流量模板')}</label>
-              <div className="chip-row traffic-tpls">
-                {templatesFor(ltype).map((tpl) => (
+
+            <div className="qt-lst-row-net">
+              <label className="qt-lst-field">
+                <span>{t('绑定地址')}</span>
+                <input
+                  className="mono"
+                  value={c.host_bind || '0.0.0.0'}
+                  onChange={(e) => setCfg('host_bind', e.target.value)}
+                  placeholder="0.0.0.0"
+                />
+              </label>
+
+              <label className="qt-lst-field">
+                <span>端口</span>
+                <input
+                  type="number"
+                  className="mono"
+                  value={c.port_bind || 443}
+                  onChange={(e) => setCfg('port_bind', Number(e.target.value))}
+                />
+              </label>
+
+              <label className="qt-lst-field">
+                <span>{t('请求方法')}</span>
+                <select
+                  value={c.http_method || (ltype === 'BeaconWS' ? 'GET' : 'POST')}
+                  onChange={(e) => setCfg('http_method', e.target.value)}
+                  disabled={ltype === 'BeaconWS' || ltype === 'BeaconHTTPS'}
+                >
+                  {ltype === 'BeaconWS' ? <option>GET</option>
+                    : ltype === 'BeaconHTTPS' ? <option>POST</option>
+                    : (<><option>POST</option><option>GET</option></>)}
+                </select>
+              </label>
+
+              <div className="qt-lst-field">
+                <span>{t('使用 SSL (HTTPS)')}</span>
+                <label className={`qt-lst-chk-pill ${c.ssl ? 'on' : ''}`}>
+                  <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} />
+                  <span>{c.ssl ? '已启用 TLS' : '启用 SSL/TLS'}</span>
+                </label>
+              </div>
+            </div>
+
+            {!!c.ssl && (
+              <div className="qt-lst-note">
+                Web 端暂不上传证书文件；留空将由服务端自动生成/使用默认证书（对齐 AXS optional cert/key）。
+              </div>
+            )}
+
+            <div className="qt-lst-field">
+              <span>{t('回连地址')}（Callback Addresses）</span>
+              <EditableList
+                compact
+                value={cbArr}
+                onChange={(v) => setCfg('callback_addresses', v)}
+                placeholder="host:port，例如 203.0.113.10:443"
+              />
+              <ServerAddrHint
+                port={Number(c.port_bind) || 443}
+                current={cbArr}
+                onPick={(addr) => {
+                  if (!cbArr.includes(addr)) setCfg('callback_addresses', [...cbArr, addr])
+                }}
+              />
+            </div>
+          </section>
+
+          {tpls.length > 0 && (
+            <section className="qt-lst-card">
+              <div className="qt-lst-card-hd">
+                <b>{t('流量模板')}</b>
+                <button type="button" className="qt-lst-link-btn" onClick={() => setTab('error')}>
+                  预览诱饵页 →
+                </button>
+              </div>
+              <div className="qt-lst-tpl-grid traffic-tpls">
+                {tpls.map((tpl) => (
                   <button
                     key={tpl.id}
                     type="button"
-                    className={tplId === tpl.id ? 'primary' : ''}
+                    className={`qt-lst-tpl-btn ${tplId === tpl.id ? 'active' : ''}`}
                     title={tpl.hint}
                     onClick={() => applyTpl(tpl.id)}
                   >
-                    {tpl.label}
+                    <span className="qt-lst-tpl-dot" />
+                    <span>{tpl.label}</span>
                   </button>
                 ))}
               </div>
-              <div className="field-hint">
-                {templatesFor(ltype).find((x) => x.id === tplId)?.hint || ''}
-                {' · '}覆盖 方法/URI/UA/心跳头/请求头/响应头/诱饵页 八个键，其余字段不动；
-                套用后手动改字段不会取消选中
+              <div className="qt-lst-note muted">
+                {activeTpl?.hint ? <><b>{activeTpl.label}：</b>{activeTpl.hint} · </> : ''}
+                一键覆盖 方法 / URI / UA / 心跳头 / HTTP 头 / 诱饵页，保留回连地址与加密密钥不变。
+              </div>
+            </section>
+          )}
+
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd">
+              <b>协议特征与加密</b>
+              <span>{uriArr.length} URI · {uaArr.length} UA</span>
+            </div>
+
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('心跳头')}</span>
+                <input className="mono" value={c.hb_header || ''} onChange={(e) => setCfg('hb_header', e.target.value)} />
+              </label>
+
+              <div className="qt-lst-field">
+                <span>{t('加密密钥')}</span>
+                <div className="qt-lst-inline">
+                  <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                  <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>
+                    {t('生成')}
+                  </button>
+                </div>
               </div>
             </div>
-          )}
-          <div className="field"><label>{t('请求方法')}</label>
-            {/* BeaconHTTPS 只给 POST，对齐它自己的 ax_config.axs:24 `addItems(["POST"])`。
-                注意这个键在 https_emu 里是**惰性**的：pl_transport.go:185-186 无条件把
-                POST 和 GET 都注册（GET 是给探针回同一张诱饵页），而 `Config.HttpMethod`
-                全文件只在 pl_main.go:157 被赋值、**没有任何读者**。放两个选项会让操作员
-                以为改它有用 —— 而 linux agent 在 https 仿真模式下永远发 POST。 */}
-            <select value={c.http_method || (ltype === 'BeaconWS' ? 'GET' : 'POST')} onChange={(e) => setCfg('http_method', e.target.value)}
-              disabled={ltype === 'BeaconWS' || ltype === 'BeaconHTTPS'}>
-              {ltype === 'BeaconWS' ? <option>GET</option>
-                : ltype === 'BeaconHTTPS' ? <option>POST</option>
-                : (<><option>POST</option><option>GET</option></>)}
-            </select>
-          </div>
-          <div className="field field-top"><label>{t('URI 路径')}</label>
-            <EditableList
-              value={Array.isArray(c.uri) ? c.uri : linesToArr(String(c.uri || ''))}
-              onChange={(v) => setCfg('uri', v)}
-              placeholder="/path"
-            />
-          </div>
-          <div className="field field-top"><label>User-Agent</label>
-            <EditableList
-              value={Array.isArray(c.user_agent) ? c.user_agent : linesToArr(String(c.user_agent || ''))}
-              onChange={(v) => setCfg('user_agent', v)}
-              placeholder="Mozilla/5.0 ..."
-            />
-          </div>
-          <div className="field"><label>{t('心跳头')}</label>
-            <input value={c.hb_header || ''} onChange={(e) => setCfg('hb_header', e.target.value)} />
-          </div>
-          <div className="field"><label>{t('加密密钥')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+
+            <div className="qt-lst-grid-2">
+              <div className="qt-lst-field">
+                <span>{t('URI 路径')}</span>
+                <EditableList
+                  compact
+                  value={uriArr}
+                  onChange={(v) => setCfg('uri', v)}
+                  placeholder="/api/v1/status"
+                />
+              </div>
+
+              <div className="qt-lst-field">
+                <span>User-Agent</span>
+                <EditableList
+                  compact
+                  value={uaArr}
+                  onChange={(v) => setCfg('user_agent', v)}
+                  placeholder="Mozilla/5.0 ..."
+                />
+              </div>
             </div>
-          </div>
-          <div className="field field-top"><label>{t('使用 SSL (HTTPS)')}</label>
-            <div className="ssl-box">
-              <label className="check-inline" style={{ color: 'var(--text)' }}>
-                <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 启用 SSL/TLS
-              </label>
-              {!!c.ssl && (
-                <div className="dim" style={{ fontSize: 11.5, marginTop: 6 }}>
-                  Web 端暂不上传证书文件；留空将由服务端按配置自动生成/使用默认证书（对齐 AXS optional cert/key）。
-                </div>
-              )}
-            </div>
-          </div>
-        </>
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'BeaconTCP') {
       return (
-        <>
-          <div className="field"><label>{t('绑定端口')}</label>
-            <input type="number" value={c.port_bind || 9000} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
-          </div>
-          <div className="field"><label>{t('前置数据')}</label>
-            <input className="mono" value={c.prepend_data || ''} onChange={(e) => setCfg('prepend_data', e.target.value)} />
-          </div>
-          <div className="field"><label>{t('加密密钥')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>Beacon TCP Bind 配置</b><span className="mono">bind_tcp</span></div>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('绑定端口')}</span>
+                <input type="number" className="mono" value={c.port_bind || 9000} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('前置数据')}</span>
+                <input className="mono" value={c.prepend_data || ''} onChange={(e) => setCfg('prepend_data', e.target.value)} />
+              </label>
             </div>
-          </div>
-        </>
+            <div className="qt-lst-field">
+              <span>{t('加密密钥')}</span>
+              <div className="qt-lst-inline">
+                <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+              </div>
+            </div>
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'BeaconSMB') {
       return (
-        <>
-          <div className="field"><label>{t('管道名 (C2)')}</label>
-            <input value={c.pipename || ''} onChange={(e) => setCfg('pipename', e.target.value)} placeholder="mypipe" />
-          </div>
-          <div className="field"><label>{t('加密密钥')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>SMB Named Pipe 配置</b><span className="mono">bind_smb</span></div>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('管道名 (C2)')}</span>
+                <input className="mono" value={c.pipename || ''} onChange={(e) => setCfg('pipename', e.target.value)} placeholder="mypipe" />
+              </label>
+              <div className="qt-lst-field">
+                <span>{t('加密密钥')}</span>
+                <div className="qt-lst-inline">
+                  <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                  <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+                </div>
+              </div>
             </div>
-          </div>
-        </>
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'BeaconDNS') {
       return (
-        <>
-          <div className="field"><label>{t('绑定地址与端口')}</label>
-            <div className="field-inline">
-              <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
-              <input type="number" style={{ width: 110 }} value={c.port_bind || 53}
-                onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
-            </div>
-          </div>
-          <div className="field"><label>{t('权威域名')}</label>
-            <input value={c.domain || ''} onChange={(e) => setCfg('domain', e.target.value)} placeholder="ns1.c2.com,ns2.backup.com" />
-          </div>
-          <div className="field"><label>{t('最大载荷（字节）')}</label>
-            <input type="number" value={c.pkt_size || 4096} onChange={(e) => setCfg('pkt_size', Number(e.target.value))} />
-          </div>
-          <div className="field"><label>DNS TTL（秒）</label>
-            <input type="number" value={c.ttl || 5} onChange={(e) => setCfg('ttl', Number(e.target.value))} />
-          </div>
-          <div className="field"><label>{t('加密密钥')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
-            </div>
-          </div>
-          <div className="field"><label>{t('突发模式')}</label>
-            <label className="check-inline" style={{ color: 'var(--text)' }}>
-              <input type="checkbox" checked={!!c.burst_enabled} onChange={(e) => setCfg('burst_enabled', e.target.checked)} /> 启用突发模式
-            </label>
-          </div>
-          {!!c.burst_enabled && (
-            <>
-              <div className="field"><label>{t('突发间隔（毫秒）')}</label>
-                <input type="number" value={c.burst_sleep ?? 50} onChange={(e) => setCfg('burst_sleep', Number(e.target.value))} />
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>DNS 隧道监听参数</b><span className="mono">dns</span></div>
+            <div className="qt-lst-grid-2">
+              <div className="qt-lst-field">
+                <span>{t('绑定地址与端口')}</span>
+                <div className="qt-lst-inline">
+                  <input className="mono" value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
+                  <input type="number" className="mono" style={{ maxWidth: 100 }} value={c.port_bind || 53}
+                    onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+                </div>
               </div>
-              <div className="field"><label>{t('突发抖动（%）')}</label>
-                <input type="number" value={c.burst_jitter ?? 0} onChange={(e) => setCfg('burst_jitter', Number(e.target.value))} />
+              <label className="qt-lst-field">
+                <span>{t('权威域名')}</span>
+                <input className="mono" value={c.domain || ''} onChange={(e) => setCfg('domain', e.target.value)} placeholder="ns1.c2.com,ns2.backup.com" />
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('最大载荷（字节）')}</span>
+                <input type="number" className="mono" value={c.pkt_size || 4096} onChange={(e) => setCfg('pkt_size', Number(e.target.value))} />
+              </label>
+              <label className="qt-lst-field">
+                <span>DNS TTL（秒）</span>
+                <input type="number" className="mono" value={c.ttl || 5} onChange={(e) => setCfg('ttl', Number(e.target.value))} />
+              </label>
+            </div>
+            <div className="qt-lst-field">
+              <span>{t('加密密钥')}</span>
+              <div className="qt-lst-inline">
+                <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
               </div>
-            </>
-          )}
-        </>
+            </div>
+            <div className="qt-lst-field">
+              <span>{t('突发模式')}</span>
+              <label className="qt-lst-chk">
+                <input type="checkbox" checked={!!c.burst_enabled} onChange={(e) => setCfg('burst_enabled', e.target.checked)} />
+                <span>启用突发模式</span>
+              </label>
+            </div>
+            {!!c.burst_enabled && (
+              <div className="qt-lst-grid-2">
+                <label className="qt-lst-field">
+                  <span>{t('突发间隔（毫秒）')}</span>
+                  <input type="number" className="mono" value={c.burst_sleep ?? 50} onChange={(e) => setCfg('burst_sleep', Number(e.target.value))} />
+                </label>
+                <label className="qt-lst-field">
+                  <span>{t('突发抖动（%）')}</span>
+                  <input type="number" className="mono" value={c.burst_jitter ?? 0} onChange={(e) => setCfg('burst_jitter', Number(e.target.value))} />
+                </label>
+              </div>
+            )}
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'LinuxTCP') {
-      // linux_listener_tcp: Bind port + Encryption key + optional reverse-pivot callback list.
-      // callback_addresses 留空 => 原行为（生成的 agent 监听端口，需要入站可达）。
-      // 填了 => 反向 pivot：生成的 agent 主动 dial 这些地址、自身零监听，只要出站可达。
-      // 消费方：linux_agent/pl_main.go 的 "bind_tcp" 分支（Addresses = bindAddrs）。
       const revAddrs = arrToLines(c.callback_addresses)
       return (
-        <>
-          <div className="field"><label>{t('绑定端口')}</label>
-            <input type="number" value={c.port_bind || 4444} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
-          </div>
-          <div className="field"><label>{t('加密密钥')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>Linux TCP 配置（正向 Bind / 反向 Pivot）</b><span className="mono">bind_tcp</span></div>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('绑定端口')}</span>
+                <input type="number" className="mono" value={c.port_bind || 4444} onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+              </label>
+              <div className="qt-lst-field">
+                <span>{t('加密密钥')}</span>
+                <div className="qt-lst-inline">
+                  <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                  <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="field field-top"><label>{t('回连地址（反向 pivot）')}</label>
-            <textarea rows={3} value={revAddrs}
-              onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
-              placeholder={'留空 = 正向（agent 监听端口）\n填入 = 反向（agent 主动拨号）\n例：10.0.0.5:4444'} />
-          </div>
-          {revAddrs.trim() !== ''
-            ? <div className="hint muted-hint">{t('反向 pivot：生成的子 agent')} <b>{t('主动 dial')}</b> {t('上述地址，自身')}<b>{t('不监听任何端口')}</b>，只要求出站可达。父 agent 需先执行 <span className="mono">listen &lt;绑定端口&gt;</span>。</div>
-            : <div className="hint muted-hint">正向：生成的 agent 监听 <span className="mono">{c.port_bind || 4444}</span>{t('，要求目标可入站。填「回连地址」即切换为反向 pivot。')}</div>}
-        </>
+            <label className="qt-lst-field">
+              <span>{t('回连地址（反向 pivot）')}</span>
+              <textarea
+                rows={4}
+                className="mono"
+                value={revAddrs}
+                onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
+                placeholder={'留空 = 正向（agent 监听端口）\n填入 = 反向（agent 主动拨号）\n例：10.0.0.5:4444'}
+              />
+            </label>
+            <div className="qt-lst-note muted">
+              {revAddrs.trim() !== ''
+                ? <>{t('反向 pivot：生成的子 agent')} <b>{t('主动 dial')}</b> {t('上述地址，自身')}<b>{t('不监听任何端口')}</b>，只要求出站可达。父 agent 需先执行 <span className="mono">listen &lt;绑定端口&gt;</span>。</>
+                : <>正向：生成的 agent 监听 <span className="mono">{c.port_bind || 4444}</span>{t('，要求目标可入站。填「回连地址」即切换为反向 pivot。')}</>}
+            </div>
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'GopherTCP') {
       const proto = String(c.protocol || 'tcp')
       const isL2p = proto === 'libp2p'
-      // 派生显示：l2p_relays + 本 listener 的 peer id ⇒ agent 实际拨的 circuit 地址。
-      // 与后端 axFillLibp2pRelayAddrs 同规则（显式 l2p_addrs 优先，否则由 relays 派生）。
-      // 派生函数与后端 axLibp2pCircuitAddrs 同实现（src/lib/gopherListener.ts，被契约测试覆盖）。
       const selfId = String(editAgentAddr || '').split('/p2p/')[1] || ''
       const derived = isL2p && !String(c.l2p_addrs || '').trim()
         ? deriveCircuitAddrs(c.l2p_relays, selfId || '<本 listener PeerID（创建后由服务端按私钥生成）>')
         : []
       return (
-        <>
-          <div className="field field-top"><label>{t('传输协议')}</label>
-            <select value={proto} onChange={(e) => setGopherProtocol(e.target.value)}>
-              <option value="tcp">{t('tcp — 直连，agent 拨回连地址')}</option>
-              <option value="libp2p">{t('libp2p — circuit 中继，C2 真实 IP 不进载荷')}</option>
-            </select>
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>Gopher 传输与绑定</b><span className="mono">{proto}</span></div>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('传输协议')}</span>
+                <select value={proto} onChange={(e) => setGopherProtocol(e.target.value)}>
+                  <option value="tcp">{t('tcp — 直连，agent 拨回连地址')}</option>
+                  <option value="libp2p">{t('libp2p — circuit 中继，C2 真实 IP 不进载荷')}</option>
+                </select>
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('握手超时（秒）· tcp / libp2p 共用')}</span>
+                <input type="number" min={1} className="mono" value={c.timeout ?? 10} onChange={(e) => setCfg('timeout', Number(e.target.value))} />
+              </label>
+            </div>
             {protoNote && (
-              <div className="hint muted-hint">
+              <div className="qt-lst-note">
                 {protoNote.converted.length > 0 && (
                   <>已按新协议改写 {protoNote.converted.length} 条回连地址：{protoNote.converted.map((d, i) => <div key={i} className="mono">{d}</div>)}</>
                 )}
                 {protoNote.kept.length > 0 && (
-                  <>★ 以下 {protoNote.kept.length} 条<b>{t('无法无损转换')}</b>，已原样保留（未丢值）——形状与当前协议不符，提交会被服务端拒绝，请手工改写：{protoNote.kept.map((d, i) => <div key={i} className="mono">{d}</div>)}</>
+                  <>★ 以下 {protoNote.kept.length} 条<b>{t('无法无损转换')}</b>，已原样保留，请手工改写：{protoNote.kept.map((d, i) => <div key={i} className="mono">{d}</div>)}</>
                 )}
               </div>
             )}
-          </div>
-          <div className="field"><label>{isL2p ? t('绑定地址（libp2p 监听）与端口') : t('绑定地址与端口')}</label>
-            <div className="field-inline">
-              <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
-              <input type="number" style={{ width: 110 }} value={c.port_bind || 4444}
-                onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+            <div className="qt-lst-field">
+              <span>{isL2p ? t('绑定地址（libp2p 监听）与端口') : t('绑定地址与端口')}</span>
+              <div className="qt-lst-inline">
+                <input className="mono" value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
+                <input type="number" className="mono" style={{ maxWidth: 110 }} value={c.port_bind || 4444}
+                  onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+              </div>
+              {isL2p && <div className="qt-lst-note muted">{t('libp2p 的')} <span className="mono">port_bind</span> 留 0 ⇒ 服务端从下面的 multiaddr 里推。</div>}
             </div>
-            {isL2p && <div className="hint muted-hint">{t('libp2p 的')} <span className="mono">port_bind</span> 留 0 ⇒ 服务端从下面的 multiaddr 里推；推不出来会建 listener 失败（不会静默绑随机端口）。</div>}
-          </div>
-          <div className="field field-top"><label>{isL2p ? t('回连地址（multiaddr）') : t('回连地址')}</label>
-            <textarea rows={3} value={arrToLines(c.callback_addresses)}
-              onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
-              placeholder={isL2p
-                ? '/ip4/1.2.3.4/tcp/39017\n可缺 /p2p/<本 listener PeerID>：服务端按私钥自动补'
-                : '192.168.1.1:4444\nserver2.com:5555'} />
-            {isL2p
-              ? <div className="hint muted-hint">{t('libp2p 模式下这里是')} <b>multiaddr</b>{t('（非 host:port）。若手写 /p2p/&lt;peerID&gt;，必须与下面私钥一致，否则建 listener 直接报错。')}</div>
-              : <ServerAddrHint />}
-          </div>
-          <div className="field"><label>{t('握手超时（秒）· tcp / libp2p 共用')}</label>
-            <input type="number" min={1} value={c.timeout ?? 10} onChange={(e) => setCfg('timeout', Number(e.target.value))} />
-            <div className="hint muted-hint">{t('两种传输都消费，且服务端要求 ≥1（该校验位于 libp2p 分支短路')}<b>{t('之前')}</b>）。</div>
-          </div>
-          {isL2p && (
-            <>
-              <div className="field"><label>{t('libp2p 协议 ID')}</label>
-                <input className="mono" value={c.l2p_protocol || ''} onChange={(e) => setCfg('l2p_protocol', e.target.value)}
-                  placeholder="/gopher/1.0.0" />
-              </div>
-              <div className="field field-top"><label>{t('libp2p relays（隐藏 C2）')}</label>
-                <textarea rows={3} value={String(c.l2p_relays || '')}
-                  onChange={(e) => setCfg('l2p_relays', e.target.value)}
-                  placeholder={'/ip4/<relay 公网IP>/tcp/4446/p2p/<relayPeerID>\n一行一条；填了它 ⇒ agent 只拨 circuit 地址，C2 真实 IP:端口不进载荷'} />
-                <div className="hint muted-hint">{t('每条必须带')} <span className="mono">/p2p/&lt;relayPeerID&gt;</span>{t('（预约的路由键），且')}<b>{t('不能')}</b>{t('含')} <span className="mono">/p2p-circuit</span>（由 listener 自己补）。relay 起在 <span className="mono">extenders/gopher_listener_tcp/relaynode</span>。</div>
-              </div>
-              <div className="field field-top"><label>{t('libp2p addrs（agent 拨号地址）')}</label>
-                <textarea rows={2} value={String(c.l2p_addrs || '')}
-                  onChange={(e) => setCfg('l2p_addrs', e.target.value)}
-                  placeholder={'留空 ⇒ 由 relays 自动派生（推荐）\n填了 ⇒ 覆盖回连地址（高级：自建 circuit / 多跳）'} />
-                {derived.length > 0 && (
-                  <div className="hint muted-hint">本次将下发给 agent 的拨号地址：{derived.map((d, i) => <div key={i} className="mono">{d}</div>)}</div>
+            <div className="qt-lst-field">
+              <span>{isL2p ? t('回连地址（multiaddr）') : t('回连地址')}</span>
+              <textarea
+                rows={3}
+                className="mono"
+                value={arrToLines(c.callback_addresses)}
+                onChange={(e) => setCfg('callback_addresses', linesToArr(e.target.value))}
+                placeholder={isL2p
+                  ? '/ip4/1.2.3.4/tcp/39017\n可缺 /p2p/<本 listener PeerID>：服务端按私钥自动补'
+                  : '192.168.1.1:4444\nserver2.com:5555'}
+              />
+              {isL2p
+                ? <div className="qt-lst-note muted">{t('libp2p 模式下这里是')} <b>multiaddr</b>{t('（非 host:port）。若手写 /p2p/<peerID>，必须与下面私钥一致。')}</div>
+                : (
+                  <ServerAddrHint
+                    port={Number(c.port_bind) || 4444}
+                    current={splitLines(c.callback_addresses)}
+                    onPick={(addr) => {
+                      const prev = splitLines(c.callback_addresses)
+                      if (!prev.includes(addr)) setCfg('callback_addresses', [...prev, addr])
+                    }}
+                  />
                 )}
-              </div>
-              <div className="field"><label>{t('libp2p 拨号超时（秒）· 0 = 用库默认')}</label>
-                <input type="number" value={c.l2p_dial_timeout ?? 0} onChange={(e) => setCfg('l2p_dial_timeout', Number(e.target.value))} />
-                <div className="hint muted-hint">{t('与上面的「握手超时」是两回事：这个是 agent')} <b>{t('拨 relay')}</b> {t('的连接超时。')}</div>
-              </div>
-              <div className="field field-top"><label>{t('libp2p 私钥（b64）')}</label>
-                <input className="mono" value={c.l2p_privkey || ''} onChange={(e) => setCfg('l2p_privkey', e.target.value)}
-                  placeholder={t('留空 ⇒ 服务端新建时生成')} />
-                <div className="hint muted-hint">{t('留空 ⇒ 每次')}<b>{t('新建')}</b>{t('都换身份（PeerID 变），')}<b>已生成的 agent 全部失效</b>{t('。要agent 可复用就别清空它 —— 编辑既有 listener 时该值原样回填。')}</div>
-              </div>
-            </>
-          )}
-          {/* ★ 仅 tcp 消费的字段（GOPHER_TCP_ONLY_KEYS）。在 l2p 下渲染它们属于
-              「填了但没生效」族，其中 tcp_banner 还不止于此 —— 服务端注释（审计 C-F9）
-              写明 l2p 分支的 agent 既不设也不读 BannerSize，写出去的 banner 会被当成
-              4 字节长度头 ⇒ 帧错位。故 l2p 下整块不显示。 */}
-          {!isL2p && (
-            <div className="field field-top"><label>{t('TCP 横幅（仅 tcp）')}</label>
-              <textarea rows={2} value={c.tcp_banner || c.banner || ''} onChange={(e) => setCfg('tcp_banner', e.target.value)} />
-              {/* 措辞按**读者所在的分支**写：本条 hint 只在 tcp 下渲染，所以不能说
-                  「此处不显示」—— 那正是它此刻在做的事，读者看到的是一句自相矛盾的说明
-                  （用户实测：新建 Gopher TCP 时该字段在屏上，而它的帮助文字说它不在）。
-                  改成从 tcp 读者的位置描述「切过去会消失」，信息量不变且为真。 */}
-              <div className="hint muted-hint">{t('给扫描器看的伪装页。libp2p 下服务端不消费（硬守卫），故切到 libp2p 后本项不再显示。')}</div>
             </div>
-          )}
-          <div className="field field-top"><label>{t('错误应答 · tcp / libp2p 共用')}</label>
-            <textarea rows={2} value={c.error_answer || c.answer || 'Connection error...\n'}
-              onChange={(e) => setCfg('error_answer', e.target.value)} />
-          </div>
-          <div className="field"><label>{t('加密密钥 · tcp / libp2p 共用')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
-            </div>
-          </div>
-          {!isL2p && (
-            <>
-              <div className="field"><label>{t('mTLS（仅 tcp）')}</label>
-                <label className="check-inline" style={{ color: 'var(--text)' }}>
-                  <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 启用 mTLS
+          </section>
+
+          {isL2p && (
+            <section className="qt-lst-card">
+              <div className="qt-lst-card-hd"><b>libp2p Circuit 中继参数</b><span className="mono">libp2p</span></div>
+              <div className="qt-lst-grid-2">
+                <label className="qt-lst-field">
+                  <span>{t('libp2p 协议 ID')}</span>
+                  <input className="mono" value={c.l2p_protocol || ''} onChange={(e) => setCfg('l2p_protocol', e.target.value)} placeholder="/gopher/1.0.0" />
+                </label>
+                <label className="qt-lst-field">
+                  <span>{t('libp2p 拨号超时（秒）· 0 = 用库默认')}</span>
+                  <input type="number" className="mono" value={c.l2p_dial_timeout ?? 0} onChange={(e) => setCfg('l2p_dial_timeout', Number(e.target.value))} />
                 </label>
               </div>
-              {!!c.ssl && (
-                <div className="hint muted-hint">
-                  mTLS 证书：Web 暂不传文件内容。字段名 ca_cert / server_cert / server_key / client_cert / client_key；可用 Qt 创建或服务端预置 PEM。
+              <label className="qt-lst-field">
+                <span>{t('libp2p relays（隐藏 C2）')}</span>
+                <textarea rows={3} className="mono" value={String(c.l2p_relays || '')}
+                  onChange={(e) => setCfg('l2p_relays', e.target.value)}
+                  placeholder={'/ip4/<relay 公网IP>/tcp/4446/p2p/<relayPeerID>\n一行一条'} />
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('libp2p addrs（agent 拨号地址）')}</span>
+                <textarea rows={2} className="mono" value={String(c.l2p_addrs || '')}
+                  onChange={(e) => setCfg('l2p_addrs', e.target.value)}
+                  placeholder={'留空 ⇒ 由 relays 自动派生（推荐）\n填了 ⇒ 覆盖回连地址'} />
+                {derived.length > 0 && (
+                  <div className="qt-lst-note">本次将下发给 agent 的拨号地址：{derived.map((d, i) => <div key={i} className="mono">{d}</div>)}</div>
+                )}
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('libp2p 私钥（b64）')}</span>
+                <input className="mono" value={c.l2p_privkey || ''} onChange={(e) => setCfg('l2p_privkey', e.target.value)}
+                  placeholder={t('留空 ⇒ 服务端新建时生成')} />
+              </label>
+            </section>
+          )}
+
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>伪装、加密与安全</b><span className="mono">security</span></div>
+            {!isL2p && (
+              <label className="qt-lst-field">
+                <span>{t('TCP 横幅（仅 tcp）')}</span>
+                <textarea rows={2} className="mono" value={c.tcp_banner || c.banner || ''} onChange={(e) => setCfg('tcp_banner', e.target.value)} />
+                <div className="qt-lst-note muted">{t('给扫描器看的伪装页。libp2p 下服务端不消费，故切到 libp2p 后本项不再显示。')}</div>
+              </label>
+            )}
+            <label className="qt-lst-field">
+              <span>{t('错误应答 · tcp / libp2p 共用')}</span>
+              <textarea rows={2} className="mono" value={c.error_answer || c.answer || 'Connection error...\n'}
+                onChange={(e) => setCfg('error_answer', e.target.value)} />
+            </label>
+            <div className="qt-lst-grid-2">
+              <div className="qt-lst-field">
+                <span>{t('加密密钥 · tcp / libp2p 共用')}</span>
+                <div className="qt-lst-inline">
+                  <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                  <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey())}>{t('生成')}</button>
+                </div>
+              </div>
+              {!isL2p && (
+                <div className="qt-lst-field">
+                  <span>{t('mTLS（仅 tcp）')}</span>
+                  <label className="qt-lst-chk">
+                    <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} />
+                    <span>启用 mTLS</span>
+                  </label>
                 </div>
               )}
-            </>
-          )}
-        </>
+            </div>
+            {!isL2p && !!c.ssl && (
+              <div className="qt-lst-note muted">
+                mTLS 证书字段名 ca_cert / server_cert / server_key / client_cert / client_key；可用 Qt 创建或服务端预置 PEM。
+              </div>
+            )}
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'BeaconDiscord') {
       return (
-        <>
-          <div className="field"><label>机器人 Token</label>
-            <input className="mono" value={c.bot_token || ''} onChange={(e) => setCfg('bot_token', e.target.value)}
-              placeholder={t('Discord bot token（仅服务端）')} />
-          </div>
-          <div className="field"><label>{t('Beacon 频道 ID')}</label>
-            <input className="mono" value={c.channel_beacon || ''} onChange={(e) => setCfg('channel_beacon', e.target.value)}
-              placeholder={t('beacon → server 消息频道')} />
-          </div>
-          <div className="field"><label>{t('Tasks 频道 ID')}</label>
-            <input className="mono" value={c.channel_tasks || ''} onChange={(e) => setCfg('channel_tasks', e.target.value)}
-              placeholder={t('server → beacon 任务频道')} />
-          </div>
-          <div className="field"><label>{t('Webhook 地址')}</label>
-            <input className="mono" value={c.webhook_url || ''} onChange={(e) => setCfg('webhook_url', e.target.value)}
-              placeholder="https://discord.com/api/webhooks/..." />
-          </div>
-          <div className="field"><label>{t('轮询间隔（秒）')}</label>
-            <input type="number" min={1} value={c.poll_interval ?? 5}
-              onChange={(e) => setCfg('poll_interval', Number(e.target.value))} />
-          </div>
-          <div className="field"><label>{t('清理')}</label>
-            <label className="check-inline" style={{ color: 'var(--text)' }}>
-              <input type="checkbox" checked={!!c.cleanup} onChange={(e) => setCfg('cleanup', e.target.checked)} />
-              读取后删除消息
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>Discord C2 通道凭证</b><span className="mono">discord</span></div>
+            <label className="qt-lst-field">
+              <span>机器人 Token</span>
+              <input className="mono" value={c.bot_token || ''} onChange={(e) => setCfg('bot_token', e.target.value)}
+                placeholder={t('Discord bot token（仅服务端）')} />
             </label>
-          </div>
-          <div className="field"><label>{t('加密密钥')}</label>
-            <div className="field-inline">
-              <input className="mono" style={{ flex: 1 }} value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
-              <button type="button" onClick={() => setCfg('encrypt_key', randomEncryptKey() + randomEncryptKey())}>{t('生成')}</button>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('Beacon 频道 ID')}</span>
+                <input className="mono" value={c.channel_beacon || ''} onChange={(e) => setCfg('channel_beacon', e.target.value)}
+                  placeholder={t('beacon → server 消息频道')} />
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('Tasks 频道 ID')}</span>
+                <input className="mono" value={c.channel_tasks || ''} onChange={(e) => setCfg('channel_tasks', e.target.value)}
+                  placeholder={t('server → beacon 任务频道')} />
+              </label>
             </div>
-          </div>
-          <div className="hint muted-hint">{t('对齐 AXS：Discord C2 通道。Token/频道 ID 勿提交到公开仓库。')}</div>
-        </>
+            <label className="qt-lst-field">
+              <span>{t('Webhook 地址')}</span>
+              <input className="mono" value={c.webhook_url || ''} onChange={(e) => setCfg('webhook_url', e.target.value)}
+                placeholder="https://discord.com/api/webhooks/..." />
+            </label>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('轮询间隔（秒）')}</span>
+                <input type="number" min={1} className="mono" value={c.poll_interval ?? 5}
+                  onChange={(e) => setCfg('poll_interval', Number(e.target.value))} />
+              </label>
+              <div className="qt-lst-field">
+                <span>{t('清理')}</span>
+                <label className="qt-lst-chk">
+                  <input type="checkbox" checked={!!c.cleanup} onChange={(e) => setCfg('cleanup', e.target.checked)} />
+                  <span>读取后删除消息</span>
+                </label>
+              </div>
+            </div>
+            <div className="qt-lst-field">
+              <span>{t('加密密钥')}</span>
+              <div className="qt-lst-inline">
+                <input className="mono" value={c.encrypt_key || ''} onChange={(e) => setCfg('encrypt_key', e.target.value)} />
+                <button type="button" className="qt-lst-inline-btn" onClick={() => setCfg('encrypt_key', randomEncryptKey() + randomEncryptKey())}>{t('生成')}</button>
+              </div>
+            </div>
+          </section>
+        </div>
       )
     }
 
     if (ltype === 'KharonHTTP') {
       return (
-        <>
-          <div className="field"><label>{t('绑定地址与端口')}</label>
-            <div className="field-inline">
-              <input style={{ flex: 1 }} value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
-              <input type="number" style={{ width: 110 }} value={c.port_bind || 443}
-                onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+        <div className="qt-lst-stack">
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>Kharon HTTP 基础与安全</b><span className="mono">kharon</span></div>
+            <div className="qt-lst-grid-2">
+              <div className="qt-lst-field">
+                <span>{t('绑定地址与端口')}</span>
+                <div className="qt-lst-inline">
+                  <input className="mono" value={c.host_bind || '0.0.0.0'} onChange={(e) => setCfg('host_bind', e.target.value)} />
+                  <input type="number" className="mono" style={{ maxWidth: 100 }} value={c.port_bind || 443}
+                    onChange={(e) => setCfg('port_bind', Number(e.target.value))} />
+                </div>
+              </div>
+              <label className="qt-lst-field">
+                <span>{t('域名轮换')}</span>
+                <select value={c.domain_rotation_strategy || 'Random'}
+                  onChange={(e) => setCfg('domain_rotation_strategy', e.target.value)}>
+                  <option>Random</option>
+                  <option>Round Robin</option>
+                  <option>Failover</option>
+                </select>
+              </label>
             </div>
-          </div>
-          <div className="field"><label>{t('可信 Host 头')}</label>
-            <label className="check-inline" style={{ color: 'var(--text)' }}>
-              <input type="checkbox" checked={!!c.trust_x_forwarded_host}
-                onChange={(e) => setCfg('trust_x_forwarded_host', e.target.checked)} />
-              信任 X-Forwarded-Host
-            </label>
-          </div>
-          <div className="field field-top"><label>{t('附加可信 Host')}</label>
-            <textarea rows={3} value={c.additional_trusted_hosts || ''}
-              onChange={(e) => setCfg('additional_trusted_hosts', e.target.value)}
-              placeholder={'domain1.com\ndomain2.com'} />
-          </div>
-          <div className="field field-top"><label>{t('拦截 User-Agent')}</label>
-            <textarea rows={3} value={c.block_user_agents || ''}
-              onChange={(e) => setCfg('block_user_agents', e.target.value)}
-              placeholder={'curl*\nwget*'} />
-          </div>
-          <div className="field"><label>{t('域名轮换')}</label>
-            <select value={c.domain_rotation_strategy || 'Random'}
-              onChange={(e) => setCfg('domain_rotation_strategy', e.target.value)}>
-              <option>Random</option>
-              <option>Round Robin</option>
-              <option>Failover</option>
-            </select>
-          </div>
-          <div className="field field-top"><label>{t('Profile 文件')}</label>
-            <div className="field-inline">
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-field">
+                <span>{t('附加可信 Host')}</span>
+                <textarea rows={3} className="mono" value={c.additional_trusted_hosts || ''}
+                  onChange={(e) => setCfg('additional_trusted_hosts', e.target.value)}
+                  placeholder={'domain1.com\ndomain2.com'} />
+              </label>
+              <label className="qt-lst-field">
+                <span>{t('拦截 User-Agent')}</span>
+                <textarea rows={3} className="mono" value={c.block_user_agents || ''}
+                  onChange={(e) => setCfg('block_user_agents', e.target.value)}
+                  placeholder={'curl*\nwget*'} />
+              </label>
+            </div>
+            <div className="qt-lst-grid-2">
+              <label className="qt-lst-chk">
+                <input type="checkbox" checked={!!c.trust_x_forwarded_host}
+                  onChange={(e) => setCfg('trust_x_forwarded_host', e.target.checked)} />
+                <span>信任 X-Forwarded-Host</span>
+              </label>
+              <label className="qt-lst-chk">
+                <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} />
+                <span>启用 SSL/TLS</span>
+              </label>
+            </div>
+          </section>
+
+          <section className="qt-lst-card">
+            <div className="qt-lst-card-hd"><b>{t('Profile 文件')}（必填）</b><span className="mono">JSON / b64</span></div>
+            <div className="qt-lst-inline">
               <input type="file" accept=".json,.js,.txt,application/json"
                 onChange={async (e) => {
                   const f = e.target.files?.[0]
@@ -710,97 +930,99 @@ export function Listeners() {
                     setProfileErr(`读取 ${f.name} 失败：${err?.message || err}`)
                   }
                 }} />
-              {profileName && <span className="dim mono" style={{ fontSize: 12 }}>{profileName}</span>}
+              {profileName && <span className="mono" style={{ fontSize: 11 }}>{profileName}</span>}
               {!!c.uploaded_file && (
-                <button type="button" className="btn btn-sm"
+                <button type="button" className="qt-lst-inline-btn"
                   onClick={() => { setCfg('uploaded_file', ''); setProfileName('') }}>{t('清除')}</button>
               )}
             </div>
             <textarea rows={3} className="mono" value={c.uploaded_file || ''}
               onChange={(e) => { setCfg('uploaded_file', e.target.value); setProfileName('') }}
               placeholder={t('或直接粘贴 profile JSON / base64')} />
-            <div className="field-hint">
+            <div className="qt-lst-note muted">
               {c.uploaded_file
-                ? <>当前值 {String(c.uploaded_file).length} 字符（
-                    {String(c.uploaded_file).trim().startsWith('{') ? t('原始 JSON')
-                      : String(c.uploaded_file).trim().startsWith('/') ? '服务端路径 —— 该文件必须真实存在且可读'
-                      : 'base64'}）。</>
+                ? <>当前值 {String(c.uploaded_file).length} 字符。</>
                 : <>{t('必填：KharonHTTP 没有内置默认 profile，留空监听器起不来。')}</>}
             </div>
-            {profileErr && <div className="field-hint" style={{ color: 'var(--err)' }}>{profileErr}</div>}
-          </div>
+            {profileErr && <div className="qt-lst-note warn">{profileErr}</div>}
 
-          <div className="field field-top"><label>{t('代理设置')}</label>
-            <div className="ssl-box">
-              <label className="check-inline" style={{ color: 'var(--text)' }}>
+            <div className="qt-lst-field">
+              <label className="qt-lst-chk">
                 <input type="checkbox" checked={!!c.proxy_enabled}
-                  onChange={(e) => setCfg('proxy_enabled', e.target.checked)} /> 启用代理
+                  onChange={(e) => setCfg('proxy_enabled', e.target.checked)} />
+                <span>启用代理（{t('代理设置')}）</span>
               </label>
               {!!c.proxy_enabled && (
-                <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                  <input value={c.proxy_url || ''} onChange={(e) => setCfg('proxy_url', e.target.value)}
+                <div className="qt-lst-stack" style={{ marginTop: 6 }}>
+                  <input className="mono" value={c.proxy_url || ''} onChange={(e) => setCfg('proxy_url', e.target.value)}
                     placeholder="http://127.0.0.1:8080" />
-                  <div className="field-inline">
-                    <input style={{ flex: 1 }} value={c.proxy_user || ''} onChange={(e) => setCfg('proxy_user', e.target.value)}
-                      placeholder={t('用户名')} />
-                    <input style={{ flex: 1 }} type="password" value={c.proxy_pass || ''} onChange={(e) => setCfg('proxy_pass', e.target.value)}
-                      placeholder={t('密码')} />
+                  <div className="qt-lst-grid-2">
+                    <input value={c.proxy_user || ''} onChange={(e) => setCfg('proxy_user', e.target.value)} placeholder={t('用户名')} />
+                    <input type="password" value={c.proxy_pass || ''} onChange={(e) => setCfg('proxy_pass', e.target.value)} placeholder={t('密码')} />
                   </div>
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="field field-top"><label>{t('使用 SSL (HTTPS)')}</label>
-            <div className="ssl-box">
-              <label className="check-inline" style={{ color: 'var(--text)' }}>
-                <input type="checkbox" checked={!!c.ssl} onChange={(e) => setCfg('ssl', e.target.checked)} /> 启用 SSL/TLS
-              </label>
-              {!!c.ssl && (
-                <div className="dim" style={{ fontSize: 11.5, marginTop: 6 }}>
-                  证书/密钥文件选择在 Web 端未实现；留空由服务端处理，或在服务器放置 PEM。
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="hint muted-hint">{t('对齐')} <code>listener_kharon_http</code> {t('ListenerUI（字段不同于 BeaconHTTP）。')}</div>
-        </>
+          </section>
+        </div>
       )
     }
 
     return (
-      <div className="hint warn-hint">未实现的监听类型：{ltype}。请用 Qt 客户端创建，或补充 Web 表单。</div>
+      <div className="qt-lst-note warn">未实现的监听类型：{ltype}。请用 Qt 客户端创建，或补充 Web 表单。</div>
     )
   }
 
   function renderHeaders() {
     const c = form.config
+    const hostArr = Array.isArray(c.host_header) ? c.host_header : linesToArr(String(c.host_header || ''))
     return (
-      <>
-        <div className="field"><label>X-Forwarded-For</label>
-          <label className="check-inline" style={{ color: 'var(--text)' }}>
-            <input type="checkbox" checked={!!c['x-forwarded-for']} onChange={(e) => setCfg('x-forwarded-for', e.target.checked)} />
-            信任 X-Forwarded-For
-          </label>
-        </div>
-        <div className="field field-top"><label>{t('Host 头')}</label>
-          <EditableList
-            value={Array.isArray(c.host_header) ? c.host_header : linesToArr(String(c.host_header || ''))}
-            onChange={(v) => setCfg('host_header', v)}
-            placeholder="host.example.com"
-          />
-        </div>
-        <div className="field field-top"><label>{t('请求头')}</label>
-          <textarea rows={5} value={c.request_headers || ''}
-            onChange={(e) => setCfg('request_headers', e.target.value)}
-            placeholder={'每行一个，需精确匹配：\nX-Custom: value'} />
-        </div>
-        <div className="field field-top"><label>{t('响应头')}</label>
-          <textarea rows={4} value={c.server_headers || ''}
-            onChange={(e) => setCfg('server_headers', e.target.value)}
-            placeholder="Server: nginx" />
-        </div>
-      </>
+      <div className="qt-lst-stack">
+        <section className="qt-lst-card">
+          <div className="qt-lst-card-hd">
+            <b>代理转发与 Host 白名单</b>
+            <label className="qt-lst-chk">
+              <input type="checkbox" checked={!!c['x-forwarded-for']} onChange={(e) => setCfg('x-forwarded-for', e.target.checked)} />
+              <span>信任 X-Forwarded-For</span>
+            </label>
+          </div>
+          <div className="qt-lst-field">
+            <span>{t('Host 头')}</span>
+            <EditableList
+              compact
+              value={hostArr}
+              onChange={(v) => setCfg('host_header', v)}
+              placeholder="cdn.example.com"
+            />
+          </div>
+        </section>
+
+        <section className="qt-lst-card">
+          <div className="qt-lst-card-hd"><b>自定义 HTTP 请求头 / 响应头</b><span>Key: Value 每行一条</span></div>
+          <div className="qt-lst-grid-2">
+            <label className="qt-lst-field">
+              <span>{t('请求头')}（Request Headers）</span>
+              <textarea
+                rows={7}
+                className="mono"
+                value={c.request_headers || ''}
+                onChange={(e) => setCfg('request_headers', e.target.value)}
+                placeholder={'每行一个，需精确匹配：\nX-Custom: value'}
+              />
+            </label>
+            <label className="qt-lst-field">
+              <span>{t('响应头')}（Server Headers）</span>
+              <textarea
+                rows={7}
+                className="mono"
+                value={c.server_headers || ''}
+                onChange={(e) => setCfg('server_headers', e.target.value)}
+                placeholder={'Server: nginx\nCache-Control: no-store'}
+              />
+            </label>
+          </div>
+        </section>
+      </div>
     )
   }
 
@@ -967,113 +1189,215 @@ export function Listeners() {
         )}
       </div>
 
-      {show && (
-        <div className="mask" onClick={() => !busy && setShow(false)}>
-          <div className="dlg listener-dlg" onClick={(e) => e.stopPropagation()}>
-            <div className="dlg-hd">
-              <div>
-                <h2>{editMode ? t('编辑监听器') : t('新建监听器')}</h2>
-                <div className="dim" style={{ fontSize: 12 }}>
-                  {typeDef ? `${typeDef.label} · ${typeDef.agentHint}` : t('选择类型')}
-                  {editMode ? ' · 名称/类型创建后不可改' : ''}
-                </div>
-              </div>
-              <button className="ghost" disabled={busy} onClick={() => setShow(false)}>{t('关闭')}</button>
-            </div>
+      {show && (() => {
+        const c = form.config
+        const cbCount = Array.isArray(c.callback_addresses)
+          ? c.callback_addresses.length
+          : linesToArr(String(c.callback_addresses || '')).length
+        const hasCustomHeaders = !!(
+          (Array.isArray(c.host_header) && c.host_header.length) ||
+          String(c.request_headers || '').trim() ||
+          String(c.server_headers || '').trim() ||
+          c['x-forwarded-for']
+        )
+        let warnReason = ''
+        if (!form.name.trim()) warnReason = '请填写监听器名称'
+        else if (isHttpLike && cbCount === 0) warnReason = '至少添加 1 条回连地址'
+        else if (form.type === 'BeaconSMB' && !String(c.pipename || '').trim()) warnReason = 'SMB 监听需要管道名'
+        else if (form.type === 'KharonHTTP' && !String(c.uploaded_file || '').trim()) warnReason = 'KharonHTTP 需要上传或粘贴 Profile'
+        else if (form.type === 'BeaconDiscord' && (!String(c.bot_token || '').trim() || !String(c.channel_beacon || '').trim() || !String(c.channel_tasks || '').trim())) {
+          warnReason = 'Discord 需要 Token 及双频道 ID'
+        }
 
-            <div className="field"><label>{t('显示名称')}</label>
-              <input
-                value={form.name}
-                disabled={editMode}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-            <div className="field field-top"><label>{t('类型')}</label>
-              <div className="listener-type-grid">
-                {LISTENER_TYPES.map((t) => (
-                  <button
-                    key={t.type}
-                    type="button"
-                    className={`listener-type ${form.type === t.type ? 'active' : ''}`}
-                    disabled={editMode}
-                    onClick={() => !editMode && setType(t.type)}
-                  >
-                    <b>{t.label}</b>
-                    <span className="sub">{t.agentHint}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {isHttpLike ? (
-              <>
-                <div className="ax-tabs">
-                  <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>{t('主要设置')}</button>
-                  <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>{t('HTTP 头')}</button>
-                  <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>{t('错误页')}</button>
-                  <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>{t('载荷页')}</button>
+        return (
+          <div className="qt-modal-mask qt-pop-mask" onClick={() => !busy && setShow(false)}>
+            <div className="qt-pop-win qt-lst-win" role="dialog" aria-modal="true" aria-label={editMode ? t('编辑监听器') : t('新建监听器')} onClick={(e) => e.stopPropagation()}>
+              <header className="qt-lst-hd">
+                <div className="qt-lst-hd-left">
+                  <span className="qt-lst-emblem"><ListenerEmblem /></span>
+                  <div className="qt-lst-hd-titles">
+                    <h2>{editMode ? t('编辑监听器') : t('新建监听器')}</h2>
+                    <span>{typeDef ? `${typeDef.label} · ${typeDef.protocol} · agent=${typeDef.agentHint}` : t('选择类型')}</span>
+                  </div>
+                  {editMode && <span className="qt-lst-lock-pill">名称与类型已锁定</span>}
                 </div>
-                <div className="ax-tab-body">
-                  {tab === 'main' && renderMain()}
-                  {tab === 'headers' && renderHeaders()}
-                  {tab === 'error' && (
-                    <div className="field field-top"><label>{t('错误页内容')}</label>
-                      {/* 左边改、右边即时渲染。★ sandbox="" 是**全封锁**：不给脚本、
-                          不给同源、不给表单 —— 这段 HTML 来自操作员粘贴的诱饵页，
-                          渲染它是为了看长相，绝不能让它有任何执行能力。 */}
-                      <div className="page-preview-wrap">
-                        <textarea rows={12} className="mono" value={form.config['page-error'] || ''}
-                          onChange={(e) => setCfg('page-error', e.target.value)} />
-                        <div className="page-preview">
-                          <div className="page-preview-k">{t('预览')}</div>
-                          <iframe
-                            title={t('错误页预览')}
-                            sandbox=""
-                            srcDoc={form.config['page-error'] || '<p style="font:13px sans-serif;color:#888;padding:12px">' + t('（空）') + '</p>'}
-                          />
-                        </div>
-                      </div>
-                      <div className="field-hint">
-                        探针 / 扫描器打到非预期路径时看到的就是这一页；套用流量模板会自动切到本标签，改完右侧即时渲染。
+                <button
+                  type="button"
+                  className="qt-gen-close-btn"
+                  title="关闭窗口 (Esc)"
+                  disabled={busy}
+                  onClick={() => setShow(false)}
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="qt-lst-body">
+                {/* Left Protocol Rail */}
+                <aside className="qt-lst-rail">
+                  {LISTENER_GROUPS.map((grp) => (
+                    <div key={grp.label} className="qt-lst-rail-grp">
+                      <div className="qt-lst-rail-lbl">{grp.label}</div>
+                      {grp.types.map((tid) => {
+                        const def = LISTENER_TYPES.find((x) => x.type === tid)
+                        if (!def) return null
+                        const active = form.type === def.type
+                        return (
+                          <button
+                            key={def.type}
+                            type="button"
+                            className={`qt-lst-type-btn ${active ? 'active' : ''}`}
+                            disabled={editMode}
+                            onClick={() => !editMode && setType(def.type)}
+                          >
+                            <div className="qt-lst-type-top">
+                              <b>{def.label}</b>
+                              <span className="qt-lst-agent-pill mono">{def.agentHint}</span>
+                            </div>
+                            <span className="qt-lst-type-sub mono">{def.protocol} · {def.kind}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </aside>
+
+                {/* Right Config Stage */}
+                <main className="qt-lst-main">
+                  <div className="qt-lst-top">
+                    <div className="qt-lst-identity">
+                      <label className="qt-lst-name-wrap">
+                        <span>{t('显示名称')}</span>
+                        <input
+                          className="mono"
+                          value={form.name}
+                          disabled={editMode}
+                          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                          placeholder="http"
+                        />
+                      </label>
+                      <div className="qt-lst-top-pills">
+                        <span className="qt-lst-stat-pill mono">
+                          {c.host_bind ? `${c.host_bind}:` : ''}{c.port_bind ?? '-'}
+                        </span>
+                        {isHttpLike && (
+                          <span className={`qt-lst-stat-pill ${c.ssl ? 'ok' : ''}`}>
+                            {c.ssl ? 'SSL/TLS' : '明文 HTTP'}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  )}
-                  {tab === 'payload' && (
-                    <div className="field field-top"><label>{t('载荷页内容')}</label>
-                      <div className="page-preview-wrap">
-                        <textarea rows={10} className="mono" value={form.config['page-payload'] || ''}
-                          onChange={(e) => setCfg('page-payload', e.target.value)} />
-                        <div className="page-preview">
-                          <div className="page-preview-k">{t('预览')}</div>
-                          {/* 载荷页里的 <<<PAYLOAD_DATA>>> 是**占位符**，预览里不会替换成真数据 ——
-                              它只是个形状参考，别把预览当成真回包。 */}
-                          <iframe
-                            title={t('载荷页预览')}
-                            sandbox=""
-                            srcDoc={form.config['page-payload'] || '<p style="font:13px sans-serif;color:#888;padding:12px">' + t('（空）') + '</p>'}
-                          />
-                        </div>
-                      </div>
-                      <div className="field-hint">
-                        使用占位符 <code>&lt;&lt;&lt;PAYLOAD_DATA&gt;&gt;&gt;</code>；预览里保留原文（不替换成真数据），仅作形状参考。
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="ax-tab-body">{renderMain()}</div>
-            )}
 
-            <div className="btns" style={{ marginTop: 12 }}>
-              <button disabled={busy} onClick={() => setShow(false)}>{t('取消')}</button>
-              <button className="primary" disabled={busy || !form.name.trim()} onClick={onSubmit}>
-                {busy ? (editMode ? t('保存中…') : t('创建中…')) : (editMode ? '保存修改' : t('创建监听器'))}
-              </button>
+                    {isHttpLike && (
+                      <div className="qt-lst-tabs" role="tablist">
+                        <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>
+                          {t('主要设置')}
+                        </button>
+                        <button type="button" className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>
+                          {t('HTTP 头')}
+                          {hasCustomHeaders && <i className="qt-lst-tab-dot" />}
+                        </button>
+                        <button type="button" className={tab === 'error' ? 'active' : ''} onClick={() => setTab('error')}>
+                          {t('错误页')}
+                        </button>
+                        <button type="button" className={tab === 'payload' ? 'active' : ''} onClick={() => setTab('payload')}>
+                          {t('载荷页')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="qt-lst-scroll">
+                    {isHttpLike ? (
+                      <>
+                        {tab === 'main' && renderMain()}
+                        {tab === 'headers' && renderHeaders()}
+                        {tab === 'error' && (
+                          <section className="qt-lst-card">
+                            <div className="qt-lst-card-hd">
+                              <b>{t('错误页内容')}（404 诱饵页）</b>
+                              <span>左侧编辑 HTML · 右侧 sandbox 安全实时预览</span>
+                            </div>
+                            <div className="qt-lst-preview-split">
+                              <textarea
+                                rows={14}
+                                className="mono"
+                                value={form.config['page-error'] || ''}
+                                onChange={(e) => setCfg('page-error', e.target.value)}
+                              />
+                              <div className="qt-lst-preview-frame">
+                                <div className="qt-lst-preview-bar mono">{t('预览')} (sandbox=&quot;&quot;)</div>
+                                <iframe
+                                  title={t('错误页预览')}
+                                  sandbox=""
+                                  srcDoc={form.config['page-error'] || '<p style="font:13px sans-serif;color:#666;padding:12px">' + t('（空）') + '</p>'}
+                                />
+                              </div>
+                            </div>
+                            <div className="qt-lst-note muted">
+                              探针 / 扫描器打到非预期路径时看到的就是这一页；套用流量模板时此处会同步更新。
+                            </div>
+                          </section>
+                        )}
+                        {tab === 'payload' && (
+                          <section className="qt-lst-card">
+                            <div className="qt-lst-card-hd">
+                              <b>{t('载荷页内容')}（Payload 包装模板）</b>
+                              <span className="mono">&lt;&lt;&lt;PAYLOAD_DATA&gt;&gt;&gt;</span>
+                            </div>
+                            <div className="qt-lst-preview-split">
+                              <textarea
+                                rows={12}
+                                className="mono"
+                                value={form.config['page-payload'] || ''}
+                                onChange={(e) => setCfg('page-payload', e.target.value)}
+                              />
+                              <div className="qt-lst-preview-frame">
+                                <div className="qt-lst-preview-bar mono">{t('预览')} (sandbox=&quot;&quot;)</div>
+                                <iframe
+                                  title={t('载荷页预览')}
+                                  sandbox=""
+                                  srcDoc={form.config['page-payload'] || '<p style="font:13px sans-serif;color:#666;padding:12px">' + t('（空）') + '</p>'}
+                                />
+                              </div>
+                            </div>
+                            <div className="qt-lst-note muted">
+                              使用占位符 <code>&lt;&lt;&lt;PAYLOAD_DATA&gt;&gt;&gt;</code>；预览保留原文仅作包装结构参考。
+                            </div>
+                          </section>
+                        )}
+                      </>
+                    ) : (
+                      renderMain()
+                    )}
+                  </div>
+
+                  <footer className="qt-lst-foot">
+                    <div className={`qt-lst-foot-status ${warnReason ? 'warn' : 'ok'}`}>
+                      {warnReason
+                        ? <>⚠ {warnReason}</>
+                        : <>就绪 · 将以 <span className="mono">{form.type}</span>（{form.name}）启动监听</>}
+                    </div>
+                    <div className="qt-lst-foot-acts">
+                      <button type="button" className="qt-lst-cancel-btn" disabled={busy} onClick={() => setShow(false)}>
+                        {t('取消')}
+                      </button>
+                      <button
+                        type="button"
+                        className="qt-lst-submit-btn"
+                        disabled={busy || !form.name.trim()}
+                        onClick={onSubmit}
+                      >
+                        {busy ? (editMode ? t('保存中…') : t('创建中…')) : (editMode ? '保存修改' : t('创建并启动监听器'))}
+                      </button>
+                    </div>
+                  </footer>
+                </main>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

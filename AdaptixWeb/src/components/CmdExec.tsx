@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConsoleLine } from '../api/types'
 import { useStore } from '../store'
 import { t } from '../i18n'
-import { copyText, fmtRelative, isAgentOnline, isLinuxAgent } from '../utils'
+import { copyText, fmtRelative, isAgentOnline, isNixAgent } from '../utils'
 import { FALLBACK_BOFS, FALLBACK_COMMANDS } from '../lib/completions'
 import { useCompletion } from '../lib/useCompletion'
 import { CmdSuggest } from './CmdSuggest'
@@ -52,7 +52,7 @@ export const CmdExec = memo(function CmdExec({ agentId }: { agentId: string }) {
   const openUiTab = useStore((s) => s.openUiTab)
 
   const online = agent ? isAgentOnline(agent, { lastTick: agentTick }) : false
-  const linux = isLinuxAgent(agent)
+  const linux = isNixAgent(agent)
 
   const [cmd, setCmd] = useState('')
   const [hist, setHist] = useState<string[]>([])

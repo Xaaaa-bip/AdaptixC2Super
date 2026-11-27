@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
-import { isAgentOnline, isLinuxAgent } from '../utils'
+import { isAgentOnline, isNixAgent } from '../utils'
 import { vncViewerUrl } from '../api/channel'
 import { EmptyState } from './ui'
 import { PageTips } from './PageTips'
@@ -58,8 +58,8 @@ export const VncPanel = memo(function VncPanel({ agentId }: { agentId: string })
   }
 
   useEffect(() => {
-    // Linux 主机不需要加速心跳，也不轮询插件侧会话
-    if (isLinuxAgent(agent)) return
+    // 非 Windows 主机不需要加速心跳，也不轮询插件侧会话
+    if (isNixAgent(agent)) return
     acquireInteractBoost(agentId).catch(() => {})
     listSessions()
     const t = window.setInterval(listSessions, 10000)
@@ -182,11 +182,11 @@ export const VncPanel = memo(function VncPanel({ agentId }: { agentId: string })
     el.src = viewer + (viewer.includes('?') ? '&' : '?') + 'r=' + Date.now()
   }
 
-  // 所有 hook 已在其上方无条件执行；Linux 主机直接给空状态，不启动部署/轮询
-  if (isLinuxAgent(agent)) {
+  // 所有 hook 已在其上方无条件执行；Linux / macOS 主机直接给空状态，不启动部署/轮询
+  if (isNixAgent(agent)) {
     return (
       <div className="page">
-        <EmptyState icon="⧉" title={t('VNC 不支持 Linux 主机')} hint="linux_agent 无桌面捕获能力；本面板仅适用于 Windows 主机。" />
+        <EmptyState icon="⧉" title={t('VNC 不支持当前系统')} hint="Linux / macOS 主机无 Windows 桌面捕获能力；本面板仅适用于 Windows 主机。" />
       </div>
     )
   }
@@ -235,7 +235,7 @@ export const VncPanel = memo(function VncPanel({ agentId }: { agentId: string })
         )}
         <button className="ghost" onClick={() => closeUiTab(`vnc:${agentId}` as any)}>{t('关闭')}</button>
         <PageTips id="vnc">
-          <p>{t('VNC 桌面仅适用于')} <b>{t('Windows 主机')}</b>；Linux 主机显示不支持提示。</p>
+          <p>{t('VNC 桌面仅适用于')} <b>{t('Windows 主机')}</b>；Linux / macOS 主机显示不支持提示。</p>
           <p>{t('启动后浏览器内嵌查看器访问桌面。')}</p>
         </PageTips>
       </div>
@@ -260,7 +260,6 @@ export const VncPanel = memo(function VncPanel({ agentId }: { agentId: string })
                     <button className="ghost" onClick={() => setSession(s)}>{t('打开')}</button>
                     <button className="danger" onClick={async () => {
                       try { await api.post('/api/vnc/api/session/stop', { session_id: s.id }) } catch { /* */ }
-                      if (session?.id === s.id) setSession(null)
                       listSessions()
                     }}>{t('停')}</button>
                   </span>

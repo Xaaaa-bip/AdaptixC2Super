@@ -187,6 +187,18 @@ type State = {
   setDockMax: (m: 'none' | 'top' | 'bottom') => void
   resetDockLayout: () => void
 
+  generateModalOpen: boolean
+  deliveryModalOpen: boolean
+  aiPanelOpen: boolean
+  aiPanelMode: 'modal' | 'drawer'
+  openGenerateModal: () => void
+  closeGenerateModal: () => void
+  openDeliveryModal: () => void
+  closeDeliveryModal: () => void
+  openAiPanel: (mode?: 'modal' | 'drawer') => void
+  closeAiPanel: () => void
+  setAiPanelMode: (mode: 'modal' | 'drawer') => void
+
   setTab: (t: TabId) => void
   openConsole: (id: string) => void
   closeConsoleTab: (id: string) => void
@@ -560,10 +572,31 @@ export const useStore = create<State>((set, get) => ({
       activeBottomTab: 'logs',
       dockTopPct: 46,
       dockMax: 'none',
+      generateModalOpen: false,
+      deliveryModalOpen: false,
+      aiPanelOpen: false,
     })
   },
 
+  generateModalOpen: false,
+  deliveryModalOpen: false,
+  aiPanelOpen: false,
+  aiPanelMode: 'drawer',
+  openGenerateModal: () => set({ generateModalOpen: true, deliveryModalOpen: false }),
+  closeGenerateModal: () => set({ generateModalOpen: false }),
+  openDeliveryModal: () => set({ deliveryModalOpen: true, generateModalOpen: false }),
+  closeDeliveryModal: () => set({ deliveryModalOpen: false }),
+  openAiPanel: (mode) => set((s) => ({
+    aiPanelOpen: true,
+    aiPanelMode: mode ?? s.aiPanelMode,
+  })),
+  closeAiPanel: () => set({ aiPanelOpen: false }),
+  setAiPanelMode: (mode) => set({ aiPanelMode: mode }),
+
   setTab: (t) => set((s) => {
+    if (t === 'generate') return { generateModalOpen: true, deliveryModalOpen: false }
+    if (t === 'delivery') return { deliveryModalOpen: true, generateModalOpen: false }
+    if (t === 'ai') return { aiPanelOpen: true }
     if (isTopDockTab(t)) {
       const topTabs = s.topTabs.includes(t) ? s.topTabs : [...s.topTabs, t]
       return {
@@ -635,6 +668,9 @@ export const useStore = create<State>((set, get) => ({
     return { activeConsoleTab: id, selectedAgentId: id, bottomTabs, activeBottomTab: ctab }
   }),
   openUiTab: (id) => set((s) => {
+    if (id === 'generate') return { generateModalOpen: true, deliveryModalOpen: false }
+    if (id === 'delivery') return { deliveryModalOpen: true, generateModalOpen: false }
+    if (id === 'ai') return { aiPanelOpen: true }
     const tabs: TabId[] = s.uiTabs.includes(id) ? s.uiTabs : [...s.uiTabs, id]
     if (isTopDockTab(id)) {
       const topTabs: TabId[] = s.topTabs.includes(id) ? s.topTabs : [...s.topTabs, id]
@@ -658,6 +694,9 @@ export const useStore = create<State>((set, get) => ({
     }
   }),
   closeUiTab: (id) => {
+    if (id === 'generate') { set({ generateModalOpen: false }); return }
+    if (id === 'delivery') { set({ deliveryModalOpen: false }); return }
+    if (id === 'ai') { set({ aiPanelOpen: false }); return }
     const agentId = tabAgentId(id)
     const needRelease = isInteractTab(id)
     if (isConsoleTab(id) && agentId) {
@@ -922,17 +961,18 @@ export const useStore = create<State>((set, get) => ({
   setOnlyActive: (v) => set({ onlyActive: v }),
   selectAgent: (id) => set({ selectedAgentId: id }),
   pushToast: (level, text, ttl = 3200) => set((s) => ({
-    toasts: [...s.toasts, { id: uid(), level, text, ttl }].slice(-6),
+    toasts: [...s.toasts, { id: uid(), level, text: t(text), ttl }].slice(-6),
   })),
-  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((item) => item.id !== id) })),
   pushLog: (level, text, toast) => {
-    set((s) => ({ logs: [{ id: uid(), level, text, ts: now() }, ...s.logs].slice(0, 500) }))
+    const localized = t(text)
+    set((s) => ({ logs: [{ id: uid(), level, text: localized, ts: now() }, ...s.logs].slice(0, 500) }))
     // Toast important ops by default for err/ok/warn, or when explicitly requested
     const shouldToast = toast === true || (toast !== false && (level === 'err' || level === 'ok' || level === 'warn'))
     if (shouldToast) {
       // skip noisy low-value messages
       if (!/REST 数据已加载|sync 已启动|正在建立|login /.test(text)) {
-        get().pushToast(level, text)
+        get().pushToast(level, localized)
       }
     }
   },
@@ -1154,6 +1194,9 @@ export const useStore = create<State>((set, get) => ({
       bottomTabs: ['logs'],
       activeBottomTab: 'logs',
       dockMax: 'none',
+      generateModalOpen: false,
+      deliveryModalOpen: false,
+      aiPanelOpen: false,
     })
 
     // 并行拉取轻量 REST（listeners/downloads，必要时 agents），绝不阻塞 WS 建连
@@ -1342,6 +1385,9 @@ export const useStore = create<State>((set, get) => ({
       bottomTabs: ['logs'],
       activeBottomTab: 'logs',
       dockMax: 'none',
+      generateModalOpen: false,
+      deliveryModalOpen: false,
+      aiPanelOpen: false,
     })
   },
 

@@ -1,4 +1,5 @@
 /** Shared UI helpers */
+import { useSyncExternalStore } from 'react'
 
 export function fmtTime(ts?: number | string, fallback = '-') {
   if (ts == null || ts === '') return fallback
@@ -62,10 +63,44 @@ export function getServerNowMs(localNowMs = Date.now()): number {
  */
 const liveAgentTicks = new Map<string, number>()
 
+const clock5sListeners = new Set<() => void>()
+let clock5sBucket = Math.floor(Date.now() / 5000)
+let clock5sTimer: ReturnType<typeof setInterval> | null = null
+
+function notifyClock5s() {
+  clock5sBucket++
+  for (const cb of clock5sListeners) cb()
+}
+
+export function subscribeOnlineClock5s(cb: () => void) {
+  clock5sListeners.add(cb)
+  if (!clock5sTimer && typeof window !== 'undefined') {
+    clock5sTimer = window.setInterval(notifyClock5s, 5000)
+  }
+  return () => {
+    clock5sListeners.delete(cb)
+    if (clock5sListeners.size === 0 && clock5sTimer) {
+      window.clearInterval(clock5sTimer)
+      clock5sTimer = null
+    }
+  }
+}
+
+export function getOnlineClock5s() {
+  return clock5sBucket
+}
+
+export function useOnlineClock5s() {
+  return useSyncExternalStore(subscribeOnlineClock5s, getOnlineClock5s, getOnlineClock5s)
+}
+
 export function setLiveAgentTick(id: string, tick: number) {
   if (!id || !Number.isFinite(tick) || tick <= 0) return
   const prev = liveAgentTicks.get(id)
-  if (prev === undefined || tick > prev) liveAgentTicks.set(id, tick)
+  if (prev === undefined || tick > prev) {
+    liveAgentTicks.set(id, tick)
+    if (prev === undefined || tick - prev > 30) notifyClock5s()
+  }
 }
 
 export function clearLiveAgentTicks(ids?: Iterable<string>) {
@@ -129,6 +164,20 @@ export function isAgentOnline(
 export function isLinuxAgent(a?: { a_os?: number; a_listener?: string } | null): boolean {
   if (!a) return false
   return a.a_os === 2 || /^Linux/i.test(a.a_listener || '')
+}
+
+export function isMacAgent(a?: { a_os?: number; a_os_desc?: string; a_name?: string } | null): boolean {
+  if (!a) return false
+  const desc = String(a.a_os_desc || '').toLowerCase()
+  const name = String(a.a_name || '').toLowerCase()
+  return a.a_os === 3 || desc.includes('mac') || desc.includes('darwin') || name.startsWith('macos')
+}
+
+export function isNixAgent(a?: { a_os?: number; a_listener?: string; a_os_desc?: string; a_name?: string } | null): boolean {
+  if (!a) return false
+  if (isLinuxAgent(a) || isMacAgent(a)) return true
+  const desc = String(a.a_os_desc || '').toLowerCase()
+  return /\b(unix|freebsd|openbsd|netbsd|bsd)\b/.test(desc)
 }
 
 export function copyText(text: string) {
@@ -350,7 +399,7 @@ export function saveSessListCollapsed(v: boolean) {
 }
 
 export function downloadBytes(filename: string, bytes: Uint8Array) {
-  const blob = new Blob([bytes], { type: 'application/octet-stream' })
+  const blob = new Blob([bytes.slice()], { type: 'application/octet-stream' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

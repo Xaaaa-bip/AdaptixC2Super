@@ -1,0 +1,1109 @@
+/* ============================================================================
+ * AdaptixWeb — Authentic Qlementine Qt Desktop Styling for
+ * Generate (.qt-gen-win) & WebDelivery (.qt-wd-win)
+ * Matches AdaptixClient / .qt-lst-* dialog grammar 1:1 across all 10 Qt themes.
+ * ============================================================================ */
+
+.qt-pop-win.qt-gen-win {
+  width: min(1020px, 95vw);
+  height: min(680px, 90vh);
+}
+.qt-pop-win.qt-wd-win {
+  width: min(1040px, 95vw);
+  height: min(680px, 90vh);
+}
+
+/* ── Root Dialog Scope (Pure Qlementine Variables) ──────────────────────── */
+.qt-pop-win .ax-studio {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--qt-bg3);
+  color: var(--qt-text);
+  font-family: var(--qt-ui-font);
+  font-size: var(--qt-font-size);
+  text-align: left;
+  position: relative;
+  --ax-syn-cmd: var(--qt-primary);
+  --ax-syn-url: var(--qt-info);
+  --ax-syn-flag: var(--qt-warn);
+  --ax-syn-var: #c084fc;
+}
+html[data-qt-mode="light"] .qt-pop-win .ax-studio {
+  --ax-syn-cmd: #1b6e24;
+  --ax-syn-url: #0c5ca8;
+  --ax-syn-flag: #92400e;
+  --ax-syn-var: #6b21a8;
+}
+
+.qt-pop-win .ax-studio input:not([type="checkbox"]):not([type="file"]):not([type="radio"]):not([type="range"]),
+.qt-pop-win .ax-studio select {
+  height: 28px !important;
+  padding: 0 8px !important;
+  border-radius: var(--qt-radius) !important;
+  border: 1px solid var(--qt-border) !important;
+  background: var(--qt-bg4) !important;
+  color: var(--qt-text-press) !important;
+  font-size: 11.5px !important;
+  box-shadow: none !important;
+}
+.qt-pop-win .ax-studio input:not([type="checkbox"]):not([type="file"]):hover,
+.qt-pop-win .ax-studio select:hover {
+  border-color: var(--qt-border-hover) !important;
+}
+.qt-pop-win .ax-studio input:not([type="checkbox"]):not([type="file"]):focus,
+.qt-pop-win .ax-studio select:focus {
+  border-color: var(--qt-primary) !important;
+  box-shadow: 0 0 0 2px var(--qt-focus) !important;
+  outline: none !important;
+}
+
+/* ── 48px Header (Matches .qt-lst-hd 1:1) ──────────────────────────────── */
+.qt-pop-win .ax-header {
+  flex-shrink: 0;
+  height: 48px;
+  padding: 0 12px;
+  background: var(--qt-bg2);
+  border-bottom: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.qt-pop-win .ax-header-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.qt-pop-win .ax-emblem {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--qt-primary) 16%, var(--qt-bg4));
+  border: 1px solid color-mix(in srgb, var(--qt-primary) 42%, transparent);
+  color: var(--qt-primary);
+  flex-shrink: 0;
+}
+
+.qt-pop-win .ax-hd-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.qt-pop-win .ax-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--qt-text-press);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.qt-pop-win .ax-sub {
+  display: block;
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qt-pop-win .ax-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Compact Qt Pill Badges */
+.qt-pop-win .ax-pill {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--qt-border-disabled);
+  background: var(--qt-bg4);
+  color: var(--qt-text-muted);
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.qt-pop-win .ax-pill.ok {
+  border-color: color-mix(in srgb, var(--qt-ok) 45%, transparent);
+  color: var(--qt-ok);
+  font-weight: 600;
+}
+.qt-pop-win .ax-pill.warn,
+.qt-pop-win .ax-pill.dirty {
+  border-color: color-mix(in srgb, var(--qt-warn) 50%, transparent);
+  color: var(--qt-warn);
+  font-weight: 600;
+}
+html[data-qt-mode="light"] .qt-pop-win .ax-pill.warn,
+html[data-qt-mode="light"] .qt-pop-win .ax-pill.dirty {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: rgba(180, 83, 9, 0.35);
+}
+.qt-pop-win .ax-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Native Qt Toolbar & Form Buttons */
+.qt-pop-win .ax-btn {
+  height: 27px !important;
+  padding: 0 11px !important;
+  border-radius: var(--qt-radius) !important;
+  border: 1px solid var(--qt-border) !important;
+  background: var(--qt-bg4) !important;
+  color: var(--qt-text) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qt-pop-win .ax-btn:hover:not(:disabled) {
+  background: var(--qt-neutral-hover) !important;
+  border-color: var(--qt-primary) !important;
+  color: var(--qt-text-press) !important;
+}
+.qt-pop-win .ax-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.qt-pop-win .ax-btn-sm {
+  height: 23px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+}
+
+.qt-pop-win .ax-btn-ghost {
+  height: 24px !important;
+  padding: 0 8px !important;
+  border-radius: var(--qt-radius) !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--qt-text-muted) !important;
+  font-size: 11px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qt-pop-win .ax-btn-ghost:hover:not(:disabled),
+.qt-pop-win .ax-btn-ghost.active {
+  background: var(--qt-bg4) !important;
+  border-color: var(--qt-border-disabled) !important;
+  color: var(--qt-text-press) !important;
+}
+
+.qt-pop-win .ax-btn-primary {
+  height: 29px !important;
+  padding: 0 16px !important;
+  border-radius: var(--qt-radius) !important;
+  border: 1px solid var(--qt-primary) !important;
+  background: var(--qt-primary) !important;
+  color: var(--qt-primary-fg) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qt-pop-win .ax-btn-primary:hover:not(:disabled) {
+  background: var(--qt-primary-hover) !important;
+}
+.qt-pop-win .ax-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.qt-pop-win .ax-btn-primary.compact {
+  height: 24px !important;
+  padding: 0 10px !important;
+  font-size: 11px !important;
+}
+.qt-pop-win .ax-btn.copied,
+.qt-pop-win .ax-btn-primary.copied {
+  background: var(--qt-ok) !important;
+  border-color: var(--qt-ok) !important;
+  color: var(--qt-primary-fg) !important;
+}
+
+.qt-pop-win .ax-close-btn,
+.qt-pop-win .ax-studio .tips-btn {
+  width: 26px !important;
+  min-width: 26px !important;
+  height: 26px !important;
+  padding: 0 !important;
+  border-radius: var(--qt-radius) !important;
+  border: 1px solid var(--qt-border-disabled) !important;
+  background: var(--qt-bg4) !important;
+  color: var(--qt-text-muted) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.qt-pop-win .ax-studio .tips-btn:hover {
+  border-color: var(--qt-border-hover) !important;
+  color: var(--qt-text-press) !important;
+}
+.qt-pop-win .ax-close-btn:hover {
+  border-color: var(--qt-err) !important;
+  color: var(--qt-err) !important;
+}
+
+/* Segmented Button Strips (Native Qt Flat Toggle Strip) */
+.qt-pop-win .ax-seg-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px;
+  border-radius: var(--qt-radius);
+  background: var(--qt-bg4);
+  border: 1px solid var(--qt-border-disabled);
+}
+.qt-pop-win .ax-seg-track.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.qt-pop-win .ax-seg-track.grid-5 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.qt-pop-win .ax-seg-btn {
+  height: 24px !important;
+  padding: 0 9px !important;
+  border-radius: 3px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--qt-text-muted) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.qt-pop-win .ax-seg-btn:hover:not(.active) {
+  color: var(--qt-text-press) !important;
+  background: var(--qt-semi-2) !important;
+}
+.qt-pop-win .ax-seg-btn.active {
+  background: color-mix(in srgb, var(--qt-primary) 18%, var(--qt-bg2)) !important;
+  border-color: color-mix(in srgb, var(--qt-primary) 55%, transparent) !important;
+  color: var(--qt-text-press) !important;
+  font-weight: 700 !important;
+}
+
+/* QTabBar Underline Tabs (Matches .qt-lst-tabs 1:1) */
+.qt-pop-win .ax-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--qt-border-disabled);
+  margin-bottom: 10px;
+}
+
+.qt-pop-win .ax-tabs-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.qt-pop-win .ax-tab {
+  height: 30px !important;
+  padding: 0 11px !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 4px 4px 0 0 !important;
+  background: transparent !important;
+  color: var(--qt-text-muted) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qt-pop-win .ax-tab:hover {
+  color: var(--qt-text-press) !important;
+}
+.qt-pop-win .ax-tab.active {
+  background: var(--qt-bg3) !important;
+  color: var(--qt-text-press) !important;
+  border-bottom-color: var(--qt-primary) !important;
+}
+
+.qt-pop-win .ax-tab-cnt {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--qt-bg4);
+  color: var(--qt-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+.qt-pop-win .ax-tab.active .ax-tab-cnt {
+  color: var(--qt-primary);
+}
+.qt-pop-win .ax-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--qt-primary);
+  display: inline-block;
+}
+.qt-pop-win .ax-tabs-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── 2-Pane Body Split & Left QListWidget Rail (Matches .qt-lst-rail 1:1) ─ */
+.qt-pop-win .ax-gen-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--qt-bg3);
+}
+.qt-pop-win .ax-wd-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--qt-bg3);
+}
+
+.qt-pop-win .ax-sidebar {
+  min-height: 0;
+  background: var(--qt-bg2);
+  border-right: 1px solid var(--qt-border-disabled);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.qt-pop-win .ax-side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qt-pop-win .ax-side-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qt-pop-win .ax-sec-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--qt-text-muted);
+  letter-spacing: 0.04em;
+  padding: 0 4px 2px;
+}
+
+/* Flat Qt List Items (.qt-lst-type-btn rhythm) */
+.qt-pop-win .ax-plat-list,
+.qt-pop-win .ax-lis-list,
+.qt-pop-win .ax-method-list,
+.qt-pop-win .ax-wd-lis-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.qt-pop-win .ax-wd-lis-list {
+  max-height: 128px;
+  overflow-y: auto;
+}
+
+.qt-pop-win .ax-plat-row,
+.qt-pop-win .ax-lis-row,
+.qt-pop-win .ax-method-row {
+  width: 100%;
+  height: auto !important;
+  padding: 5px 8px !important;
+  border-radius: 5px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--qt-text) !important;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.qt-pop-win .ax-plat-row:hover:not(.active),
+.qt-pop-win .ax-lis-row:hover:not(.active),
+.qt-pop-win .ax-method-row:hover:not(.active) {
+  background: var(--qt-bg4) !important;
+  border-color: var(--qt-border-disabled) !important;
+}
+.qt-pop-win .ax-plat-row.active,
+.qt-pop-win .ax-lis-row.active,
+.qt-pop-win .ax-method-row.active {
+  background: color-mix(in srgb, var(--qt-primary) 15%, var(--qt-bg3)) !important;
+  border-color: color-mix(in srgb, var(--qt-primary) 55%, transparent) !important;
+  color: var(--qt-text-press) !important;
+}
+
+.qt-pop-win .ax-plat-ico {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--qt-bg4);
+  border: 1px solid var(--qt-border-disabled);
+  color: var(--qt-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.qt-pop-win .ax-plat-row.active .ax-plat-ico {
+  color: var(--qt-primary);
+  border-color: color-mix(in srgb, var(--qt-primary) 45%, transparent);
+}
+
+.qt-pop-win .ax-plat-meta,
+.qt-pop-win .ax-lis-meta,
+.qt-pop-win .ax-method-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.qt-pop-win .ax-plat-meta b,
+.qt-pop-win .ax-lis-meta b,
+.qt-pop-win .ax-method-meta b {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--qt-text-press);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qt-pop-win .ax-plat-meta span,
+.qt-pop-win .ax-lis-meta span,
+.qt-pop-win .ax-method-meta span {
+  font-size: 10px;
+  color: var(--qt-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qt-pop-win .ax-plat-tag,
+.qt-pop-win .ax-proto-chip {
+  font-family: var(--qt-mono-font);
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--qt-bg4);
+  border: 1px solid var(--qt-border-disabled);
+  color: var(--qt-text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.qt-pop-win .active .ax-plat-tag,
+.qt-pop-win .active .ax-proto-chip {
+  color: var(--qt-primary);
+  border-color: color-mix(in srgb, var(--qt-primary) 40%, transparent);
+}
+
+.qt-pop-win .ax-lis-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--qt-text-disabled);
+  flex-shrink: 0;
+}
+.qt-pop-win .ax-lis-dot.on {
+  background: var(--qt-ok);
+}
+
+/* ── Main Canvas & QGroupBox Cards (Matches .qt-lst-card 1:1) ─────────────── */
+.qt-pop-win .ax-main-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--qt-bg3);
+}
+
+.qt-pop-win .ax-main-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qt-pop-win .ax-group-card {
+  flex-shrink: 0;
+  background: var(--qt-bg2);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 7px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qt-pop-win .ax-group-card-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.qt-pop-win .ax-group-card-hd b {
+  font-size: 12px;
+  color: var(--qt-text-press);
+}
+.qt-pop-win .ax-group-card-hd > span {
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+}
+
+.qt-pop-win .ax-core-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: flex-end;
+}
+
+.qt-pop-win .ax-ctrl-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qt-pop-win .ax-ctrl-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--qt-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.qt-pop-win .ax-ctrl-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--qt-text-muted);
+}
+
+.qt-pop-win .ax-sleep-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.qt-pop-win .ax-sleep-in {
+  width: 86px !important;
+}
+
+.qt-pop-win .ax-unit-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.qt-pop-win .ax-unit-input input {
+  padding-right: 24px !important;
+  width: 100%;
+}
+.qt-pop-win .ax-unit-input .ax-unit {
+  position: absolute;
+  right: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--qt-text-muted);
+  pointer-events: none;
+}
+
+.qt-pop-win .ax-jit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--qt-text-muted);
+}
+.qt-pop-win .ax-jit-wrap .ax-unit-input {
+  width: 72px;
+}
+
+/* Native Square QCheckBox Setting Rows (Left-Aligned Checkboxes) */
+.qt-pop-win .ax-schema-wrap,
+.qt-pop-win .ax-adv-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.qt-pop-win .ax-adv-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.qt-pop-win .ax-group-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qt-pop-win .ax-group-sec-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--qt-border-disabled);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--qt-text-press);
+}
+
+.qt-pop-win .ax-setting-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 5px;
+  background: var(--qt-bg3);
+  overflow: hidden;
+}
+
+.qt-pop-win .ax-setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--qt-border-disabled);
+  cursor: pointer;
+}
+.qt-pop-win .ax-setting-row:last-child {
+  border-bottom: none;
+}
+.qt-pop-win .ax-setting-row:hover {
+  background: var(--qt-bg4);
+}
+.qt-pop-win .ax-setting-row.checked {
+  background: color-mix(in srgb, var(--qt-primary) 10%, var(--qt-bg3));
+}
+.qt-pop-win .ax-setting-row input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+.qt-pop-win .ax-setting-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.qt-pop-win .ax-setting-info b {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--qt-text-press);
+}
+.qt-pop-win .ax-setting-info span {
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+  line-height: 1.35;
+}
+
+/* 2-Col Field Grid */
+.qt-pop-win .ax-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 12px;
+}
+.qt-pop-win .ax-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qt-pop-win .ax-field.ax-field-full {
+  grid-column: 1 / -1;
+}
+.qt-pop-win .ax-field-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--qt-text-muted);
+}
+.qt-pop-win .ax-field-hint {
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+  line-height: 1.35;
+}
+.qt-pop-win .ax-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.qt-pop-win .ax-file-row input[type="file"] {
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  height: auto !important;
+}
+
+/* Callouts & Receipts */
+.qt-pop-win .ax-callout {
+  padding: 7px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--qt-border-disabled);
+  background: var(--qt-bg4);
+  font-size: 11px;
+  color: var(--qt-text);
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.qt-pop-win .ax-callout.warn {
+  border-color: color-mix(in srgb, var(--qt-warn) 45%, transparent);
+  background: color-mix(in srgb, var(--qt-warn) 10%, var(--qt-bg4));
+}
+html[data-qt-mode="light"] .qt-pop-win .ax-callout.warn {
+  background: #fffbeb;
+  border-color: rgba(180, 83, 9, 0.35);
+  color: #78350f;
+}
+
+.qt-pop-win .ax-receipt {
+  padding: 9px 11px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--qt-ok) 48%, transparent);
+  background: color-mix(in srgb, var(--qt-ok) 12%, var(--qt-bg2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.qt-pop-win .ax-receipt.err {
+  border-color: color-mix(in srgb, var(--qt-err) 50%, transparent);
+  background: color-mix(in srgb, var(--qt-err) 10%, var(--qt-bg2));
+  flex-direction: column;
+  align-items: stretch;
+}
+.qt-pop-win .ax-receipt-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.qt-pop-win .ax-receipt-info b {
+  font-size: 12px;
+  color: var(--qt-text-press);
+}
+.qt-pop-win .ax-receipt-info span {
+  font-size: 11px;
+  color: var(--qt-text-muted);
+}
+.qt-pop-win .ax-receipt-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.qt-pop-win .ax-err-pre {
+  margin: 4px 0 0;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: var(--qt-bg4);
+  border: 1px solid color-mix(in srgb, var(--qt-err) 40%, transparent);
+  color: var(--qt-err);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.qt-pop-win .ax-history-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.qt-pop-win .ax-history-bar > span {
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+}
+
+/* ── 46px Full-Width Qt Footer (Matches .qt-lst-foot 1:1) ─────────────── */
+.qt-pop-win .ax-dock {
+  flex-shrink: 0;
+  height: 46px;
+  padding: 0 14px;
+  background: var(--qt-bg2);
+  border-top: 1px solid var(--qt-border-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.qt-pop-win .ax-dock-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.qt-pop-win .ax-dock-file {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--qt-text-press);
+  white-space: nowrap;
+}
+.qt-pop-win .ax-dock-meta {
+  font-size: 11px;
+  color: var(--qt-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qt-pop-win .ax-dock-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── WebDelivery Method List & Terminal Card (Qt QGroupBox Grammar) ────── */
+.qt-pop-win .ax-prompt-badge {
+  min-width: 34px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--qt-border-disabled);
+  background: var(--qt-bg4);
+  flex-shrink: 0;
+}
+.qt-pop-win .ax-prompt-ps { color: var(--ax-syn-url); }
+.qt-pop-win .ax-prompt-cmd { color: var(--ax-syn-flag); }
+.qt-pop-win .ax-prompt-sh { color: var(--ax-syn-cmd); }
+.qt-pop-win .ax-prompt-py { color: var(--ax-syn-var); }
+
+.qt-pop-win .ax-wd-hero {
+  background: var(--qt-bg2);
+  border: 1px solid var(--qt-border-disabled);
+  border-radius: 7px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.qt-pop-win .ax-wd-hero-hd {
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--qt-border-disabled);
+}
+.qt-pop-win .ax-wd-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.qt-pop-win .ax-wd-hero-title b {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--qt-text-press);
+  white-space: nowrap;
+}
+.qt-pop-win .ax-wd-hero-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.qt-pop-win .ax-wd-hero-code {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--qt-bg4);
+  color: var(--qt-text-press);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
+
+.qt-pop-win .st-tok-cmd { color: var(--ax-syn-cmd); font-weight: 700; }
+.qt-pop-win .st-tok-flag { color: var(--ax-syn-flag); }
+.qt-pop-win .st-tok-url {
+  color: var(--ax-syn-url);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.qt-pop-win .st-tok-var { color: var(--ax-syn-var); font-weight: 600; }
+
+.qt-pop-win .ax-warn-callout {
+  margin: 8px 12px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--qt-warn) 10%, var(--qt-bg4));
+  border: 1px solid color-mix(in srgb, var(--qt-warn) 42%, transparent);
+  color: var(--qt-warn);
+  font-size: 11px;
+  line-height: 1.4;
+}
+html[data-qt-mode="light"] .qt-pop-win .ax-warn-callout {
+  background: #fffbeb;
+  border-color: rgba(180, 83, 9, 0.35);
+  color: #92400e;
+}
+
+.qt-pop-win .ax-wd-hero-eps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--qt-border-disabled);
+  background: var(--qt-bg3);
+}
+.qt-pop-win .ax-ep-cell {
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.qt-pop-win .ax-ep-cell:first-child {
+  border-right: 1px solid var(--qt-border-disabled);
+}
+.qt-pop-win .ax-ep-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--qt-text-muted);
+  flex-shrink: 0;
+}
+.qt-pop-win .ax-ep-lbl.payload {
+  color: var(--qt-primary);
+}
+.qt-pop-win .ax-ep-cell code {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--qt-text-press);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qt-pop-win .ax-axf-box {
+  padding: 9px 12px 11px;
+  border-top: 1px solid var(--qt-border-disabled);
+  background: var(--qt-bg3);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.qt-pop-win .ax-axf-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--qt-text-muted);
+}
+.qt-pop-win .ax-axf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qt-pop-win .ax-axf-item {
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--qt-border-disabled);
+  background: var(--qt-bg4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qt-pop-win .ax-axf-item.bad {
+  border-color: color-mix(in srgb, var(--qt-err) 55%, transparent);
+}
+.qt-pop-win .ax-axf-item-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--qt-text-muted);
+}
+.qt-pop-win .ax-axf-cmd {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--qt-text-press);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
+
+.qt-pop-win .ax-wd-route-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.qt-pop-win .ax-wd-param-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+}
+.qt-pop-win .ax-wd-sleep-in {
+  width: 82px !important;
+}
+.qt-pop-win .ax-wd-num-wrap {
+  width: 74px;
+}

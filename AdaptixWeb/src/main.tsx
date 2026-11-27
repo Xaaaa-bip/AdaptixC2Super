@@ -4,7 +4,10 @@ import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { loadDensity } from './utils'
 import { applyQtSettings, loadQtSettings } from './design/qt-themes'
+import { LANG } from './i18n'
+import { installEnDomTranslator } from './i18n/domTranslate'
 import './styles.css'
+import './design/studio.css'
 
 // Apply full Qlementine + Console theme & font preferences before first paint
 applyQtSettings(loadQtSettings())
@@ -17,3 +20,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </React.StrictMode>,
 )
+
+if (LANG === 'en') {
+  installEnDomTranslator()
+}

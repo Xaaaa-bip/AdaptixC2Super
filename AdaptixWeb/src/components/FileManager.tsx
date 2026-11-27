@@ -12,7 +12,7 @@ import {
   detectEncodingId,
   type TextEncodingId,
 } from '../utils/textDecode'
-import { copyText, isLinuxAgent } from '../utils'
+import { copyText, isNixAgent } from '../utils'
 import { PageTips } from './PageTips'
 import { qtAsset } from '../design/qt-themes'
 
@@ -95,8 +95,8 @@ export const FileManager = memo(function FileManager({ agentId }: { agentId: str
   const openConsole = useStore((s) => s.openConsole)
   const boosted = useStore((s) => !!s.interactBoost[agentId]?.ref)
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
-  // Linux 主机：无盘符 / 反斜杠 / GBK 概念，界面与路径处理走 Unix 分支
-  const isLinux = isLinuxAgent(agent)
+  // Linux / macOS 主机：无盘符 / 反斜杠 / GBK 概念，界面与路径处理走 Unix 分支
+  const isLinux = isNixAgent(agent)
   const diskLabel = isLinux ? '挂载点' : '磁盘'
   const rootLabel = isLinux ? '挂载点' : '此电脑'
 

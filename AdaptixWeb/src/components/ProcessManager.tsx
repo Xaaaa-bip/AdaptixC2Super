@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { t } from '../i18n'
 import { browserKillProc, browserListProcs } from '../api/browser'
 import type { ProcItem } from '../utils/browserParse'
-import { copyText, isLinuxAgent } from '../utils'
+import { copyText, isNixAgent } from '../utils'
 import { PageTips } from './PageTips'
 import { qtAsset } from '../design/qt-themes'
 
@@ -60,7 +60,7 @@ export const ProcessManager = memo(function ProcessManager({ agentId }: { agentI
   const openConsole = useStore((s) => s.openConsole)
   const boosted = useStore((s) => !!s.interactBoost[agentId]?.ref)
   const acquireInteractBoost = useStore((s) => s.acquireInteractBoost)
-  const linux = isLinuxAgent(agent)
+  const linux = isNixAgent(agent)
   const selfPid = Number(agent?.a_pid || 0)
 
   const [items, setItems] = useState<ProcItem[]>([])

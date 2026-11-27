@@ -3,7 +3,7 @@ import { useStore } from '../store'
 import { t } from '../i18n'
 import { loadCmdTree } from '../api/cmdTree'
 import type { CmdArgDef, CmdBatch, CmdDef, CmdGroup } from '../api/types'
-import { copyText, isAgentOnline } from '../utils'
+import { copyText, isAgentOnline, useOnlineClock5s } from '../utils'
 import { EmptyState } from './ui'
 import { PageTips } from './PageTips'
 
@@ -200,6 +200,8 @@ export function ExtKit() {
    *   兜底只挑**名字能对上某个批次**的在线主机，免得退到一台 gopher 上、把显示
    *   切成 gopher 又反过来判自己不合格。
    */
+  const onlineClock = useOnlineClock5s()
+  void onlineClock
   const focusId = (selectedAgentId && isAgentOnline(agents[selectedAgentId] as any))
     ? selectedAgentId
     : (((Object.values(agents) as any[]).find(
@@ -347,6 +349,9 @@ export function ExtKit() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
+        <button type="button" className="ghost" onClick={() => useStore.getState().openUiTab('bofs')} title="在双栏 BOF 工作台按参数表单执行 Windows/Linux BOF">
+          BOF 工作台 →
+        </button>
         <button type="button" className="ghost" onClick={() => { void load(true) }} disabled={loading || !api} title={t('重新拉取命令树')}>
           {loading ? '…' : t('刷新')}
         </button>

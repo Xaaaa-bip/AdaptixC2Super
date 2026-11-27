@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
-import { clamp, isAgentOnline } from '../utils'
+import { clamp, isAgentOnline, useOnlineClock5s } from '../utils'
 import { PageTips } from './PageTips'
 import { DeviceIcon, DEVICE_KINDS, ROLE_CHOICES, deviceMeta, roleToKind } from './DeviceIcons'
 import { DeviceKind, GraphBoard, ManualDevice, newBoardId } from '../graphBoard'
@@ -75,8 +75,9 @@ const SINGLE_COL_MAX = 12
  *   在调用方叠加（见下面的 nodes useMemo）—— 布局函数保持纯函数，
  *   换一张 board 不需要重算布局。
  */
-function useLayout(agentList: any[], depthOf: Map<string, number>, parentOf: Map<string, string>) {
+function useLayout(agentList: any[], depthOf: Map<string, number>, parentOf: Map<string, string>, onlineClock = 0) {
   return useMemo(() => {
+    void onlineClock
     const buckets = new Map<number, any[]>()
     for (const a of agentList) {
       const depth = depthOf.get(a.a_id) ?? 0
@@ -129,7 +130,7 @@ function useLayout(agentList: any[], depthOf: Map<string, number>, parentOf: Map
       W: Math.max(MIN_W, cursor - LAYER_GAP + PAD),
       H: Math.max(MIN_H, maxH + PAD * 2),
     }
-  }, [agentList, depthOf, parentOf])
+  }, [agentList, depthOf, parentOf, onlineClock])
 }
 
 /**
@@ -207,6 +208,7 @@ type Menu = { x: number; y: number; items: MenuItem[] }
 
 export function Graph() {
   const agents = useStore((s) => s.agents) || {}
+  const onlineClock = useOnlineClock5s()
   const pivots = useStore((s) => s.pivots) || {}
   const listeners = useStore((s) => s.listeners) || {}
   const selectAgent = useStore((s) => s.selectAgent)
@@ -233,6 +235,7 @@ export function Graph() {
   const [selEdge, setSelEdge] = useState<string | null>(null)
   /** 正在为哪个节点选"连线到…"的目标。 */
   const [linkFrom, setLinkFrom] = useState<string | null>(null)
+  const [linkMode, setLinkMode] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   /** 缩放后要恢复的滚动位置。见 onWheel 的注释。 */
@@ -242,14 +245,24 @@ export function Graph() {
 
   useEffect(() => { void loadGraph() }, [loadGraph])
 
-  /* ── 右键菜单 / 添加下拉的关闭：沿用全站范式（4 处先例） ── */
+  /* ── 右键菜单 / 添加下拉 / Esc 退出连线模式的关闭 ── */
   useEffect(() => {
     const close = () => { setMenu(null); setAddOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenu(null)
+        setAddOpen(false)
+        setLinkFrom(null)
+        setLinkMode(false)
+      }
+    }
     window.addEventListener('click', close)
     window.addEventListener('scroll', close, true)
+    window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('click', close)
       window.removeEventListener('scroll', close, true)
+      window.removeEventListener('keydown', onKey)
     }
   }, [])
 
@@ -290,7 +303,7 @@ export function Graph() {
     return d
   }, [agentList, parentOf])
 
-  const auto = useLayout(agentList, depthOf, parentOf)
+  const auto = useLayout(agentList, depthOf, parentOf, onlineClock)
 
   /* 自动布局 + 手工位置覆盖（pins）。拖动中的节点用未提交的坐标画， */
   /* 这样 mousemove 不必每帧写一次 store / 发一次 HTTP。 */
@@ -645,8 +658,23 @@ export function Graph() {
   function openAgent(id: string) {
     // ★ 拖动结束时那一次 click 必须丢掉，否则拖完就弹控制台
     if (movedRef.current) { movedRef.current = false; return }
+    if (linkMode) {
+      if (!linkFrom) { setLinkFrom(id); return }
+      if (linkFrom === id) { setLinkFrom(null); return }
+      addEdge(linkFrom, id)
+      return
+    }
     selectAgent(id)
     openConsole(id)
+  }
+
+  function onDeviceClick(id: string) {
+    if (movedRef.current) { movedRef.current = false; return }
+    if (linkMode) {
+      if (!linkFrom) { setLinkFrom(id); return }
+      if (linkFrom === id) { setLinkFrom(null); return }
+      addEdge(linkFrom, id)
+    }
   }
 
   /* ─────────────── 菜单构造 ─────────────── */
@@ -674,7 +702,7 @@ export function Graph() {
 
   /** 菜单的越界回退，沿用全站范式。 */
   function menuStyle(m: Menu): React.CSSProperties {
-    return { left: Math.min(m.x, window.innerWidth - 200), top: Math.min(m.y, window.innerHeight - 380) }
+    return { left: Math.max(8, Math.min(m.x, window.innerWidth - 200)), top: Math.max(8, Math.min(m.y, window.innerHeight - 320)) }
   }
 
   const liveCount = agentList.filter((a) => isAgentOnline(a)).length
@@ -694,9 +722,23 @@ export function Graph() {
           type="button"
           className="ghost"
           title={t('在图上添加一个没有 agent 的设备（交换机 / 防火墙 / 数据库…）')}
-          onClick={(e) => { e.stopPropagation(); setMenu(null); setAddOpen((v) => !v) }}
+          onClick={(e) => { e.stopPropagation(); setMenu(null); setLinkMode(false); setLinkFrom(null); setAddOpen((v) => !v) }}
         >
           添加设备 ▾
+        </button>
+        <button
+          type="button"
+          className={`ghost ${linkMode ? 'active' : ''}`}
+          title={t('点击任意两个节点/设备即可直接画连线（Esc 退出）')}
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenu(null)
+            setAddOpen(false)
+            setLinkFrom(null)
+            setLinkMode((v) => !v)
+          }}
+        >
+          {linkMode ? '结束连线' : '画连线'}
         </button>
         <button type="button" className="ghost" onClick={fitToView} title={t('缩放到刚好装下整张图')}>适配</button>
         <span className="dim mono" title={t('滚轮缩放，拖动空白处平移')}>{Math.round(k * 100)}%</span>
@@ -830,7 +872,7 @@ export function Graph() {
                 return (
                   <g
                     key={n.id}
-                    className={`graph-node ${n.live ? 'live' : 'dead'} ${hl ? 'hl' : ''}`}
+                    className={`graph-node ${n.live ? 'live' : 'dead'} ${hl ? 'hl' : ''} ${linkFrom === n.id ? 'link-src' : ''}`}
                     transform={`translate(${n.x},${n.y})`}
                     onMouseDown={(e) => startDrag(e, n.id, n.x, n.y, false)}
                     onClick={() => openAgent(n.id)}
@@ -894,10 +936,10 @@ export function Graph() {
                 return (
                   <g
                     key={d.id}
-                    className={`graph-node graph-dev ${d.controlled ? 'ctrl' : 'unctrl'} ${hl ? 'hl' : ''}`}
+                    className={`graph-node graph-dev ${d.controlled ? 'ctrl' : 'unctrl'} ${hl ? 'hl' : ''} ${linkFrom === d.id ? 'link-src' : ''}`}
                     transform={`translate(${d.x},${d.y})`}
                     onMouseDown={(e) => startDrag(e, d.id, d.x, d.y, true)}
-                    onClick={() => { if (movedRef.current) movedRef.current = false }}
+                    onClick={() => onDeviceClick(d.id)}
                     onContextMenu={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
@@ -959,6 +1001,19 @@ export function Graph() {
           {manualEdges.length > 0 && <span><i className="lgd lgd-manual" />{t('手工连线')}</span>}
         </div>
 
+        {linkMode && (
+          <div className="graph-link-banner" onClick={(e) => e.stopPropagation()}>
+            <span>
+              {linkFrom
+                ? `已选起点「${allTargets.find((x) => x.id === linkFrom)?.label || linkFrom}」，点击目标节点/设备即可连线`
+                : '连线模式：点击任意起点节点/设备，再点击目标完成画线'}
+            </span>
+            <button type="button" className="ghost" onClick={() => { setLinkFrom(null); setLinkMode(false) }}>
+              退出
+            </button>
+          </div>
+        )}
+
         {/* ── 添加设备（14 种类型）。做成固定面板而不是下拉：14 项的下拉太长，
             而且这个面板要能一边看图一边挑。 ── */}
         {addOpen && (
@@ -981,7 +1036,7 @@ export function Graph() {
         {/* ── 「连线到…」的目标选择器。用菜单而不是拖手柄：
             拖手柄要做拖拽中的命中测试与视觉反馈，是本轮风险最高的部分；
             菜单方案零几何计算，而且能连到远处看不见的节点。 ── */}
-        {linkFrom && (
+        {!linkMode && linkFrom && (
           <div className="graph-pop graph-pop-link" onClick={(e) => e.stopPropagation()}>
             <div className="ctx-hd mono">
               连线到… <span className="dim">{allTargets.find((t) => t.id === linkFrom)?.label || ''}</span>

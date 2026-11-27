@@ -12,7 +12,7 @@
 
 export type Lang = 'zh' | 'en'
 
-import { EN_DICT } from './dict.en'
+import { translateEn } from './translateEn'
 
 const LS_KEY = 'adaptix.lang'
 
@@ -37,13 +37,32 @@ function detectLang(): Lang {
 
 export let LANG: Lang = detectLang()
 
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN'
+}
+
 export function setLang(lang: Lang) {
-  try { localStorage.setItem(LS_KEY, lang) } catch { /* 忽略 */ }
+  try {
+    localStorage.setItem(LS_KEY, lang)
+    const u = new URL(location.href)
+    let changed = false
+    if (u.searchParams.has('lang')) {
+      u.searchParams.delete('lang')
+      changed = true
+    }
+    if (/lang=(en|zh)/i.test(u.hash)) {
+      u.hash = u.hash
+        .replace(/([#&?])?lang=(en|zh)(&)?/gi, (_, p1, _p2, p3) => (p1 === '#' && p3 ? '#' : ''))
+        .replace(/^#$/, '')
+      changed = true
+    }
+    if (changed) history.replaceState(null, '', u.toString())
+  } catch { /* 忽略 */ }
   location.reload()
 }
 
-/** 翻译：en 字典命中 → 英文；否则原样返回中文。 */
+/** 翻译：en 字典命中或动态规则命中 → 英文；zh 原样返回。 */
 export function t(s: string): string {
-  if (LANG === 'zh') return s
-  return EN_DICT[s] ?? s
+  if (LANG === 'zh' || !s) return s
+  return translateEn(s)
 }

